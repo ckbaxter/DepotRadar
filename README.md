@@ -67,9 +67,9 @@ nano config/ath-tracker.yml
 docker compose up -d --build
 ```
 
-**App is available at: **
+**App is available at:** `http://<your-server-ip>:8080`
 
-> **Erreichbar unter: **
+> **Erreichbar unter:** `http://<server-ip>:8080`
 
 ---
 
