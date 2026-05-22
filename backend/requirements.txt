@@ -1,0 +1,7 @@
+flask==3.0.3
+flask-cors==4.0.1
+requests==2.32.3
+apprise==1.9.0
+apscheduler==3.10.4
+pyyaml==6.0.2
+pytz==2024.1
