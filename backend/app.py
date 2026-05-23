@@ -262,10 +262,24 @@ def fetch_stock_data(ticker):
         raise ValueError("Keine historischen Kurse in der Antwort")
     ath      = max(all_p)
     eur_rate = get_eur_rate(currency)
+
+    # Kurszeit aus Yahoo Finance (Unix-Timestamp)
+    market_time_str = None
+    market_time = meta.get("regularMarketTime")
+    if market_time:
+        try:
+            cfg = load_config()
+            tz  = pytz.timezone(cfg.get("timezone", "Europe/Berlin"))
+            dt  = datetime.fromtimestamp(int(market_time), tz=tz)
+            market_time_str = dt.strftime("%d.%m.%Y %H:%M")
+        except Exception:
+            pass
+
     return {
-        "current_eur": round(float(current) * eur_rate, 2),
-        "ath_eur":     round(max(float(ath), float(current)) * eur_rate, 2),
-        "currency":    currency,
+        "current_eur":  round(float(current) * eur_rate, 2),
+        "ath_eur":      round(max(float(ath), float(current)) * eur_rate, 2),
+        "currency":     currency,
+        "market_time":  market_time_str,
     }
 
 # ── Apprise ──────────────────────────────────────────────────────
@@ -304,6 +318,7 @@ def refresh_all_stocks(trigger="auto"):
                 "current_eur":         data["current_eur"],
                 "ath_eur":             new_ath,
                 "currency":            data["currency"],
+                "market_time":         data.get("market_time"),
                 "last_notified_block": new_blk,
                 "updated":             datetime.now().strftime("%d.%m.%Y %H:%M"),
             }
@@ -445,6 +460,7 @@ def add_stock():
         "current_eur":         data["current_eur"],
         "ath_eur":             data["ath_eur"],
         "currency":            data["currency"],
+        "market_time":         data.get("market_time"),
         "last_notified_block": blk,
         "updated":             datetime.now().strftime("%d.%m.%Y %H:%M"),
     }
@@ -477,6 +493,7 @@ def refresh_stock(ticker):
             "current_eur":         data["current_eur"],
             "ath_eur":             new_ath,
             "currency":            data["currency"],
+            "market_time":         data.get("market_time"),
             "last_notified_block": new_blk,
             "updated":             datetime.now().strftime("%d.%m.%Y %H:%M"),
         }

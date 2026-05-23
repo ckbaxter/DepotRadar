@@ -424,7 +424,11 @@ function renderTable(stocks){
     const nm = s.name.length > 26 ? s.name.substring(0,25)+"…" : s.name;
     return `<tr class="${c.row}">
       <td><div class="stock-name">${nm}</div><div class="stock-sub">${s.ticker} · ${s.exchange}</div></td>
-      <td style="font-weight:600">${fmtEUR(s.current_eur)}</td>
+      <td>
+        <div style="font-weight:600">${fmtEUR(s.current_eur)}</div>
+        ${s.market_time ? `<div style="font-size:10px;color:var(--muted);margin-top:1px">Kurs: ${s.market_time}</div>` : ""}
+        ${s.updated ? `<div style="font-size:10px;color:var(--muted);margin-top:1px">Geprüft: ${s.updated}</div>` : ""}
+      </td>
       <td style="color:var(--muted)">${fmtEUR(s.ath_eur)}</td>
       <td><span class="badge ${c.badge}">&#8722;${fmtPct(d)}</span></td>
       ${levelCellTd(s.ath_eur, s.current_eur, 20)}
@@ -456,7 +460,7 @@ function renderTable(stocks){
         <div class="card-badge-wrap"><span class="badge ${c.badge}">&#8722;${fmtPct(d)}</span></div>
       </div>
       <div class="card-prices">
-        <div class="card-price-block"><div class="card-price-label">Kurs</div><div class="card-price-val">${fmtEUR(s.current_eur)}</div></div>
+        <div class="card-price-block"><div class="card-price-label">Kurs</div><div class="card-price-val">${fmtEUR(s.current_eur)}</div>${s.market_time ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">Kurs: ${s.market_time}</div>` : ""}${s.updated ? `<div style="font-size:10px;color:var(--muted);margin-top:1px">Geprüft: ${s.updated}</div>` : ""}</div>
         <div class="card-price-block"><div class="card-price-label">ATH</div><div class="card-price-val" style="color:var(--muted)">${fmtEUR(s.ath_eur)}</div></div>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Discount-Level:</div>
@@ -465,7 +469,7 @@ function renderTable(stocks){
         <button class="icon-btn btn-sm" onclick="refreshOne('${s.ticker}', this)">&#8635; Refresh</button>
         <button class="icon-btn btn-sm" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,"\'")}')">&#128465;</button>
       </div>
-      <div class="card-updated">Aktualisiert: ${s.updated || "—"}</div>
+
     </div>`;
   }).join("");
 }
