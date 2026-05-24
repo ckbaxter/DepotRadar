@@ -26,7 +26,11 @@ Automatically fetches current prices and ATH values, converts everything to **Eu
 |---|---|---|
 | 📈 | Automatic price & ATH data from Yahoo Finance | Automatische Kurs- & ATH-Daten von Yahoo Finance |
 | 💶 | All values in Euro (auto currency conversion) | Alle Werte in Euro (automatische Währungsumrechnung) |
-| 🔔 | Apprise notifications at 10% discount blocks (≥20%) | Apprise-Benachrichtigungen bei 10%-Blöcken (ab 20%) |
+| 🏦 | Multiple depots per user | Mehrere Depots pro Nutzer |
+| 🔍 | Watchlists per depot (potential buys) | Beobachtungslisten pro Depot (potenzielle Käufe) |
+| ➡️ | Move stock from watchlist to depot | Aktie von Beobachtungsliste ins Depot verschieben |
+| 🔔 | Apprise notifications per depot at 10% discount blocks (≥20%) | Apprise-Benachrichtigungen pro Depot bei 10%-Blöcken (ab 20%) |
+| 🏷️ | Notifications show Bestand vs. Beobachtung clearly | Benachrichtigungen zeigen Bestand vs. Beobachtung |
 | 🕐 | Configurable trading window (Mon–Fri, 08:00–23:00) | Konfigurierbares Handelsfenster (Mo–Fr, 08–23 Uhr) |
 | 🔍 | Search by company name, ticker, ISIN or WKN | Suche nach Name, Ticker, ISIN oder WKN |
 | 📊 | Sortable table with discount level overview | Sortierbare Tabelle mit Rabattstufenübersicht |
@@ -40,7 +44,7 @@ Automatically fetches current prices and ATH values, converts everything to **Eu
 - **Backend:** Python, Flask, APScheduler, Apprise, PyYAML
 - **Frontend:** Vanilla HTML/CSS/JS (no framework)
 - **Reverse Proxy:** NGINX
-- **Data:** Yahoo Finance, Frankfurter API (EUR conversion)
+- **Data:** Yahoo Finance, Frankfurter API (EUR conversion), Börse Frankfurt (WKN lookup)
 
 ---
 
@@ -48,7 +52,6 @@ Automatically fetches current prices and ATH values, converts everything to **Eu
 
 ### Prerequisites / Voraussetzungen
 - Docker & Docker Compose
-- (Optional) Traefik reverse proxy
 
 ### Installation
 
@@ -67,9 +70,36 @@ nano config/ath-tracker.yml
 docker compose up -d --build
 ```
 
-**App is available at:** `http://<your-server-ip>:8080`
+**App is available at:** http://\<your-server-ip\>:8080
 
-> **Erreichbar unter:** `http://<server-ip>:8080`
+> **Erreichbar unter:** http://\<server-ip\>:8080
+
+---
+
+## Multi-Depot & Watchlists
+
+### Depots
+Each person gets their own depot. Depots are created via the **+** button in the depot tab bar.
+Per depot you can configure individual Apprise notification URLs (tap the ⚙ icon on the depot tab).
+
+> Jede Person bekommt ein eigenes Depot. Depots werden über den **+** Button in der Depot-Tab-Leiste angelegt.
+> Pro Depot können individuelle Apprise-URLs konfiguriert werden (⚙-Icon im Depot-Tab antippen).
+
+### Watchlists / Beobachtungslisten
+Each depot can have multiple watchlists for tracking potential buys.
+
+```
+[ Christoph ⚙ ] [ Sandra ⚙ ] [ + ]        ← Depot tabs
+[ Bestand | 🔍 Tech | 🔍 ETFs | + ]        ← View tabs per depot
+```
+
+- Add a watchlist via **+** in the view tab bar
+- Stocks in watchlists show a **→ Depot** button to move them to the main holdings
+- Notifications clearly show whether an alert comes from **Bestand** or **Beobachtung**
+
+> Jedes Depot kann mehrere Beobachtungslisten haben. Aktien können per **→ Depot** Button
+> in den Bestand verschoben werden. Benachrichtigungen zeigen klar ob es sich um
+> Bestand oder Beobachtung handelt.
 
 ---
 
@@ -88,17 +118,14 @@ trading:
 refresh_interval_seconds: 3600   # Default: every hour
 ```
 
-The **refresh interval** can also be changed in the web UI (Settings) — the GUI value overrides
-the config file value and is stored in `data/settings.json`.
-
-**Alle Handelszeiten-Einstellungen** werden in `config/ath-tracker.yml` verwaltet. Das Refresh-Intervall
-kann zusätzlich in der Web-Oberfläche (Einstellungen) geändert werden.
+The **refresh interval** can also be changed in the web UI under Settings.
 
 ---
 
 ## Apprise Notifications / Benachrichtigungen
 
-Configure one or more Apprise URLs in the web UI under **Settings**:
+Configure Apprise URLs **per depot** via the ⚙ icon on the depot tab.
+All watchlists of a depot share the same URLs as the depot.
 
 | Service | URL format |
 |---|---|
@@ -108,10 +135,11 @@ Configure one or more Apprise URLs in the web UI under **Settings**:
 | E-Mail | `mailto://user:pass@gmail.com` |
 
 **Notification logic / Benachrichtigungslogik:**
-- Notification when a new 10% block (≥20%) is first reached for a downward move
+- Notification when a new 10% block (≥20%) is first reached downward
 - No repeated notifications within the same block
-- If the price recovers and drops again: new notification
-- Starting baseline = current discount at time of adding the stock
+- If price recovers and drops again: new notification
+- Baseline = discount at time of adding the stock
+- Notification title clearly shows `[Bestand: Depot]` or `[Beobachtung: Watchlist (Depot)]`
 
 ---
 
@@ -120,14 +148,16 @@ Configure one or more Apprise URLs in the web UI under **Settings**:
 ```
 ath-tracker/
 ├── backend/
-│   ├── app.py              # Flask API + scheduler + Yahoo Finance
+│   ├── app.py              # Flask API + scheduler + Yahoo Finance + Apprise
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── config/
 │   ├── ath-tracker.yml             # Your config (not in git)
 │   └── ath-tracker.yml.example     # Template (in git)
-├── data/                   # Runtime data - not in git
-│   ├── stocks.json
+├── data/                   # Runtime data — not in git
+│   ├── depots.json                 # Depot & watchlist metadata
+│   ├── depot_{id}.json             # Holdings per depot
+│   ├── wl_{depot_id}_{wl_id}.json  # Stocks per watchlist
 │   ├── settings.json
 │   └── notifications.json
 ├── frontend/

@@ -1,5 +1,6 @@
 import json
 import re
+import time
 import logging
 import os
 from datetime import datetime
@@ -21,9 +22,9 @@ CORS(app)
 
 DATA_DIR      = "/data"
 CONFIG_FILE   = "/config/ath-tracker.yml"
-STOCKS_FILE   = os.path.join(DATA_DIR, "stocks.json")
-SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+DEPOTS_FILE   = os.path.join(DATA_DIR, "depots.json")
 NOTIF_FILE    = os.path.join(DATA_DIR, "notifications.json")
+SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 COMPANY_DB = [
@@ -104,515 +105,557 @@ COMPANY_DB = [
     {"name": "Walt Disney",      "ticker": "DIS",     "exchange": "NYSE",   "keywords": "disney walt"},
 ]
 
-# ── Config laden ─────────────────────────────────────────────────
-_CONFIG_DEFAULTS = {
-    "timezone": "Europe/Berlin",
-    "trading": {"days": [0, 1, 2, 3, 4], "start_hour": 8, "end_hour": 23},
-    "refresh_interval_seconds": 3600,
-}
+# ── Config ───────────────────────────────────────────────────────
+_CFG_DEF = {"timezone":"Europe/Berlin",
+             "trading":{"days":[0,1,2,3,4],"start_hour":8,"end_hour":23},
+             "refresh_interval_seconds":3600}
 
 def load_config():
-    cfg = dict(_CONFIG_DEFAULTS)
-    cfg["trading"] = dict(_CONFIG_DEFAULTS["trading"])
+    cfg = {"timezone":_CFG_DEF["timezone"],"trading":dict(_CFG_DEF["trading"]),
+           "refresh_interval_seconds":_CFG_DEF["refresh_interval_seconds"]}
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, encoding="utf-8") as f:
+            with open(CONFIG_FILE,encoding="utf-8") as f:
                 loaded = yaml.safe_load(f) or {}
-            if "timezone" in loaded:
-                cfg["timezone"] = loaded["timezone"]
-            if "trading" in loaded and isinstance(loaded["trading"], dict):
-                cfg["trading"].update(loaded["trading"])
+            if "timezone" in loaded: cfg["timezone"] = loaded["timezone"]
+            if "trading"  in loaded: cfg["trading"].update(loaded["trading"])
             if "refresh_interval_seconds" in loaded:
                 cfg["refresh_interval_seconds"] = int(loaded["refresh_interval_seconds"])
         except Exception as e:
-            log.error(f"Fehler beim Lesen der config.yml: {e} – Standardwerte werden verwendet")
+            log.error(f"config.yml Fehler: {e}")
     return cfg
 
-# ── Persistenz ───────────────────────────────────────────────────
-def load_stocks():
-    if os.path.exists(STOCKS_FILE):
-        with open(STOCKS_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return []
+# ── Datei-Helfer ─────────────────────────────────────────────────
+def _safe(s): return re.sub(r'[^a-z0-9_\-]','_',s.lower())
 
-def save_stocks(stocks):
-    with open(STOCKS_FILE, "w", encoding="utf-8") as f:
-        json.dump(stocks, f, indent=2, ensure_ascii=False)
+def depot_file(depot_id):
+    return os.path.join(DATA_DIR, f"depot_{_safe(depot_id)}.json")
+
+def watchlist_file(depot_id, wl_id):
+    return os.path.join(DATA_DIR, f"wl_{_safe(depot_id)}_{_safe(wl_id)}.json")
+
+def load_stocks(depot_id):
+    p = depot_file(depot_id)
+    return json.load(open(p,encoding="utf-8")) if os.path.exists(p) else []
+
+def save_stocks(depot_id, stocks):
+    json.dump(stocks, open(depot_file(depot_id),"w",encoding="utf-8"), indent=2, ensure_ascii=False)
+
+def load_wl_stocks(depot_id, wl_id):
+    p = watchlist_file(depot_id, wl_id)
+    return json.load(open(p,encoding="utf-8")) if os.path.exists(p) else []
+
+def save_wl_stocks(depot_id, wl_id, stocks):
+    json.dump(stocks, open(watchlist_file(depot_id,wl_id),"w",encoding="utf-8"), indent=2, ensure_ascii=False)
+
+def load_depots():
+    return json.load(open(DEPOTS_FILE,encoding="utf-8")) if os.path.exists(DEPOTS_FILE) else []
+
+def save_depots(depots):
+    json.dump(depots, open(DEPOTS_FILE,"w",encoding="utf-8"), indent=2, ensure_ascii=False)
 
 def load_settings():
     cfg = load_config()
-    defaults = {
-        "apprise_urls": [],
-        "refresh_interval": cfg["refresh_interval_seconds"],
-        "notifications_enabled": True,
-    }
+    d   = {"refresh_interval":cfg["refresh_interval_seconds"],"notifications_enabled":True}
     if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, encoding="utf-8") as f:
-            defaults.update(json.load(f))
-    return defaults
+        d.update(json.load(open(SETTINGS_FILE,encoding="utf-8")))
+    d.pop("apprise_urls", None)
+    return d
 
 def save_settings(s):
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(s, f, indent=2, ensure_ascii=False)
+    json.dump(s, open(SETTINGS_FILE,"w",encoding="utf-8"), indent=2, ensure_ascii=False)
 
 def load_notifications():
-    if os.path.exists(NOTIF_FILE):
-        with open(NOTIF_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    return json.load(open(NOTIF_FILE,encoding="utf-8")) if os.path.exists(NOTIF_FILE) else []
 
-def save_notifications(notifs):
-    with open(NOTIF_FILE, "w", encoding="utf-8") as f:
-        json.dump(notifs[-100:], f, indent=2, ensure_ascii=False)
+def save_notifications(n):
+    json.dump(n[-100:], open(NOTIF_FILE,"w",encoding="utf-8"), indent=2, ensure_ascii=False)
 
-def add_log_entry(entry_type, title, body, success=True):
-    notifs = load_notifications()
-    notifs.append({
-        "time":    datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-        "type":    entry_type,
-        "title":   title,
-        "body":    body,
-        "success": success,
-    })
-    save_notifications(notifs)
+def add_log(etype, title, body, success=True):
+    n = load_notifications()
+    n.append({"time":datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+               "type":etype,"title":title,"body":body,"success":success})
+    save_notifications(n)
 
-# ── Discount-Block-Logik ─────────────────────────────────────────
-def get_block(discount_pct):
-    if discount_pct < 20:
-        return 0
-    return int(discount_pct / 10) * 10
+# ── Migration ────────────────────────────────────────────────────
+def migrate_if_needed():
+    if os.path.exists(DEPOTS_FILE):
+        depots = load_depots(); changed = False
+        for d in depots:
+            if "apprise_urls" not in d: d["apprise_urls"] = []; changed = True
+            if "watchlists"   not in d: d["watchlists"]   = []; changed = True
+        if changed: save_depots(depots)
+        return
+    old = os.path.join(DATA_DIR,"stocks.json")
+    did, dname = "mein_depot", "Mein Depot"
+    global_urls = []
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            s = json.load(open(SETTINGS_FILE,encoding="utf-8"))
+            global_urls = s.pop("apprise_urls",[])
+            json.dump(s, open(SETTINGS_FILE,"w",encoding="utf-8"), indent=2)
+        except Exception: pass
+    if os.path.exists(old):
+        import shutil; shutil.copy(old, depot_file(did))
+        log.info("Migration: stocks.json -> depot_mein_depot.json")
+    else:
+        save_stocks(did, [])
+    save_depots([{"id":did,"name":dname,"apprise_urls":global_urls,"watchlists":[]}])
+    log.info("Migration abgeschlossen")
 
-def initial_block(current_eur, ath_eur):
-    if ath_eur <= 0:
-        return 0
-    return get_block((ath_eur - current_eur) / ath_eur * 100)
+# ── Discount-Block ───────────────────────────────────────────────
+def get_block(d): return 0 if d < 20 else int(d/10)*10
+def initial_block(cur,ath): return 0 if ath<=0 else get_block((ath-cur)/ath*100)
 
-def check_and_notify(stock, new_current, new_ath):
-    if new_ath <= 0:
-        return stock.get("last_notified_block", 0)
-    discount      = (new_ath - new_current) / new_ath * 100
-    current_block = get_block(discount)
-    last_block    = stock.get("last_notified_block", current_block)
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None):
+    if new_ath <= 0: return stock.get("last_notified_block",0)
+    d  = (new_ath-new_cur)/new_ath*100
+    cb = get_block(d); lb = stock.get("last_notified_block",cb)
+    if cb > lb and cb >= 20:
+        lp    = round(new_ath*(1-cb/100),2)
+        title = f"ATH-Alarm [{label}]: {stock['name']} -{cb}%-Block"
+        body  = (f"{stock['name']} ({stock['ticker']}) — {label}\n\n"
+                 f"Aktueller Kurs:  {new_cur:.2f} EUR\n"
+                 f"ATH:             {new_ath:.2f} EUR\n"
+                 f"Abstand zum ATH: -{d:.1f}%\n"
+                 f"-{cb}%-Level:    {lp:.2f} EUR")
+        send_apprise(title, body, urls or [])
+        return cb
+    elif cb < lb: return cb
+    return lb
 
-    if current_block > last_block and current_block >= 20:
-        level_price = round(new_ath * (1 - current_block / 100), 2)
-        title = f"ATH-Alarm: {stock['name']} -{current_block}%-Block erreicht"
-        body  = (
-            f"{stock['name']} ({stock['ticker']}) hat den -{current_block}%-Block erreicht!\n\n"
-            f"Aktueller Kurs:   {new_current:.2f} EUR\n"
-            f"ATH:              {new_ath:.2f} EUR\n"
-            f"Abstand zum ATH:  -{discount:.1f}%\n"
-            f"-{current_block}%-Level:       {level_price:.2f} EUR"
-        )
-        log.info(f"Benachrichtigung: {title}")
-        send_apprise(title, body)
-        return current_block
-    elif current_block < last_block:
-        log.info(f"{stock['name']}: Block zurueck {last_block} -> {current_block}")
-        return current_block
-    return last_block
-
-# ── Yahoo Finance & EUR ──────────────────────────────────────────
-YAHOO_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-    "Accept": "application/json",
-}
+# ── Yahoo Finance ────────────────────────────────────────────────
+YH = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+      "Accept":"application/json"}
 
 def get_eur_rate(currency):
-    if currency == "EUR":
-        return 1.0
+    if currency=="EUR": return 1.0
     try:
-        r = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
+        r = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR",timeout=8)
         return float(r.json()["rates"]["EUR"])
     except Exception:
-        fb = {"USD": 0.92, "GBP": 1.17, "CHF": 1.05, "JPY": 0.0062,
-              "CAD": 0.68, "AUD": 0.60, "DKK": 0.134, "HKD": 0.118}
-        return fb.get(currency, 0.92)
+        return {"USD":0.92,"GBP":1.17,"CHF":1.05,"JPY":0.0062,"CAD":0.68,"AUD":0.60,"DKK":0.134,"HKD":0.118}.get(currency,0.92)
 
 def fetch_stock_data(ticker):
     enc  = urlquote(ticker)
-    urls = [
-        f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&includePrePost=false",
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&includePrePost=false",
-        f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1mo",
-    ]
+    urls = [f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&includePrePost=false",
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&includePrePost=false",
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1mo"]
     data, last_err = None, "Unbekannter Fehler"
     for url in urls:
         try:
-            r = requests.get(url, headers=YAHOO_HEADERS, timeout=15)
-            r.raise_for_status()
+            r = requests.get(url,headers=YH,timeout=15); r.raise_for_status()
             j = r.json()
-            if j.get("chart", {}).get("result"):
-                data = j; break
-        except Exception as e:
-            last_err = str(e)
-    if not data:
-        raise ValueError(f"Kein Zugriff auf Yahoo Finance: {last_err}")
-    result   = data["chart"]["result"][0]
-    meta     = result["meta"]
-    currency = meta.get("currency", "USD")
-    current  = meta.get("regularMarketPrice") or meta.get("chartPreviousClose")
-    if not current:
-        raise ValueError("Kein aktueller Kurs in der Antwort")
-    q0     = (result.get("indicators", {}).get("quote") or [{}])[0]
-    highs  = [h for h in (q0.get("high")  or []) if h and h > 0]
-    closes = [c for c in (q0.get("close") or []) if c and c > 0]
-    all_p  = highs + closes
-    if not all_p:
-        raise ValueError("Keine historischen Kurse in der Antwort")
-    ath      = max(all_p)
-    eur_rate = get_eur_rate(currency)
-
-    # Kurszeit aus Yahoo Finance (Unix-Timestamp)
-    market_time_str = None
-    market_time = meta.get("regularMarketTime")
-    if market_time:
+            if j.get("chart",{}).get("result"): data=j; break
+        except Exception as e: last_err=str(e)
+    if not data: raise ValueError(f"Kein Zugriff auf Yahoo Finance: {last_err}")
+    result=data["chart"]["result"][0]; meta=result["meta"]
+    currency=meta.get("currency","USD")
+    current=meta.get("regularMarketPrice") or meta.get("chartPreviousClose")
+    if not current: raise ValueError("Kein aktueller Kurs")
+    q0=(result.get("indicators",{}).get("quote") or [{}])[0]
+    highs=[h for h in (q0.get("high") or []) if h and h>0]
+    closes=[c for c in (q0.get("close") or []) if c and c>0]
+    all_p=highs+closes
+    if not all_p: raise ValueError("Keine historischen Kurse")
+    ath=max(all_p); eur=get_eur_rate(currency)
+    mt_str=None
+    mt=meta.get("regularMarketTime")
+    if mt:
         try:
-            cfg = load_config()
-            tz  = pytz.timezone(cfg.get("timezone", "Europe/Berlin"))
-            dt  = datetime.fromtimestamp(int(market_time), tz=tz)
-            market_time_str = dt.strftime("%d.%m.%Y %H:%M")
-        except Exception:
-            pass
-
-    return {
-        "current_eur":  round(float(current) * eur_rate, 2),
-        "ath_eur":      round(max(float(ath), float(current)) * eur_rate, 2),
-        "currency":     currency,
-        "market_time":  market_time_str,
-    }
+            tz=pytz.timezone(load_config().get("timezone","Europe/Berlin"))
+            mt_str=datetime.fromtimestamp(int(mt),tz=tz).strftime("%d.%m.%Y %H:%M")
+        except Exception: pass
+    return {"current_eur":round(float(current)*eur,2),"ath_eur":round(max(float(ath),float(current))*eur,2),
+            "currency":currency,"market_time":mt_str}
 
 # ── Apprise ──────────────────────────────────────────────────────
-def send_apprise(title, body):
-    settings = load_settings()
-    if not settings.get("notifications_enabled"):
-        return True
-    urls = settings.get("apprise_urls", [])
-    if not urls:
-        log.warning("Keine Apprise-URLs konfiguriert")
-        return False
+def send_apprise(title, body, urls):
+    if not load_settings().get("notifications_enabled",True): return True
+    if not urls: log.warning("Keine Apprise-URLs konfiguriert"); return False
     try:
-        ap = apprise_lib.Apprise()
-        for u in urls:
-            ap.add(u)
-        ok = ap.notify(title=title, body=body)
-        add_log_entry("alert", title, body, ok)
-        return ok
+        ap=apprise_lib.Apprise()
+        for u in urls: ap.add(u)
+        ok=ap.notify(title=title,body=body)
+        add_log("alert",title,body,ok); return ok
     except Exception as e:
-        log.error(f"Apprise-Fehler: {e}")
-        add_log_entry("alert", title, body, False)
-        return False
+        log.error(f"Apprise: {e}"); add_log("alert",title,body,False); return False
 
-# ── Refresh-Logik ────────────────────────────────────────────────
-def refresh_all_stocks(trigger="auto"):
-    log.info(f"Kurs-Refresh gestartet (trigger={trigger})")
-    stocks  = load_stocks()
+# ── Refresh-Helfer ───────────────────────────────────────────────
+def _make_stock(data, old=None):
+    base = old or {}
+    return {**base, "current_eur":data["current_eur"], "ath_eur":max(data["ath_eur"],base.get("ath_eur",0)),
+            "currency":data["currency"], "market_time":data.get("market_time"),
+            "updated":datetime.now().strftime("%d.%m.%Y %H:%M")}
+
+def _refresh_stock_list(stocks, label, urls):
     ok_list, err_list = [], []
-    for i, s in enumerate(stocks):
+    for i,s in enumerate(stocks):
         try:
-            data    = fetch_stock_data(s["ticker"])
-            new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-            new_blk = check_and_notify(s, data["current_eur"], new_ath)
-            stocks[i] = {
-                **s,
-                "current_eur":         data["current_eur"],
-                "ath_eur":             new_ath,
-                "currency":            data["currency"],
-                "market_time":         data.get("market_time"),
-                "last_notified_block": new_blk,
-                "updated":             datetime.now().strftime("%d.%m.%Y %H:%M"),
-            }
+            data=fetch_stock_data(s["ticker"])
+            new_ath=max(data["ath_eur"],s.get("ath_eur",0))
+            new_blk=check_and_notify(s,data["current_eur"],new_ath,label,urls)
+            stocks[i]={**_make_stock(data,s),"last_notified_block":new_blk}
             ok_list.append(s["name"])
         except Exception as e:
-            log.error(f"Fehler bei {s['name']}: {e}")
-            err_list.append(f"{s['name']}: {e}")
-    save_stocks(stocks)
-    label = "Automatisch" if trigger == "auto" else "Manuell"
-    body  = f"Aktualisiert: {', '.join(ok_list) or 'keine'}"
-    if err_list:
-        body += f"\nFehler: {', '.join(err_list)}"
-    add_log_entry(f"{trigger}_refresh", f"{label}er Refresh", body, len(err_list) == 0)
-    log.info(f"Kurs-Refresh abgeschlossen. OK={len(ok_list)} Fehler={len(err_list)}")
+            log.error(f"[{label}] {s['name']}: {e}"); err_list.append(f"{s['name']}: {e}")
+    return stocks, ok_list, err_list
+
+def _refresh_depot(depot, trigger="auto"):
+    did=depot["id"]; dname=depot["name"]; urls=depot.get("apprise_urls",[])
+    # Bestand
+    stocks=load_stocks(did)
+    stocks,ok,err=_refresh_stock_list(stocks, f"Bestand: {dname}", urls)
+    save_stocks(did,stocks)
+    # Beobachtungslisten
+    for wl in depot.get("watchlists",[]):
+        wl_stocks=load_wl_stocks(did,wl["id"])
+        wl_stocks,wok,werr=_refresh_stock_list(wl_stocks, f"Beobachtung: {wl['name']} ({dname})", urls)
+        save_wl_stocks(did,wl["id"],wl_stocks)
+        ok+=wok; err+=werr
+    return ok, err
+
+def refresh_all_depots(trigger="auto"):
+    log.info(f"Refresh alle Depots (trigger={trigger})")
+    depots=load_depots(); total_ok,total_err=[],[]
+    for depot in depots:
+        ok,err=_refresh_depot(depot,trigger)
+        total_ok+=ok; total_err+=err
+    label="Automatisch" if trigger=="auto" else "Manuell"
+    add_log(f"{trigger}_refresh",f"{label}er Refresh",
+            f"Depots: {len(depots)} | OK: {len(total_ok)} | Fehler: {len(total_err)}",len(total_err)==0)
 
 # ── Scheduler ────────────────────────────────────────────────────
-# _last_refresh speichert den letzten automatischen Refresh-Zeitpunkt
-_last_refresh = None
-_start_of_day_done = None   # Datum des letzten 8-Uhr-Refreshes
-
-scheduler = BackgroundScheduler(daemon=True)
+scheduler=BackgroundScheduler(daemon=True)
+_last_refresh=None; _start_of_day_done=None
 
 def trading_window_check():
-    """Wird jede Minute aufgerufen. Entscheidet ob ein Refresh faellig ist."""
     global _last_refresh, _start_of_day_done
-
-    cfg      = load_config()
-    tz       = pytz.timezone(cfg["timezone"])
-    now      = datetime.now(tz)
-    settings = load_settings()
-    interval = settings.get("refresh_interval", cfg["refresh_interval_seconds"])
-
-    trading  = cfg["trading"]
-    days     = trading.get("days", [0, 1, 2, 3, 4])
-    start_h  = trading.get("start_hour", 8)
-    end_h    = trading.get("end_hour", 23)
-
-    # Kein Handelstag
-    if now.weekday() not in days:
-        return
-
-    # Ausserhalb der Handelszeit
-    if now.hour < start_h or now.hour >= end_h:
-        return
-
-    today = now.date()
-
-    # Erster Refresh des Tages genau um start_hour:00
-    if now.hour == start_h and now.minute == 0 and _start_of_day_done != today:
-        log.info(f"Tagesstart-Refresh um {start_h}:00 Uhr")
-        _start_of_day_done = today
-        _last_refresh = now
-        refresh_all_stocks(trigger="auto")
-        return
-
-    # Regulaerer Intervall-Refresh
-    if _last_refresh is None or (now - _last_refresh).total_seconds() >= interval:
-        log.info(f"Intervall-Refresh (alle {interval}s)")
-        _last_refresh = now
-        refresh_all_stocks(trigger="auto")
-
-def start_scheduler():
-    # Jede Minute pruefen ob ein Refresh faellig ist
-    scheduler.add_job(trading_window_check, "cron", minute="*",
-                      id="trading_check", replace_existing=True)
-    if not scheduler.running:
-        scheduler.start()
-    cfg = load_config()
-    log.info(f"Scheduler gestartet | Handelstage={cfg['trading']['days']} "
-             f"| Fenster={cfg['trading']['start_hour']}-{cfg['trading']['end_hour']} Uhr "
-             f"| TZ={cfg['timezone']}")
+    cfg=load_config(); tz=pytz.timezone(cfg["timezone"]); now=datetime.now(tz)
+    settings=load_settings(); interval=settings.get("refresh_interval",cfg["refresh_interval_seconds"])
+    t=cfg["trading"]; days=t.get("days",[0,1,2,3,4]); sh=t.get("start_hour",8); eh=t.get("end_hour",23)
+    if now.weekday() not in days or now.hour<sh or now.hour>=eh: return
+    today=now.date()
+    if now.hour==sh and now.minute==0 and _start_of_day_done!=today:
+        _start_of_day_done=today; _last_refresh=now; refresh_all_depots("auto"); return
+    if _last_refresh is None or (now-_last_refresh).total_seconds()>=interval:
+        _last_refresh=now; refresh_all_depots("auto")
 
 def get_next_run_info():
-    """Gibt einen lesbaren String zum naechsten geplanten Refresh zurueck."""
-    cfg      = load_config()
-    tz       = pytz.timezone(cfg["timezone"])
-    now      = datetime.now(tz)
-    settings = load_settings()
-    interval = settings.get("refresh_interval", cfg["refresh_interval_seconds"])
-    trading  = cfg["trading"]
-    days     = trading.get("days", [0, 1, 2, 3, 4])
-    start_h  = trading.get("start_hour", 8)
-    end_h    = trading.get("end_hour", 23)
-
-    # Naechsten gueltigen Zeitpunkt berechnen
+    from datetime import timedelta
+    cfg=load_config(); tz=pytz.timezone(cfg["timezone"]); now=datetime.now(tz)
+    s=load_settings(); interval=s.get("refresh_interval",cfg["refresh_interval_seconds"])
+    t=cfg["trading"]; days=t.get("days",[0,1,2,3,4]); sh=t.get("start_hour",8); eh=t.get("end_hour",23)
     if _last_refresh:
-        from datetime import timedelta
-        candidate = _last_refresh + timedelta(seconds=interval)
-        # Wenn candidate ausserhalb Handelsfenster -> naechsten start_h nehmen
-        if candidate.hour >= end_h or candidate.weekday() not in days:
-            # naechsten Handelstag start_h suchen
-            d = candidate.date()
-            from datetime import timedelta as td
-            for i in range(1, 8):
-                d = d + td(days=1)
+        c=_last_refresh+timedelta(seconds=interval)
+        if c.hour>=eh or c.weekday() not in days:
+            d=c.date()
+            for i in range(1,8):
+                d+=timedelta(days=1)
                 if d.weekday() in days:
-                    next_dt = tz.localize(datetime(d.year, d.month, d.day, start_h, 0))
-                    return next_dt.strftime("%d.%m.%Y %H:%M") + " Uhr"
-        if candidate.hour < start_h:
-            candidate = tz.localize(datetime(candidate.year, candidate.month, candidate.day, start_h, 0))
-        return candidate.strftime("%d.%m.%Y %H:%M") + " Uhr"
-    # Noch kein Refresh: naechsten Handelstag start_h
-    from datetime import timedelta as td
-    d = now.date()
-    for i in range(0, 8):
-        check = d if i == 0 else d + td(days=i)
+                    return tz.localize(datetime(d.year,d.month,d.day,sh,0)).strftime("%d.%m.%Y %H:%M")+" Uhr"
+        if c.hour<sh: c=tz.localize(datetime(c.year,c.month,c.day,sh,0))
+        return c.strftime("%d.%m.%Y %H:%M")+" Uhr"
+    d=now.date()
+    for i in range(0,8):
+        check=d if i==0 else d+timedelta(days=i)
         if check.weekday() in days:
-            if i == 0 and now.hour < start_h:
-                return tz.localize(datetime(check.year, check.month, check.day, start_h, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
-            elif i > 0:
-                return tz.localize(datetime(check.year, check.month, check.day, start_h, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
+            if i==0 and now.hour<sh:
+                return tz.localize(datetime(check.year,check.month,check.day,sh,0)).strftime("%d.%m.%Y %H:%M")+" Uhr"
+            elif i>0:
+                return tz.localize(datetime(check.year,check.month,check.day,sh,0)).strftime("%d.%m.%Y %H:%M")+" Uhr"
     return "unbekannt"
 
-# ── API-Routen ───────────────────────────────────────────────────
+def start_scheduler():
+    scheduler.add_job(trading_window_check,"cron",minute="*",id="trading_check",replace_existing=True,misfire_grace_time=120)
+    if not scheduler.running: scheduler.start()
+    log.info("Scheduler gestartet")
+
+# ── API: Depots ──────────────────────────────────────────────────
+def gen_id(name): return f"{re.sub(r'[^a-z0-9]','_',name.lower())[:20].strip('_')}_{int(time.time())}"
+
+@app.route("/api/depots", methods=["GET"])
+def get_depots(): return jsonify(load_depots())
+
+@app.route("/api/depots", methods=["POST"])
+def create_depot():
+    body=request.get_json(); name=body.get("name","").strip()
+    if not name: return jsonify({"error":"Name erforderlich"}),400
+    depots=load_depots()
+    if any(d["name"].lower()==name.lower() for d in depots): return jsonify({"error":"Name existiert bereits"}),409
+    did=gen_id(name); save_stocks(did,[])
+    depot={"id":did,"name":name,"apprise_urls":[],"watchlists":[]}
+    depots.append(depot); save_depots(depots)
+    return jsonify(depot),201
+
+@app.route("/api/depots/<depot_id>", methods=["PUT"])
+def update_depot(depot_id):
+    body=request.get_json(); depots=load_depots()
+    for d in depots:
+        if d["id"]==depot_id:
+            if "name" in body and body["name"].strip(): d["name"]=body["name"].strip()
+            if "apprise_urls" in body: d["apprise_urls"]=body["apprise_urls"]
+            save_depots(depots); return jsonify(d)
+    return jsonify({"error":"Nicht gefunden"}),404
+
+@app.route("/api/depots/<depot_id>", methods=["DELETE"])
+def delete_depot(depot_id):
+    depots=load_depots()
+    if len(depots)<=1: return jsonify({"error":"Letztes Depot kann nicht gelöscht werden"}),400
+    depot=next((d for d in depots if d["id"]==depot_id),None)
+    if not depot: return jsonify({"error":"Nicht gefunden"}),404
+    # Alle Dateien loeschen
+    for f in [depot_file(depot_id)]+[watchlist_file(depot_id,wl["id"]) for wl in depot.get("watchlists",[])]:
+        if os.path.exists(f): os.remove(f)
+    save_depots([d for d in depots if d["id"]!=depot_id])
+    return jsonify({"ok":True})
+
+# ── API: Watchlists ──────────────────────────────────────────────
+@app.route("/api/depots/<depot_id>/watchlists", methods=["POST"])
+def create_watchlist(depot_id):
+    body=request.get_json(); name=body.get("name","").strip()
+    if not name: return jsonify({"error":"Name erforderlich"}),400
+    depots=load_depots()
+    depot=next((d for d in depots if d["id"]==depot_id),None)
+    if not depot: return jsonify({"error":"Depot nicht gefunden"}),404
+    if any(w["name"].lower()==name.lower() for w in depot.get("watchlists",[])):
+        return jsonify({"error":"Name existiert bereits"}),409
+    wl_id=gen_id(name); save_wl_stocks(depot_id,wl_id,[])
+    wl={"id":wl_id,"name":name}
+    depot.setdefault("watchlists",[]).append(wl)
+    save_depots(depots)
+    return jsonify(wl),201
+
+@app.route("/api/depots/<depot_id>/watchlists/<wl_id>", methods=["PUT"])
+def update_watchlist(depot_id, wl_id):
+    body=request.get_json(); depots=load_depots()
+    depot=next((d for d in depots if d["id"]==depot_id),None)
+    if not depot: return jsonify({"error":"Nicht gefunden"}),404
+    for wl in depot.get("watchlists",[]):
+        if wl["id"]==wl_id:
+            if "name" in body and body["name"].strip(): wl["name"]=body["name"].strip()
+            save_depots(depots); return jsonify(wl)
+    return jsonify({"error":"Nicht gefunden"}),404
+
+@app.route("/api/depots/<depot_id>/watchlists/<wl_id>", methods=["DELETE"])
+def delete_watchlist(depot_id, wl_id):
+    depots=load_depots()
+    depot=next((d for d in depots if d["id"]==depot_id),None)
+    if not depot: return jsonify({"error":"Nicht gefunden"}),404
+    f=watchlist_file(depot_id,wl_id)
+    if os.path.exists(f): os.remove(f)
+    depot["watchlists"]=[w for w in depot.get("watchlists",[]) if w["id"]!=wl_id]
+    save_depots(depots); return jsonify({"ok":True})
+
+# ── API: Stocks (Bestand) ────────────────────────────────────────
 @app.route("/api/stocks", methods=["GET"])
-def get_stocks():
-    return jsonify(load_stocks())
+def api_get_stocks():
+    did=request.args.get("depot","")
+    depots=load_depots()
+    if not did and depots: did=depots[0]["id"]
+    return jsonify(load_stocks(did))
 
 @app.route("/api/stocks", methods=["POST"])
-def add_stock():
-    body     = request.get_json()
-    ticker   = body.get("ticker", "").strip().upper()
-    name     = body.get("name", "").strip()
-    exchange = body.get("exchange", "").strip()
-    if not ticker or not name:
-        return jsonify({"error": "ticker und name erforderlich"}), 400
-    stocks = load_stocks()
-    if any(s["ticker"] == ticker for s in stocks):
-        return jsonify({"error": f"{name} ist bereits in der Liste"}), 409
-    try:
-        data = fetch_stock_data(ticker)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-    blk = initial_block(data["current_eur"], data["ath_eur"])
-    stock = {
-        "name":                name,
-        "ticker":              ticker,
-        "exchange":            exchange,
-        "current_eur":         data["current_eur"],
-        "ath_eur":             data["ath_eur"],
-        "currency":            data["currency"],
-        "market_time":         data.get("market_time"),
-        "last_notified_block": blk,
-        "updated":             datetime.now().strftime("%d.%m.%Y %H:%M"),
-    }
-    stocks.append(stock)
-    save_stocks(stocks)
-    return jsonify(stock), 201
+def api_add_stock():
+    body=request.get_json()
+    did=body.get("depot",""); ticker=body.get("ticker","").strip().upper()
+    name=body.get("name","").strip(); exchange=body.get("exchange","").strip()
+    if not did or not ticker or not name: return jsonify({"error":"depot, ticker, name erforderlich"}),400
+    stocks=load_stocks(did)
+    if any(s["ticker"]==ticker for s in stocks): return jsonify({"error":f"{name} bereits im Depot"}),409
+    try: data=fetch_stock_data(ticker)
+    except Exception as e: return jsonify({"error":str(e)}),502
+    stock={"name":name,"ticker":ticker,"exchange":exchange,"current_eur":data["current_eur"],
+           "ath_eur":data["ath_eur"],"currency":data["currency"],"market_time":data.get("market_time"),
+           "last_notified_block":initial_block(data["current_eur"],data["ath_eur"]),
+           "updated":datetime.now().strftime("%d.%m.%Y %H:%M")}
+    stocks.append(stock); save_stocks(did,stocks)
+    return jsonify(stock),201
 
 @app.route("/api/stocks/<ticker>", methods=["DELETE"])
-def delete_stock(ticker):
-    stocks = load_stocks()
-    new    = [s for s in stocks if s["ticker"] != ticker.upper()]
-    if len(new) == len(stocks):
-        return jsonify({"error": "Nicht gefunden"}), 404
-    save_stocks(new)
-    return jsonify({"ok": True})
+def api_delete_stock(ticker):
+    did=request.args.get("depot","")
+    stocks=[s for s in load_stocks(did) if s["ticker"]!=ticker.upper()]
+    save_stocks(did,stocks); return jsonify({"ok":True})
 
 @app.route("/api/stocks/<ticker>/refresh", methods=["POST"])
-def refresh_stock(ticker):
-    stocks = load_stocks()
-    idx = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
-    if idx is None:
-        return jsonify({"error": "Nicht gefunden"}), 404
+def api_refresh_stock(ticker):
+    did=request.args.get("depot","")
+    depots=load_depots(); depot=next((d for d in depots if d["id"]==did),{"id":did,"name":did,"apprise_urls":[]})
+    stocks=load_stocks(did)
+    idx=next((i for i,s in enumerate(stocks) if s["ticker"]==ticker.upper()),None)
+    if idx is None: return jsonify({"error":"Nicht gefunden"}),404
     try:
-        data    = fetch_stock_data(ticker)
-        s       = stocks[idx]
-        new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-        new_blk = check_and_notify(s, data["current_eur"], new_ath)
-        stocks[idx] = {
-            **s,
-            "current_eur":         data["current_eur"],
-            "ath_eur":             new_ath,
-            "currency":            data["currency"],
-            "market_time":         data.get("market_time"),
-            "last_notified_block": new_blk,
-            "updated":             datetime.now().strftime("%d.%m.%Y %H:%M"),
-        }
-        save_stocks(stocks)
-        add_log_entry("manual_refresh",
-                      f"Manueller Refresh: {s['name']}",
-                      f"Kurs: {data['current_eur']} EUR | ATH: {new_ath} EUR", True)
+        data=fetch_stock_data(ticker); s=stocks[idx]
+        new_ath=max(data["ath_eur"],s.get("ath_eur",0))
+        new_blk=check_and_notify(s,data["current_eur"],new_ath,f"Bestand: {depot['name']}",depot.get("apprise_urls",[]))
+        stocks[idx]={**_make_stock(data,s),"last_notified_block":new_blk}
+        save_stocks(did,stocks)
+        add_log("manual_refresh",f"Refresh Bestand: {s['name']}",f"Kurs: {data['current_eur']} EUR",True)
         return jsonify(stocks[idx])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+    except Exception as e: return jsonify({"error":str(e)}),502
 
 @app.route("/api/stocks/refresh-all", methods=["POST"])
 def api_refresh_all():
-    refresh_all_stocks(trigger="manual")
-    return jsonify(load_stocks())
+    did=request.args.get("depot","")
+    if did:
+        depots=load_depots(); depot=next((d for d in depots if d["id"]==did),None)
+        if depot:
+            ok,err=_refresh_depot(depot,"manual")
+            add_log("manual_refresh",f"Manueller Refresh: {depot['name']}",f"OK: {len(ok)} Fehler: {len(err)}",len(err)==0)
+        return jsonify(load_stocks(did))
+    refresh_all_depots("manual"); return jsonify({"ok":True})
 
+# ── API: Stocks (Watchlist) ──────────────────────────────────────
+@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks", methods=["GET"])
+def wl_get_stocks(depot_id, wl_id):
+    return jsonify(load_wl_stocks(depot_id, wl_id))
+
+@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks", methods=["POST"])
+def wl_add_stock(depot_id, wl_id):
+    body=request.get_json()
+    ticker=body.get("ticker","").strip().upper(); name=body.get("name","").strip()
+    exchange=body.get("exchange","").strip()
+    if not ticker or not name: return jsonify({"error":"ticker und name erforderlich"}),400
+    stocks=load_wl_stocks(depot_id,wl_id)
+    if any(s["ticker"]==ticker for s in stocks): return jsonify({"error":f"{name} bereits in dieser Beobachtungsliste"}),409
+    try: data=fetch_stock_data(ticker)
+    except Exception as e: return jsonify({"error":str(e)}),502
+    stock={"name":name,"ticker":ticker,"exchange":exchange,"current_eur":data["current_eur"],
+           "ath_eur":data["ath_eur"],"currency":data["currency"],"market_time":data.get("market_time"),
+           "last_notified_block":initial_block(data["current_eur"],data["ath_eur"]),
+           "updated":datetime.now().strftime("%d.%m.%Y %H:%M")}
+    stocks.append(stock); save_wl_stocks(depot_id,wl_id,stocks)
+    return jsonify(stock),201
+
+@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>", methods=["DELETE"])
+def wl_delete_stock(depot_id, wl_id, ticker):
+    stocks=[s for s in load_wl_stocks(depot_id,wl_id) if s["ticker"]!=ticker.upper()]
+    save_wl_stocks(depot_id,wl_id,stocks); return jsonify({"ok":True})
+
+@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>/refresh", methods=["POST"])
+def wl_refresh_stock(depot_id, wl_id, ticker):
+    depots=load_depots(); depot=next((d for d in depots if d["id"]==depot_id),{"name":depot_id,"apprise_urls":[]})
+    wl_name=next((w["name"] for w in depot.get("watchlists",[]) if w["id"]==wl_id),wl_id)
+    stocks=load_wl_stocks(depot_id,wl_id)
+    idx=next((i for i,s in enumerate(stocks) if s["ticker"]==ticker.upper()),None)
+    if idx is None: return jsonify({"error":"Nicht gefunden"}),404
+    try:
+        data=fetch_stock_data(ticker); s=stocks[idx]
+        new_ath=max(data["ath_eur"],s.get("ath_eur",0))
+        new_blk=check_and_notify(s,data["current_eur"],new_ath,f"Beobachtung: {wl_name}",depot.get("apprise_urls",[]))
+        stocks[idx]={**_make_stock(data,s),"last_notified_block":new_blk}
+        save_wl_stocks(depot_id,wl_id,stocks)
+        add_log("manual_refresh",f"Refresh Beobachtung: {s['name']}",f"Liste: {wl_name} | Kurs: {data['current_eur']} EUR",True)
+        return jsonify(stocks[idx])
+    except Exception as e: return jsonify({"error":str(e)}),502
+
+@app.route("/api/stocks/<ticker>/move-to-watchlist", methods=["POST"])
+def move_to_watchlist(ticker):
+    """Aktie aus Bestand in eine Beobachtungsliste verschieben."""
+    body     = request.get_json()
+    depot_id = body.get("depot_id","")
+    wl_id    = body.get("wl_id","")
+    stocks   = load_stocks(depot_id)
+    stock    = next((s for s in stocks if s["ticker"]==ticker.upper()),None)
+    if not stock: return jsonify({"error":"Nicht gefunden"}),404
+    wl_stocks = load_wl_stocks(depot_id,wl_id)
+    if any(s["ticker"]==ticker.upper() for s in wl_stocks):
+        return jsonify({"error":f"{stock['name']} ist bereits in dieser Beobachtungsliste"}),409
+    stock = dict(stock)
+    stock["last_notified_block"] = initial_block(stock["current_eur"],stock["ath_eur"])
+    wl_stocks.append(stock); save_wl_stocks(depot_id,wl_id,wl_stocks)
+    save_stocks(depot_id,[s for s in stocks if s["ticker"]!=ticker.upper()])
+    depots = load_depots(); depot = next((d for d in depots if d["id"]==depot_id),{"name":depot_id})
+    wl_name = next((w["name"] for w in depot.get("watchlists",[]) if w["id"]==wl_id),wl_id)
+    add_log("manual_refresh",f"In Beobachtung verschoben: {stock['name']}",
+            f"Von Bestand '{depot['name']}' zur Beobachtungsliste '{wl_name}'",True)
+    return jsonify({"ok":True})
+
+@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>/move", methods=["POST"])
+def wl_move_to_depot(depot_id, wl_id, ticker):
+    """Aktie aus Beobachtungsliste ins Depot verschieben."""
+    wl_stocks=load_wl_stocks(depot_id,wl_id)
+    stock=next((s for s in wl_stocks if s["ticker"]==ticker.upper()),None)
+    if not stock: return jsonify({"error":"Nicht gefunden"}),404
+    depot_stocks=load_stocks(depot_id)
+    if any(s["ticker"]==ticker.upper() for s in depot_stocks):
+        return jsonify({"error":f"{stock['name']} ist bereits im Depot"}),409
+    # Benachrichtigungsstand zurücksetzen
+    stock=dict(stock); stock["last_notified_block"]=initial_block(stock["current_eur"],stock["ath_eur"])
+    depot_stocks.append(stock); save_stocks(depot_id,depot_stocks)
+    save_wl_stocks(depot_id,wl_id,[s for s in wl_stocks if s["ticker"]!=ticker.upper()])
+    depots=load_depots(); depot=next((d for d in depots if d["id"]==depot_id),{"name":depot_id})
+    wl_name=next((w["name"] for w in depot.get("watchlists",[]) if w["id"]==wl_id),wl_id)
+    add_log("manual_refresh",f"Ins Depot verschoben: {stock['name']}",
+            f"Von Beobachtung '{wl_name}' ins Depot '{depot['name']}'",True)
+    return jsonify({"ok":True,"stock":stock})
+
+# ── API: Search & Settings & Notifications ───────────────────────
 @app.route("/api/search", methods=["GET"])
 def search_companies():
-    q = request.args.get("q", "").strip()
-    if not q:
-        return jsonify([])
-
-    def yahoo_search(query):
-        url = (f"https://query1.finance.yahoo.com/v1/finance/search"
-               f"?q={urlquote(query)}&quotesCount=10&newsCount=0&listsCount=0")
-        r = requests.get(url, headers=YAHOO_HEADERS, timeout=8)
-        r.raise_for_status()
-        results = []
-        for item in r.json().get("quotes", []):
-            qtype = item.get("quoteType", "")
-            if qtype not in ("EQUITY", "ETF", "MUTUALFUND", "INDEX", "CRYPTOCURRENCY"):
-                continue
-            name   = item.get("longname") or item.get("shortname") or item.get("symbol", "")
-            ticker = item.get("symbol", "")
-            exch   = item.get("exchDisp") or item.get("exchange", "")
-            if ticker:
-                results.append({"name": name, "ticker": ticker, "exchange": exch, "type": qtype})
-        return results
-
-    if re.match(r"^[A-Z0-9]{6}$", q.upper()):
+    q=request.args.get("q","").strip()
+    if not q: return jsonify([])
+    def yahoo(query):
+        url=f"https://query1.finance.yahoo.com/v1/finance/search?q={urlquote(query)}&quotesCount=10&newsCount=0&listsCount=0"
+        r=requests.get(url,headers=YH,timeout=8); r.raise_for_status()
+        res=[]
+        for item in r.json().get("quotes",[]):
+            qt=item.get("quoteType","")
+            if qt not in ("EQUITY","ETF","MUTUALFUND","INDEX","CRYPTOCURRENCY"): continue
+            name=item.get("longname") or item.get("shortname") or item.get("symbol","")
+            ticker=item.get("symbol",""); exch=item.get("exchDisp") or item.get("exchange","")
+            if ticker: res.append({"name":name,"ticker":ticker,"exchange":exch,"type":qt})
+        return res
+    if re.match(r"^[A-Z0-9]{6}$",q.upper()):
         try:
-            bff_h = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept":     "application/json",
-                "Origin":     "https://www.boerse-frankfurt.de",
-                "Referer":    "https://www.boerse-frankfurt.de/",
-            }
-            url   = f"https://api.boerse-frankfurt.de/v1/search/quick_search?searchTerms={q.upper()}&limit=6"
-            r     = requests.get(url, headers=bff_h, timeout=8)
-            items = r.json().get("data", [])
-            results = []
-            for item in items:
-                isin    = item.get("isin", "")
-                name    = item.get("name", "")
-                wkn_val = item.get("wkn", q)
-                suffix  = f"  [WKN {wkn_val}]"
+            bh={"User-Agent":"Mozilla/5.0","Accept":"application/json",
+                "Origin":"https://www.boerse-frankfurt.de","Referer":"https://www.boerse-frankfurt.de/"}
+            r=requests.get(f"https://api.boerse-frankfurt.de/v1/search/quick_search?searchTerms={q.upper()}&limit=6",headers=bh,timeout=8)
+            res=[]
+            for item in r.json().get("data",[]):
+                isin=item.get("isin",""); wkn=item.get("wkn",q); sfx=f"  [WKN {wkn}]"
                 try:
-                    yahoo = yahoo_search(isin)
-                    if yahoo:
-                        for y in yahoo:
-                            y["name"] += suffix
-                        results.extend(yahoo[:3])
-                        continue
-                except Exception:
-                    pass
-                results.append({"name": name + suffix, "ticker": isin,
-                                 "exchange": "Frankfurt", "type": "ETF"})
-            if results:
-                return jsonify(results[:10])
-        except Exception as e:
-            log.warning(f"Boerse Frankfurt WKN-Suche fehlgeschlagen: {e}")
-
+                    yres=yahoo(isin)
+                    if yres:
+                        for y in yres: y["name"]+=sfx
+                        res.extend(yres[:3]); continue
+                except Exception: pass
+                res.append({"name":item.get("name","")+sfx,"ticker":isin,"exchange":"Frankfurt","type":"ETF"})
+            if res: return jsonify(res[:10])
+        except Exception as e: log.warning(f"BFF: {e}")
     try:
-        results = yahoo_search(q)
-        if results:
-            return jsonify(results[:10])
-    except Exception as e:
-        log.warning(f"Yahoo Finance Suche fehlgeschlagen: {e}")
-
-    ql = q.lower()
-    fallback = [c for c in COMPANY_DB
-                if ql in c["name"].lower() or ql in c["ticker"].lower() or ql in c["keywords"].lower()]
-    return jsonify(fallback[:10])
+        res=yahoo(q)
+        if res: return jsonify(res[:10])
+    except Exception as e: log.warning(f"Yahoo: {e}")
+    ql=q.lower()
+    return jsonify([c for c in COMPANY_DB if ql in c["name"].lower() or ql in c["ticker"].lower() or ql in c["keywords"].lower()][:10])
 
 @app.route("/api/settings", methods=["GET"])
 def get_settings():
-    s   = load_settings()
-    cfg = load_config()
-    s["next_refresh"]   = get_next_run_info()
-    s["trading_config"] = cfg["trading"]
-    s["timezone"]       = cfg["timezone"]
+    s=load_settings(); cfg=load_config()
+    s["next_refresh"]=get_next_run_info(); s["trading_config"]=cfg["trading"]; s["timezone"]=cfg["timezone"]
     return jsonify(s)
 
 @app.route("/api/settings", methods=["POST"])
 def update_settings():
-    body = request.get_json()
-    s    = load_settings()
-    if "apprise_urls"          in body: s["apprise_urls"]          = body["apprise_urls"]
-    if "notifications_enabled" in body: s["notifications_enabled"] = bool(body["notifications_enabled"])
-    if "refresh_interval"      in body: s["refresh_interval"]      = int(body["refresh_interval"])
-    save_settings(s)
-    return jsonify(s)
+    body=request.get_json(); s=load_settings()
+    if "notifications_enabled" in body: s["notifications_enabled"]=bool(body["notifications_enabled"])
+    if "refresh_interval"      in body: s["refresh_interval"]=int(body["refresh_interval"])
+    save_settings(s); return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
-def get_notifications():
-    return jsonify(list(reversed(load_notifications())))
+def get_notifications(): return jsonify(list(reversed(load_notifications())))
 
 @app.route("/api/notifications/test", methods=["POST"])
 def test_notification():
-    ok = send_apprise("ATH-Tracker Testbenachrichtigung",
-                      "Die Apprise-Verbindung funktioniert korrekt!")
-    return jsonify({"ok": ok})
+    body=request.get_json(silent=True) or {}; urls=body.get("urls",[])
+    ok=send_apprise("ATH-Tracker Testbenachrichtigung","Verbindung funktioniert!",urls)
+    return jsonify({"ok":ok})
 
 @app.route("/api/health", methods=["GET"])
-def health():
-    cfg = load_config()
-    return jsonify({"status": "ok", "time": datetime.now().isoformat(),
-                    "config": cfg, "next_refresh": get_next_run_info()})
+def health(): return jsonify({"status":"ok","time":datetime.now().isoformat(),"next_refresh":get_next_run_info()})
 
-if __name__ == "__main__":
-    start_scheduler()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+if __name__=="__main__":
+    migrate_if_needed(); start_scheduler()
+    app.run(host="0.0.0.0",port=5000,debug=False)
