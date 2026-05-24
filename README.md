@@ -89,7 +89,7 @@ Per depot you can configure individual Apprise notification URLs (tap the ⚙ ic
 Each depot can have multiple watchlists for tracking potential buys.
 
 ```
-[ Christoph ⚙ ] [ Sandra ⚙ ] [ + ]        ← Depot tabs
+[ John ⚙ ] [ Mia ⚙ ] [ + ]        ← Depot tabs
 [ Bestand | 🔍 Tech | 🔍 ETFs | + ]        ← View tabs per depot
 ```
 
