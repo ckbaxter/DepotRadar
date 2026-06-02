@@ -956,6 +956,11 @@ function updateThreshold(val) {
   _buyThreshold = parseInt(val);
   localStorage.setItem("buyThreshold", _buyThreshold);
   document.getElementById("thresholdLabel").textContent = _buyThreshold + "%";
+  // Wert ans Backend senden (für Benachrichtigungen)
+  fetch(`${API}/settings`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({nachkauf_threshold: _buyThreshold})
+  }).catch(()=>{});
   loadCurrentStocks();
 }
 
@@ -1481,6 +1486,10 @@ async function openSettingsModal(){
   const eh = (s.trading&&s.trading.end_hour!=null)   ? s.trading.end_hour   : 23;
   document.getElementById("tradingStart").value = String(sh).padStart(2,"0")+":00";
   document.getElementById("tradingEnd").value   = String(eh).padStart(2,"0")+":00";
+  // Nachkauf-Schwellenwert
+  _buyThreshold = s.nachkauf_threshold || 30;
+  document.getElementById("thresholdSlider").value      = _buyThreshold;
+  document.getElementById("thresholdLabel").textContent = _buyThreshold + "%";
   openModal("settingsModal");
   loadSplitsTable();
 }
@@ -1495,7 +1504,8 @@ async function saveSettings(){
       refresh_interval:      parseInt(document.getElementById("refreshInterval").value),
       notifications_enabled: document.getElementById("notifsEnabled").checked,
       timezone:              document.getElementById("settingsTimezone").value,
-      trading: {days: _tradingDays, start_hour: startH, end_hour: endH}
+      trading:               {days: _tradingDays, start_hour: startH, end_hour: endH},
+      nachkauf_threshold:    _buyThreshold
     })});
   toast("Einstellungen gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
 }
@@ -2232,7 +2242,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v1.8.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v1.9.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
 </div>
 </body>
 </html>
