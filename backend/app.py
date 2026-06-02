@@ -1,4 +1,4 @@
-import json, re, time as time_mod, hashlib, base64, secrets, logging, os
+import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math
 from datetime import datetime, timedelta
 from urllib.parse import quote as urlquote
 
@@ -20,7 +20,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.8.0"
+VERSION           = "1.9.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -101,10 +101,11 @@ def load_settings():
         "notifications_enabled": True,
         "timezone":              cfg["timezone"],
         "trading":               dict(cfg["trading"]),
+        "nachkauf_threshold":    30,
     }
     if os.path.exists(SETTINGS_FILE):
         saved = json.load(open(SETTINGS_FILE, encoding="utf-8"))
-        for key in ("notifications_enabled", "refresh_interval", "timezone"):
+        for key in ("notifications_enabled", "refresh_interval", "timezone", "nachkauf_threshold"):
             if key in saved: s[key] = saved[key]
         if "trading" in saved:
             s["trading"].update(saved["trading"])
@@ -167,7 +168,7 @@ def migrate_if_needed():
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
-def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None):
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
@@ -176,7 +177,8 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         lp         = round(new_ath * (1 - cb / 100), 2)
         link       = f"\n\n{APP_URL}" if APP_URL else ""
         multiplier = 3 if cb >= 60 else (2 if cb >= 40 else 1)
-        title      = f"ATH-Alarm [{label}]: {stock['name']} -{cb}%-Block"
+        nk_icon    = "🛒 " if is_nachkauf else ""
+        title      = f"ATH-Alarm [{label}]: {nk_icon}{stock['name']} -{cb}%-Block"
         # Kaufempfehlung wenn Budget definiert
         buy_line = ""
         if buy_budget:
@@ -186,7 +188,8 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 cost       = round(qty * new_cur, 2)
                 buy_line   = (f"\nKaufempfehlung:  {qty} Stk. "
                               f"(~{cost:.2f} EUR / Budget {multiplier}×{buy_budget:.0f}={eff_budget:.0f} EUR)")
-        body = (f"{stock['name']} ({stock['ticker']}) — {label}\n\n"
+        nk_line = "\n🛒 Nachkauf-Kandidat" if is_nachkauf else ""
+        body = (f"{stock['name']} ({stock['ticker']}) — {label}{nk_line}\n\n"
                 f"Aktueller Kurs:  {new_cur:.2f} EUR\n"
                 f"ATH:             {new_ath:.2f} EUR\n"
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
@@ -336,31 +339,63 @@ def _make_stock(data, old=None):
         "updated":       datetime.now().strftime("%d.%m.%Y %H:%M"),
     }
 
-def _refresh_stock_list(stocks, label, urls, buy_budget=None):
+def _fetch_prices(stocks):
+    """Phase 1: Kurse holen und Stocks aktualisieren — noch keine Benachrichtigungen."""
     ok_list, err_list = [], []
     for i, s in enumerate(stocks):
         try:
-            data    = fetch_stock_data(s["ticker"])
-            new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-            new_blk = check_and_notify(s, data["current_eur"], new_ath, label, urls, buy_budget)
-            stocks[i] = {**_make_stock(data, s), "last_notified_block": new_blk}
+            data      = fetch_stock_data(s["ticker"])
+            stocks[i] = _make_stock(data, s)
             ok_list.append(s["name"])
         except Exception as e:
-            log.error(f"[{label}] {s['name']}: {e}")
+            log.error(f"{s['name']}: {e}")
             err_list.append(f"{s['name']}: {e}")
     return stocks, ok_list, err_list
 
+def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set):
+    """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
+    for i, s in enumerate(stocks):
+        try:
+            is_nk   = s["ticker"] in nachkauf_set
+            new_blk = check_and_notify(
+                s, s["current_eur"], s["ath_eur"],
+                label, urls, buy_budget, is_nk
+            )
+            stocks[i]["last_notified_block"] = new_blk
+        except Exception as e:
+            log.error(f"Notify {s.get('name','?')}: {e}")
+    return stocks
+
 def _refresh_depot(depot, trigger="auto"):
-    did   = depot["id"]; dname = depot["name"]; urls = depot.get("apprise_urls", [])
-    stocks = load_stocks(did)
+    did       = depot["id"]; dname = depot["name"]
+    urls      = depot.get("apprise_urls", [])
     budget    = depot.get("buy_budget") or None
-    stocks, ok, err = _refresh_stock_list(stocks, f"Bestand: {dname}", urls, budget)
-    save_stocks(did, stocks)
+    threshold = load_settings().get("nachkauf_threshold", 30)
+
+    # ── Phase 1: Alle Kurse holen ─────────────────────────────────
+    stocks = load_stocks(did)
+    stocks, ok, err = _fetch_prices(stocks)
+
+    wl_data = {}  # {wl_id: (wl_meta, stocks, ok_list, err_list)}
     for wl in depot.get("watchlists", []):
-        wl_stocks = load_wl_stocks(did, wl["id"])
-        wl_stocks, wok, werr = _refresh_stock_list(wl_stocks, f"Beobachtung: {wl['name']} ({dname})", urls, budget)
-        save_wl_stocks(did, wl["id"], wl_stocks)
+        wls, wok, werr = _fetch_prices(load_wl_stocks(did, wl["id"]))
+        wl_data[wl["id"]] = (wl, wls, wok, werr)
         ok += wok; err += werr
+
+    # ── Phase 2: Nachkauf-Set berechnen ───────────────────────────
+    nachkauf_set    = calc_nachkauf_set(stocks, threshold)
+    wl_nachkauf     = {wl_id: calc_nachkauf_set(wls, threshold)
+                       for wl_id, (_, wls, _, _) in wl_data.items()}
+
+    # ── Phase 3: Benachrichtigungen + Speichern ───────────────────
+    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set)
+    save_stocks(did, stocks)
+
+    for wl_id, (wl, wls, _, _) in wl_data.items():
+        wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
+                                  urls, budget, wl_nachkauf[wl_id])
+        save_wl_stocks(did, wl_id, wls)
+
     return ok, err
 
 def refresh_all_depots(trigger="auto"):
@@ -422,6 +457,27 @@ def start_scheduler():
 
 # ── Parqet OAuth (PKCE) ───────────────────────────────────────────
 _oauth_states = {}
+
+def calc_nachkauf_set(stocks, threshold=30):
+    """
+    Berechnet welche Aktien Nachkauf-Kandidaten sind:
+    ≥20% unter ATH UND in den unteren threshold% nach Positionswert.
+    Gibt ein Set von Tickern zurück.
+    """
+    with_val = [s for s in stocks
+                if s.get("buy_price_eur") and s.get("shares") and s.get("current_eur", 0) > 0]
+    if len(with_val) < 2:
+        return set()
+    values   = sorted(s["current_eur"] * s["shares"] for s in with_val)
+    cutoff_i = max(0, math.ceil(len(values) * threshold / 100) - 1)
+    cutoff   = values[cutoff_i]
+    result   = set()
+    for s in with_val:
+        pos_val  = s["current_eur"] * s["shares"]
+        discount = (s["ath_eur"] - s["current_eur"]) / s["ath_eur"] * 100 if s.get("ath_eur", 0) > 0 else 0
+        if discount >= 20 and pos_val <= cutoff:
+            result.add(s["ticker"])
+    return result
 
 def calc_buy_quantity(budget, multiplier, price):
     """
@@ -1170,6 +1226,8 @@ def update_settings():
         if "days"        in t: s["trading"]["days"]        = [int(d) for d in t["days"]]
         if "start_hour"  in t: s["trading"]["start_hour"]  = int(t["start_hour"])
         if "end_hour"    in t: s["trading"]["end_hour"]     = int(t["end_hour"])
+    if "nachkauf_threshold" in body:
+        s["nachkauf_threshold"] = max(10, min(50, int(body["nachkauf_threshold"])))
     save_settings(s); return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
