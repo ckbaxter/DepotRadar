@@ -5,13 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>ATH-Tracker</title>
 <style>
-:root {
-  --bg:#0f1117; --bg2:#181c27; --bg3:#1e2333; --border:#2a2f42;
-  --text:#e2e6f0; --muted:#7a829a; --accent:#4e7cf6; --accent2:#2a4db5;
-  --green:#22c55e; --yellow:#eab308; --orange:#f97316; --red:#ef4444;
-  --green-bg:rgba(34,197,94,.09); --yellow-bg:rgba(234,179,8,.09);
-  --orange-bg:rgba(249,115,22,.1); --red-bg:rgba(239,68,68,.1);
+:root{
+  --bg:#0f1117;--bg2:#181c27;--bg3:#1e2333;--border:#2a2f42;
+  --text:#e2e6f0;--muted:#7a829a;--accent:#4e7cf6;--accent2:#2a4db5;
+  --green:#22c55e;--yellow:#eab308;--orange:#f97316;--red:#ef4444;
+  --purple:#a855f7;
+  --green-bg:rgba(34,197,94,.09);--yellow-bg:rgba(234,179,8,.09);
+  --orange-bg:rgba(249,115,22,.1);--red-bg:rgba(239,68,68,.1);
   --radius:10px;
+}
+:root.light{
+  --bg:#f4f6fb;--bg2:#ffffff;--bg3:#edf0f7;--border:#d5daea;
+  --text:#1a1d2e;--muted:#6b7280;--accent:#3b6cf0;--accent2:#2a4db5;
+  --green-bg:rgba(34,197,94,.1);--yellow-bg:rgba(234,179,8,.1);
+  --orange-bg:rgba(249,115,22,.12);--red-bg:rgba(239,68,68,.1);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}
@@ -21,42 +28,74 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .logo{font-size:17px;font-weight:700;color:var(--accent);white-space:nowrap}
 .logo span{color:var(--text)}
 .topbar-right{display:flex;gap:6px;flex-shrink:0}
+
+/* Depot tabs */
+.depot-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 12px;display:flex;align-items:center;gap:4px;overflow-x:auto;position:sticky;top:52px;z-index:99;height:44px;-webkit-overflow-scrolling:touch}
+.depot-bar::-webkit-scrollbar{height:3px}
+.depot-bar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.depot-tab{padding:5px 12px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);white-space:nowrap;border:1px solid transparent;transition:all .15s;display:flex;align-items:center;gap:6px;-webkit-tap-highlight-color:transparent;min-height:34px}
+.depot-tab:hover{color:var(--text);background:var(--bg3)}
+.depot-tab.active{background:var(--bg3);color:var(--text);border-color:var(--border)}
+.depot-tab-gear{font-size:12px;opacity:.4;cursor:pointer;transition:opacity .15s;padding:2px 4px;border-radius:4px}
+.depot-tab-gear:hover{opacity:1;color:var(--accent)}
+.bar-add-btn{padding:5px 10px;border-radius:7px;cursor:pointer;font-size:18px;color:var(--muted);border:1px dashed var(--border);background:none;transition:all .15s;flex-shrink:0;line-height:1;min-height:34px;display:flex;align-items:center}
+.bar-add-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+/* View tabs (Bestand / Beobachtungslisten) */
+.view-bar{background:var(--bg);border-bottom:1px solid var(--border);padding:0 12px;display:flex;align-items:center;gap:4px;overflow-x:auto;position:sticky;top:96px;z-index:98;height:40px;-webkit-overflow-scrolling:touch}
+.view-bar::-webkit-scrollbar{height:2px}
+.view-tab{padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);white-space:nowrap;border:1px solid transparent;transition:all .15s;display:flex;align-items:center;gap:5px;-webkit-tap-highlight-color:transparent;min-height:30px}
+.view-tab:hover{color:var(--text);background:var(--bg3)}
+.view-tab.active{background:var(--bg3);color:var(--text);border-color:var(--border)}
+.view-tab.wl{color:var(--purple)}
+.view-tab.wl.active{border-color:var(--purple);background:rgba(168,85,247,.08)}
+.view-tab-gear{font-size:11px;opacity:.4;cursor:pointer;padding:1px 3px;border-radius:3px}
+.view-tab-gear:hover{opacity:1;color:var(--accent)}
+.view-badge{font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(168,85,247,.15);color:var(--purple)}
+
+/* Main */
 .main{padding:16px;max-width:1400px;margin:0 auto}
 
 /* Buttons */
-.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:7px;border:none;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:7px;border:none;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-primary:hover{background:var(--accent2)}
 .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
 .btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-purple{background:rgba(168,85,247,.15);color:var(--purple);border:1px solid rgba(168,85,247,.3)}
+.btn-purple:hover{background:rgba(168,85,247,.25)}
+.btn-danger{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.btn-danger:hover{background:rgba(239,68,68,.2)}
 .btn-sm{padding:5px 10px;font-size:12px}
 .btn:disabled{opacity:.4;cursor:default}
-.icon-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:5px 7px;color:var(--muted);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;font-size:13px}
+.icon-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:5px 7px;color:var(--muted);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;font-size:13px;-webkit-tap-highlight-color:transparent;min-height:34px;min-width:34px;justify-content:center}
 .icon-btn:hover{background:var(--bg3);color:var(--text)}
+.icon-btn.move{border-color:rgba(168,85,247,.3);color:var(--purple)}
+.icon-btn.move:hover{background:rgba(168,85,247,.15)}
 
 /* Summary */
 .summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
 .scard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
-.scard-label{font-size:11px;color:var(--muted);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scard-label{font-size:11px;color:var(--muted);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .scard-val{font-size:20px;font-weight:700}
 @media(max-width:700px){.summary{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:480px){.summary{grid-template-columns:repeat(2,1fr)}}
 
-/* Desktop table */
+/* Watchlist banner */
+.wl-banner{background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:var(--purple);display:flex;align-items:center;gap:8px}
+
+/* Table */
 .table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .table-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap}
-.table-title{font-weight:600;font-size:15px}
-.last-update{font-size:11px;color:var(--muted)}
-.next-refresh{font-size:11px;color:var(--accent)}
-.tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 200px);-webkit-overflow-scrolling:touch}
-table{width:100%;border-collapse:collapse;font-size:13px;min-width:750px}
-thead tr{background:var(--bg3);border-bottom:1px solid var(--border)}
+.tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 310px);-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:800px}
 thead{position:sticky;top:0;z-index:10}
+thead tr{background:var(--bg3);border-bottom:1px solid var(--border)}
 th{padding:9px 12px;text-align:right;font-weight:500;color:var(--muted);white-space:nowrap;font-size:12px;cursor:pointer;user-select:none}
 th:first-child{text-align:left}
 th:hover{color:var(--text)}
-th .sort-arrow{display:inline-block;margin-left:4px;opacity:.4;font-size:10px}
-th.sorted .sort-arrow{opacity:1;color:var(--accent)}
+th .sa{display:inline-block;margin-left:3px;opacity:.4;font-size:10px}
+th.sorted .sa{opacity:1;color:var(--accent)}
 td{padding:10px 12px;text-align:right;border-bottom:1px solid rgba(42,47,66,.5);vertical-align:middle}
 td:first-child{text-align:left}
 tr:last-child td{border-bottom:none}
@@ -65,8 +104,8 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .row-yellow{background:var(--yellow-bg)}
 .row-orange{background:var(--orange-bg)}
 .row-red{background:var(--red-bg)}
-.stock-name{font-weight:600}
-.stock-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.sn{font-weight:600}
+.ss{font-size:11px;color:var(--muted);margin-top:1px}
 .badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600}
 .badge-green{background:rgba(34,197,94,.15);color:var(--green)}
 .badge-yellow{background:rgba(234,179,8,.15);color:var(--yellow)}
@@ -75,15 +114,28 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .lvl-hit{color:var(--green);font-weight:600}
 .lvl-miss{color:var(--muted)}
 .cell-actions{display:flex;gap:3px;justify-content:flex-end}
-.lh{font-size:11px}
+.ts{font-size:10px;color:var(--muted);margin-top:1px}
+.perf-wrap{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px;justify-content:flex-end}
+.pb{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap}
+.pb-up{background:rgba(34,197,94,.12);color:var(--green)}
+.pb-dn{background:rgba(239,68,68,.12);color:var(--red)}
+.pb-neu{background:rgba(122,130,154,.1);color:var(--muted)}
+.theme-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:5px 9px;color:var(--muted);cursor:pointer;font-size:15px;transition:all .15s;min-height:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center}
+.theme-btn:hover{background:var(--bg3);color:var(--text)}
+
+/* Sort bar mobile */
+.sort-bar{display:none;padding:8px 14px;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--bg2)}
+.sort-btn{padding:6px 12px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;min-height:36px;display:flex;align-items:center;gap:4px}
+.sort-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(78,124,246,.1)}
+@media(max-width:640px){.sort-bar{display:flex}}
 
 /* Mobile cards */
 .cards-view{display:none}
 .stock-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.stock-card.wl-card{border-color:rgba(168,85,247,.25)}
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
 .card-name{font-weight:700;font-size:15px}
 .card-sub{font-size:11px;color:var(--muted);margin-top:2px}
-.card-badge-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .card-prices{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
 .card-price-block{background:var(--bg3);border-radius:7px;padding:8px 10px}
 .card-price-label{font-size:10px;color:var(--muted);margin-bottom:3px}
@@ -94,17 +146,8 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .card-level-price{font-size:11px;font-weight:500}
 .card-level.hit .card-level-price{color:var(--green);font-weight:700}
 .card-level.hit .card-level-pct{color:var(--green)}
-.card-actions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end}
-.card-updated{font-size:10px;color:var(--muted);margin-top:6px}
-
-@media(max-width:640px){
-  .tbl-scroll{display:none}
-  .cards-view{display:block}
-  .topbar{padding:0 12px}
-  .main{padding:10px}
-  .topbar-right .btn-ghost{display:none}
-  .topbar-right .btn-notif,.topbar-right .btn-settings,.topbar-right .btn-add{display:inline-flex}
-}
+.card-actions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap}
+@media(max-width:640px){.tbl-scroll{display:none}.cards-view{display:block}.topbar-right .btn-ghost{padding:6px 8px}.btn-label{display:none}}
 
 /* Empty */
 .empty{padding:48px 20px;text-align:center;color:var(--muted)}
@@ -118,30 +161,23 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .modal-title{font-size:16px;font-weight:600}
 .modal-body{padding:20px}
 .modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
-.close-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:0 2px}
+.close-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px;min-width:32px;min-height:32px}
 .close-btn:hover{color:var(--text)}
-
-/* Form */
 .form-group{margin-bottom:15px}
 .form-label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
 .form-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-size:14px;transition:border-color .15s}
 .form-input:focus{outline:none;border-color:var(--accent)}
 .form-input::placeholder{color:var(--muted)}
 .form-hint{font-size:11px;color:var(--muted);margin-top:4px}
-
-/* Search results */
 .search-results{margin-top:7px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;overflow:hidden}
-.search-item{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;cursor:pointer;border-bottom:1px solid rgba(42,47,66,.5);transition:background .1s;gap:8px}
+.search-item{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;cursor:pointer;border-bottom:1px solid rgba(42,47,66,.5);transition:background .1s;gap:8px;min-height:44px}
 .search-item:last-child{border-bottom:none}
 .search-item:hover{background:var(--bg2)}
-.search-item-name{font-weight:500;font-size:13px}
 .si-right{display:flex;gap:6px;align-items:center;flex-shrink:0}
 .ticker-tag{font-size:11px;padding:2px 7px;background:var(--border);border-radius:4px;color:var(--muted);font-weight:600}
 .exch-tag{font-size:11px;color:var(--muted)}
 .type-tag{font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(78,124,246,.15);color:var(--accent)}
 .no-results{padding:14px;text-align:center;color:var(--muted);font-size:13px}
-
-/* Notification history */
 .notif-list{display:flex;flex-direction:column;gap:8px}
 .notif-item{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 13px}
 .notif-item.alert{border-left:3px solid var(--orange)}
@@ -152,28 +188,38 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .notif-title{font-weight:600;font-size:13px;margin-bottom:2px}
 .notif-body{font-size:12px;color:var(--muted);white-space:pre-wrap}
 .notif-meta{font-size:11px;color:var(--muted);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
-
-/* Settings URL list */
 .url-list{display:flex;flex-direction:column;gap:5px;margin-top:6px}
 .url-item{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 10px}
 .url-item span{flex:1;font-size:12px;word-break:break-all}
-.url-item button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0}
+.url-item button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0;min-width:28px;min-height:28px}
 .url-item button:hover{color:var(--red)}
-
-/* Toast */
+.info-box{background:rgba(78,124,246,.08);border:1px solid rgba(78,124,246,.2);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--muted);margin-bottom:12px}
 .toast-wrap{position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:7px;max-width:320px}
 .toast{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:11px 15px;font-size:13px;animation:slideIn .2s ease;box-shadow:0 4px 20px rgba(0,0,0,.4)}
 .toast.ok{border-left:3px solid var(--green)}
 .toast.err{border-left:3px solid var(--red)}
 @keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-
-/* Spinner */
 .spinning{animation:spin .7s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
+.next-refresh{font-size:11px;color:var(--accent)}
+.badge-buy{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3);font-size:11px;padding:3px 7px;border-radius:4px;font-weight:600;display:inline-block;margin-top:3px}
+.btn-buy-filter{min-height:38px;padding:6px 14px;font-size:13px;font-weight:500;background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.25);border-radius:6px;cursor:pointer}
+.btn-buy-filter.active{background:rgba(34,197,94,.25);border-color:#22c55e}
+.threshold-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.threshold-wrap input[type=range]{width:120px;min-height:28px;accent-color:#22c55e}
+.app-version{font-size:10px;color:var(--muted);text-align:center;padding:8px 0 4px;opacity:.5}
 
-/* Info box */
-.info-box{background:rgba(78,124,246,.08);border:1px solid rgba(78,124,246,.2);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--muted);margin-bottom:12px}
-
+.day-btn{min-width:36px;min-height:36px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg3);color:var(--muted);font-size:12px;cursor:pointer;padding:4px 6px}
+.day-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.time-input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  color:var(--fg);font-size:14px;padding:6px 10px;width:110px;min-height:36px}
+.pnl-pos{color:var(--green);font-size:11px;font-weight:600}
+.pnl-neg{color:var(--red);font-size:11px;font-weight:600}
+.pnl-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px;justify-content:flex-end}
+.isin-tag{font-size:10px;color:var(--muted);font-family:monospace}
+.parqet-badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(78,124,246,.15);color:var(--accent);font-weight:600;vertical-align:middle;margin-left:4px}
+.last-update{font-size:11px;color:var(--muted)}
 select.form-input{cursor:pointer}
 </style>
 </head>
@@ -182,17 +228,24 @@ select.form-input{cursor:pointer}
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:10px">
     <div class="logo">ATH<span>-Tracker</span></div>
-    <span style="color:var(--muted);font-size:11px;display:none" id="nextRefreshTop"></span>
   </div>
   <div class="topbar-right">
-    <button class="btn btn-ghost btn-sm btn-notif" onclick="openNotifModal()">📬 Verlauf</button>
-    <button class="btn btn-ghost btn-sm btn-settings" onclick="openSettingsModal()">&#9881; Einstellungen</button>
-    <button class="btn btn-primary btn-sm btn-add" onclick="openAddModal()">+ Aktie hinzufügen</button>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Dark/Light Mode">🌙</button>
+    <button class="btn btn-ghost btn-sm" onclick="openNotifModal()">&#128236;<span class="btn-label"> Verlauf</span></button>
+    <button class="btn btn-ghost btn-sm" onclick="openSettingsModal()">&#9881;<span class="btn-label"> Einstellungen</span></button>
+    <button class="btn btn-primary btn-sm" id="addStockBtn" onclick="openAddModal()">+<span class="btn-label"> Hinzufügen</span></button>
   </div>
 </div>
 
+<!-- Depot tabs -->
+<div class="depot-bar" id="depotBar">
+  <button class="bar-add-btn" onclick="openNewDepotModal()" title="Neues Depot">+</button>
+</div>
+
+<!-- View tabs (Bestand + Watchlists) -->
+<div class="view-bar" id="viewBar"></div>
+
 <div class="main">
-  <!-- Summary -->
   <div class="summary">
     <div class="scard"><div class="scard-label">Aktien gesamt</div><div class="scard-val" id="sc-total" style="color:var(--text)">—</div></div>
     <div class="scard"><div class="scard-label">&lt; 20% unter ATH</div><div class="scard-val" id="sc-green" style="color:var(--green)">—</div></div>
@@ -201,54 +254,66 @@ select.form-input{cursor:pointer}
     <div class="scard"><div class="scard-label">&gt; 60% unter ATH</div><div class="scard-val" id="sc-red" style="color:var(--red)">—</div></div>
   </div>
 
-  <!-- Table wrap -->
   <div class="table-wrap">
     <div class="table-header">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span class="table-title">Meine Aktien</span>
+        <span style="font-weight:600;font-size:15px" id="viewTitle">—</span>
         <span class="last-update" id="lastUpdate"></span>
         <span class="next-refresh" id="nextRefresh"></span>
+        <span class="next-refresh" id="depotBudgetInfo" style="color:var(--green)"></span>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn">&#8635; Alle aktualisieren</button>
     </div>
-
-    <!-- Desktop table -->
+    <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
+  <button class="btn-buy-filter" id="buyFilterBtn" onclick="toggleBuyFilter()">🛒 Nachkauf</button>
+  <div class="threshold-wrap" id="thresholdWrap" style="display:none">
+    <span>Untere</span>
+    <input type="range" id="thresholdSlider" min="10" max="50" step="5" value="30"
+           oninput="updateThreshold(this.value)"/>
+    <span id="thresholdLabel" style="font-weight:600;color:var(--fg);min-width:28px">30%</span>
+    <span>der Positionen nach Wert</span>
+  </div>
+</div>
+<div class="sort-bar" id="sortBar">
+      <span style="font-size:12px;color:var(--muted);align-self:center">Sortierung:</span>
+      <button class="sort-btn" id="sb-name"     onclick="setSortKey('name')">Name</button>
+      <button class="sort-btn" id="sb-current"  onclick="setSortKey('current')">Kurs</button>
+      <button class="sort-btn" id="sb-ath"      onclick="setSortKey('ath')">ATH</button>
+      <button class="sort-btn active" id="sb-discount" onclick="setSortKey('discount')">% v.ATH ▲</button>
+    </div>
     <div class="tbl-scroll">
-      <table id="stockTable">
-        <thead>
-          <tr>
-            <th onclick="setSortKey('name')" id="th-name">Unternehmen <span class="sort-arrow">&#8597;</span></th>
-            <th onclick="setSortKey('current')" id="th-current">Kurs <span class="sort-arrow">&#8597;</span></th>
-            <th onclick="setSortKey('ath')" id="th-ath">ATH <span class="sort-arrow">&#8597;</span></th>
-            <th onclick="setSortKey('discount')" id="th-discount">% v.ATH <span class="sort-arrow">&#8597;</span></th>
-            <th class="lh">&#8722;20%</th>
-            <th class="lh">&#8722;30%</th>
-            <th class="lh">&#8722;40%</th>
-            <th class="lh">&#8722;50%</th>
-            <th class="lh">&#8722;60%</th>
-            <th></th>
-          </tr>
-        </thead>
+      <table>
+        <thead><tr>
+          <th onclick="setSortKey('name')" id="th-name">Unternehmen <span class="sa">&#8597;</span></th>
+          <th onclick="setSortKey('current')" id="th-current">Kurs <span class="sa">&#8597;</span></th>
+          <th onclick="setSortKey('ath')" id="th-ath">ATH <span class="sa">&#8597;</span></th>
+          <th onclick="setSortKey('discount')" id="th-discount" class="sorted">% v.ATH <span class="sa">▲</span></th>
+          <th style="font-size:11px;font-weight:600;color:var(--green)">Kaufempfehlung</th>
+          <th style="font-size:11px;color:var(--orange)">&#8722;20%</th>
+          <th style="font-size:11px;color:var(--orange)">&#8722;30%</th>
+          <th style="font-size:11px;color:var(--red)">&#8722;40%</th>
+          <th style="font-size:11px;color:var(--red)">&#8722;50%</th>
+          <th style="font-size:11px;color:var(--red)">&#8722;60%</th>
+          <th></th>
+        </tr></thead>
         <tbody id="tBody"></tbody>
       </table>
     </div>
-
-    <!-- Mobile cards -->
     <div class="cards-view" id="cardsView"></div>
-
     <div id="emptyState" style="display:none" class="empty">
-      <div class="empty-icon">&#128202;</div>
-      <h3>Noch keine Aktien</h3>
-      <p>+ Aktie hinzufügen um zu starten.</p>
+      <div class="empty-icon" id="emptyIcon">&#128202;</div>
+      <h3 id="emptyTitle">Noch keine Aktien</h3>
+      <p id="emptyText">Tippe auf + Hinzufügen um zu starten.</p>
     </div>
   </div>
 </div>
 
-<!-- Modal: Hinzufügen -->
+<!-- Modal: Aktie hinzufügen -->
 <div class="overlay" id="addModal" style="display:none" onclick="closeIfOverlay(event,'addModal')">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <span class="modal-title">Aktie hinzufügen</span>
+      <span class="modal-title" id="addModalTitle">Aktie hinzufügen</span>
       <button class="close-btn" onclick="closeModal('addModal')">&#215;</button>
     </div>
     <div class="modal-body">
@@ -269,6 +334,203 @@ select.form-input{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal: Neues Depot -->
+<div class="overlay" id="newDepotModal" style="display:none" onclick="closeIfOverlay(event,'newDepotModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <div class="modal-header">
+      <span class="modal-title">Neues Depot</span>
+      <button class="close-btn" onclick="closeModal('newDepotModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="newDepotName" placeholder="z.B. Christoph, Sandra …" autocomplete="off"/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('newDepotModal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="createDepot()">Erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Depot-Einstellungen -->
+<div class="overlay" id="depotSettingsModal" style="display:none" onclick="closeIfOverlay(event,'depotSettingsModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:500px">
+    <div class="modal-header">
+      <span class="modal-title">&#9881; Depot-Einstellungen</span>
+      <button class="close-btn" onclick="closeModal('depotSettingsModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Depot-Name</label>
+        <input class="form-input" id="editDepotName" autocomplete="off"/>
+      </div>
+      <hr style="border:none;border-top:2px solid var(--border);margin:14px 0 12px">
+      <!-- Kaufbudget -->
+      <div class="form-group">
+        <label class="form-label">Kaufbudget <span style="font-weight:400;color:var(--muted)">(optional, in EUR)</span></label>
+        <input class="form-input" id="depotBuyBudget" type="number" min="0" step="10"
+               placeholder="z.B. 200"
+               style="max-width:260px"/>
+        <div class="form-hint">
+          Bei einer Benachrichtigung: wie viele Aktien du kaufen könntest.<br>
+          20–39% → 1× &nbsp;|&nbsp; 40–59% → 2× &nbsp;|&nbsp; ≥60% → 3× Budget
+        </div>
+        <details style="margin-top:6px">
+          <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none">
+            ℹ️ Beispiel
+          </summary>
+          <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.8;background:var(--bg3);border-radius:6px;padding:10px 12px">
+            Budget 200€, Aktie kostet 19€, Abstand −20%:<br>
+            → <b style="color:var(--fg)">11 Stk.</b> für 209€
+            <span style="opacity:.6">(bis zu 20% über Budget erlaubt)</span><br><br>
+            Bei −40%: 2× Budget = 400€ &nbsp;·&nbsp; Bei −60%: 3× Budget = 600€
+          </div>
+        </details>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 12px">
+      <div class="form-group">
+        <label class="form-label">Apprise-URLs (für dieses Depot)</label>
+        <div class="form-hint" style="margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
+        <div class="url-list" id="depotUrlList"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input class="form-input" id="newDepotUrlInput" placeholder="Neue Apprise-URL …" style="flex:1"/>
+          <button class="btn btn-ghost" onclick="addDepotUrl()">+ Add</button>
+        </div>
+      </div>
+      <!-- Parqet Integration -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+        <div style="font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">
+          Parqet Integration
+        </div>
+
+        <!-- Client ID Eingabe -->
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="form-label">Parqet Client ID</label>
+          <div style="display:flex;gap:8px">
+            <input class="form-input" id="parqetClientIdInput"
+                   placeholder="z.B. abc123..." style="flex:1;font-family:monospace;font-size:12px"
+                   oninput="onClientIdChange()"/>
+            <button class="btn btn-ghost btn-sm" id="parqetClientIdSaveBtn"
+                    onclick="saveParqetClientId()" style="white-space:nowrap">Speichern</button>
+          </div>
+        </div>
+
+        <!-- Anleitung -->
+        <details style="margin-bottom:12px">
+          <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none">
+            ℹ️ Wie erstelle ich eine Parqet Integration?
+          </summary>
+          <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.8;background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <b style="color:var(--fg)">Einmalige Einrichtung bei Parqet:</b>
+            <ol style="margin:6px 0 0 16px;padding:0">
+              <li>Gehe zu <a href="https://developer.parqet.com/console" target="_blank"
+                style="color:var(--accent)">developer.parqet.com/console</a> und klicke auf
+                <b style="color:var(--fg)">+ New Integration</b></li>
+              <li><b style="color:var(--fg)">Name:</b> beliebig, z.B.
+                <code style="background:var(--bg2);padding:1px 5px;border-radius:3px">ATH-Tracker</code></li>
+              <li><b style="color:var(--fg)">Scopes:</b> nur
+                <code style="background:var(--bg2);padding:1px 5px;border-radius:3px">read portfolio</code>
+                ankreuzen — <i>write portfolio</i> weglassen</li>
+              <li><b style="color:var(--fg)">Redirect URIs:</b> folgende URL eintragen
+                (exakt so, inkl. <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">/api/parqet/callback</code>):
+                <input id="callbackUrlDisplay" readonly
+                  style="display:block;width:100%;margin:5px 0 2px;background:var(--bg2);
+                         border:1px solid var(--border);border-radius:4px;padding:5px 8px;
+                         color:var(--green);font-family:monospace;font-size:11px;
+                         word-break:break-all;box-sizing:border-box;cursor:text"
+                  value="…"
+                  onclick="this.select()"
+                  title="Tippen → Alles auswählen → Kopieren"/>
+                <span style="font-size:10px;opacity:.7">💡 Tippen → Alles auswählen → Kopieren</span>
+              </li>
+              <li><b style="color:var(--fg)">Create</b> klicken →
+                erscheinende <b style="color:var(--fg)">Client ID</b> kopieren und oben einfügen</li>
+            </ol>
+          </div>
+        </details>
+
+        <!-- Status + Aktionen -->
+        <div id="parqetStatusBox" style="font-size:13px;color:var(--muted);margin-bottom:10px"></div>
+        <div id="parqetActions" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+
+        <!-- Portfolio Picker (nach Connect) -->
+        <div id="parqetPortfolioPicker" style="display:none;margin-top:10px">
+          <label class="form-label">Parqet-Portfolio auswählen</label>
+          <select class="form-input" id="parqetPortfolioSelect"></select>
+          <button class="btn btn-primary btn-sm" style="margin-top:6px"
+                  onclick="confirmParqetPortfolio()">Portfolio verbinden</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" onclick="deleteCurrentDepot()">&#128465; Depot löschen</button>
+      <button class="btn btn-ghost btn-sm" onclick="testDepotNotification()">&#128276; Test</button>
+      <button class="btn btn-ghost" onclick="closeModal('depotSettingsModal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveDepotSettings()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Beobachtungsliste Einstellungen -->
+<div class="overlay" id="wlSettingsModal" style="display:none" onclick="closeIfOverlay(event,'wlSettingsModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <div class="modal-header">
+      <span class="modal-title">&#128269; Beobachtungsliste</span>
+      <button class="close-btn" onclick="closeModal('wlSettingsModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="editWlName" autocomplete="off"/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" onclick="deleteCurrentWl()">&#128465; Liste löschen</button>
+      <button class="btn btn-ghost" onclick="closeModal('wlSettingsModal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveWlSettings()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: In Beobachtungsliste verschieben -->
+<div class="overlay" id="moveToWlModal" style="display:none" onclick="closeIfOverlay(event,'moveToWlModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <div class="modal-header">
+      <span class="modal-title">&#8594; In Beobachtungsliste verschieben</span>
+      <button class="close-btn" onclick="closeModal('moveToWlModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px" id="moveToWlText"></p>
+      <div id="moveToWlList" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('moveToWlModal')">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Neue Beobachtungsliste -->
+<div class="overlay" id="newWlModal" style="display:none" onclick="closeIfOverlay(event,'newWlModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <div class="modal-header">
+      <span class="modal-title">Neue Beobachtungsliste</span>
+      <button class="close-btn" onclick="closeModal('newWlModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="newWlName" placeholder="z.B. Tech-Aktien, ETFs …" autocomplete="off"/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('newWlModal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="createWatchlist()">Erstellen</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Einstellungen -->
 <div class="overlay" id="settingsModal" style="display:none" onclick="closeIfOverlay(event,'settingsModal')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -278,20 +540,12 @@ select.form-input{cursor:pointer}
     </div>
     <div class="modal-body">
       <div class="info-box">
-        Benachrichtigung sobald ein neuer 10%-Block (ab 20%) erstmals unterschritten wird.
-        Bei Erholung und erneutem Abfall wird wieder benachrichtigt.
+        &#128276; Apprise-URLs werden pro Depot konfiguriert — tippe auf das &#9881;-Icon im Depot-Tab.
       </div>
+
+      <!-- Refresh -->
       <div class="form-group">
-        <label class="form-label">Apprise-URLs</label>
-        <div class="form-hint" style="margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> &nbsp;|&nbsp; <code>gotify://host/token</code> &nbsp;|&nbsp; <code>http://apprise:8000/notify/KEY</code></div>
-        <div class="url-list" id="urlList"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <input class="form-input" id="newUrlInput" placeholder="Neue Apprise-URL …" style="flex:1"/>
-          <button class="btn btn-ghost" onclick="addAppriseUrl()">+ Add</button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Automatischer Refresh (Intervall)</label>
+        <label class="form-label">Automatischer Refresh</label>
         <select class="form-input" id="refreshInterval">
           <option value="300">alle 5 Minuten</option>
           <option value="900">alle 15 Minuten</option>
@@ -302,17 +556,111 @@ select.form-input{cursor:pointer}
           <option value="43200">alle 12 Stunden</option>
           <option value="86400">täglich</option>
         </select>
-        <div class="form-hint" id="tradingHint"></div>
       </div>
+
+      <!-- Timezone -->
+      <div class="form-group">
+        <label class="form-label">Zeitzone</label>
+        <select class="form-input" id="settingsTimezone">
+          <option value="Europe/Berlin">🇩🇪  Europe/Berlin (MEZ/MESZ)</option>
+          <option value="Europe/Vienna">🇦🇹  Europe/Vienna</option>
+          <option value="Europe/Zurich">🇨🇭  Europe/Zurich</option>
+          <option value="Europe/London">🇬🇧  Europe/London</option>
+          <option value="Europe/Paris">🇫🇷  Europe/Paris</option>
+          <option value="Europe/Amsterdam">🇳🇱  Europe/Amsterdam</option>
+          <option value="America/New_York">🇺🇸  America/New York (EST/EDT)</option>
+          <option value="America/Chicago">🇺🇸  America/Chicago (CST/CDT)</option>
+          <option value="America/Los_Angeles">🇺🇸  America/Los Angeles (PST/PDT)</option>
+          <option value="Asia/Tokyo">🇯🇵  Asia/Tokyo</option>
+          <option value="Asia/Hong_Kong">🇭🇰  Asia/Hong Kong</option>
+          <option value="Asia/Singapore">🇸🇬  Asia/Singapore</option>
+          <option value="Australia/Sydney">🇦🇺  Australia/Sydney</option>
+          <option value="UTC">🌐  UTC</option>
+        </select>
+      </div>
+
+      <!-- Handelstage -->
+      <div class="form-group">
+        <label class="form-label">Handelstage</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap" id="dayToggles">
+          <button class="day-btn" data-day="0" onclick="toggleDay(0)">Mo</button>
+          <button class="day-btn" data-day="1" onclick="toggleDay(1)">Di</button>
+          <button class="day-btn" data-day="2" onclick="toggleDay(2)">Mi</button>
+          <button class="day-btn" data-day="3" onclick="toggleDay(3)">Do</button>
+          <button class="day-btn" data-day="4" onclick="toggleDay(4)">Fr</button>
+          <button class="day-btn" data-day="5" onclick="toggleDay(5)">Sa</button>
+          <button class="day-btn" data-day="6" onclick="toggleDay(6)">So</button>
+        </div>
+      </div>
+
+      <!-- Handelszeiten -->
+      <div class="form-group">
+        <label class="form-label">Handelszeiten</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label style="font-size:12px;color:var(--muted)">Von</label>
+          <input type="time" class="time-input" id="tradingStart" value="08:00"/>
+          <label style="font-size:12px;color:var(--muted)">bis</label>
+          <input type="time" class="time-input" id="tradingEnd"  value="23:00"/>
+        </div>
+        <div class="form-hint">Außerhalb dieser Zeiten findet kein automatischer Refresh statt.</div>
+      </div>
+
+      <!-- Benachrichtigungen -->
       <div class="form-group">
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
           <input type="checkbox" id="notifsEnabled" style="width:16px;height:16px"/>
           <span>Benachrichtigungen aktiviert</span>
         </label>
       </div>
+
+      <!-- Aktiensplits -->
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 12px">
+      <div class="form-group">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <label class="form-label" style="margin:0">Aktiensplits</label>
+          <button class="btn btn-ghost btn-sm" onclick="openAddSplitForm()"
+                  style="font-size:12px">+ Split hinzufügen</button>
+        </div>
+
+        <!-- Add split form (hidden by default) -->
+        <div id="addSplitForm" style="display:none;background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:500">Neuen Split hinzufügen</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <!-- Aktie aus Depot wählen (durchsuchbar) -->
+            <div style="position:relative">
+              <label class="form-label" style="font-size:11px">Aktie</label>
+              <input class="form-input" id="splitStockSearch" placeholder="Name oder Ticker suchen…"
+                     oninput="onSplitStockSearch(this.value)" autocomplete="off"/>
+              <div id="splitStockResults" style="position:absolute;left:0;right:0;top:100%;z-index:200;
+                   background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+                   max-height:180px;overflow-y:auto;display:none"></div>
+              <div class="form-hint" id="splitIsinHint" style="font-family:monospace;font-size:11px;margin-top:4px"></div>
+            </div>
+            <!-- Datum -->
+            <div>
+              <label class="form-label" style="font-size:11px">Split-Datum</label>
+              <input class="form-input" id="splitDate" type="date" style="max-width:200px"/>
+            </div>
+            <!-- Faktor -->
+            <div>
+              <label class="form-label" style="font-size:11px">Faktor</label>
+              <input class="form-input" id="splitRatio" type="number" min="2" step="1"
+                     placeholder="z.B. 10 (für 10:1)" style="max-width:200px"/>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="closeAddSplitForm()">Abbrechen</button>
+              <button class="btn btn-primary btn-sm" onclick="saveSplit()">Speichern</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Splits list -->
+        <div id="splitsTableBody" style="display:flex;flex-direction:column;gap:6px">
+          <div style="color:var(--muted);font-size:12px;text-align:center;padding:8px">Lädt…</div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="testNotification()">&#128276; Test</button>
       <button class="btn btn-ghost" onclick="closeModal('settingsModal')">Schließen</button>
       <button class="btn btn-primary" onclick="saveSettings()">Speichern</button>
     </div>
@@ -326,8 +674,79 @@ select.form-input{cursor:pointer}
       <span class="modal-title">&#128236; Verlauf</span>
       <button class="close-btn" onclick="closeModal('notifModal')">&#215;</button>
     </div>
+    <div class="modal-body"><div id="notifList"></div></div>
+  </div>
+</div>
+
+<!-- Modal: Parqet ISIN-Konflikt -->
+<div class="overlay" id="parqetMismatchModal" style="display:none" onclick="closeIfOverlay(event,'parqetMismatchModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title">&#9888; ISIN-Konflikt — Prüfung erforderlich</span>
+      <button class="close-btn" onclick="closeModal('parqetMismatchModal')">&#215;</button>
+    </div>
     <div class="modal-body">
-      <div id="notifList"></div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+        Parqet und ATH-Tracker weisen unterschiedliche Namen zur selben ISIN aus.
+        Bitte prüfe jeden Eintrag bevor Einstandskurse übernommen werden.
+      </p>
+      <div id="mismatchList" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('parqetMismatchModal')">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Parqet Import -->
+<div class="overlay" id="parqetImportModal" style="display:none" onclick="closeIfOverlay(event,'parqetImportModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:580px">
+    <div class="modal-header">
+      <span class="modal-title">Parqet Import — Handelsplatz wählen</span>
+      <button class="close-btn" onclick="closeModal('parqetImportModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+        Diese Positionen aus Parqet wurden noch nicht im Depot gefunden. Bitte wähle für jede den passenden Handelsplatz.
+      </p>
+      <div id="parqetImportList" style="display:flex;flex-direction:column;gap:14px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('parqetImportModal')">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ticker ändern -->
+<div class="overlay" id="changeTickerModal" style="display:none" onclick="closeIfOverlay(event,'changeTickerModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title">&#9998; Ticker ändern</span>
+      <button class="close-btn" onclick="closeModal('changeTickerModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div id="ctXetraSuggestion" style="display:none;margin-bottom:14px;padding:12px 14px;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.25);border-radius:8px">
+        <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:6px">&#127482; XETRA EMPFOHLEN</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div>
+            <span id="ctXetraName" style="font-weight:600;font-size:13px"></span>
+            <span id="ctXetraTicker" style="font-size:12px;color:var(--muted);margin-left:6px"></span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="applyXetraSuggestion()">Übernehmen</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Oder manuell suchen:</div>
+      <input class="form-input" id="ctSearchInput" placeholder="Name, Ticker oder ISIN …" autocomplete="off"/>
+      <div id="ctSearchResults" style="margin-top:6px"></div>
+      <div id="ctSelected" style="display:none;margin-top:10px;padding:10px 14px;background:var(--bg3);border:1px solid var(--accent);border-radius:8px">
+        <div id="ctSelectedName" style="font-weight:600"></div>
+        <div id="ctSelectedTicker" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div style="font-size:11px;color:var(--muted);flex:1">Einstandskurs, Stückzahl &amp; ISIN bleiben erhalten.</div>
+      <button class="btn btn-ghost" onclick="closeModal('changeTickerModal')">Abbrechen</button>
+      <button class="btn btn-primary" id="ctConfirmBtn" onclick="confirmChangeTicker()" disabled>Speichern</button>
     </div>
   </div>
 </div>
@@ -336,334 +755,1436 @@ select.form-input{cursor:pointer}
 
 <script>
 const API = "/api";
-let stocksCache = [];
+let depotsCache   = [];
+let activeDepot   = null;
+let activeView    = {type:"depot", id:null, name:"Bestand"}; // type: depot | watchlist
+let stocksCache   = [];
 let selectedCompany = null;
-let appriseUrls = [];
-let sortKey = "discount";
-let sortDir = 1;
-let searchTimer = null;
+let depotUrls     = [];
+let editingDepot  = null;
+let editingWl     = null;
+let sortKey = "discount", sortDir = 1;
+let searchTimer   = null;
 
+const storedDepotId = localStorage.getItem("activeDepot");
+const storedView    = (() => { try { return JSON.parse(localStorage.getItem("activeView")); } catch { return null; } })();
+
+// ── Utils ────────────────────────────────────────────────────────
 const fmtEUR = v => new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(v);
-const fmtPct = v => v.toFixed(1) + " %";
-const disc   = s => s.ath_eur > 0 ? (s.ath_eur - s.current_eur) / s.ath_eur * 100 : 0;
+const fmtPct = v => v.toFixed(1)+" %";
+const disc   = s => s.ath_eur>0?(s.ath_eur-s.current_eur)/s.ath_eur*100:0;
 
 function dcls(d){
-  if(d < 20)  return {row:"row-green",  badge:"badge-green",  col:"var(--green)"};
-  if(d < 40)  return {row:"row-yellow", badge:"badge-yellow", col:"var(--yellow)"};
-  if(d < 60)  return {row:"row-orange", badge:"badge-orange", col:"var(--orange)"};
-  return           {row:"row-red",    badge:"badge-red",    col:"var(--red)"};
+  if(d<20)  return {row:"row-green", badge:"badge-green"};
+  if(d<40)  return {row:"row-yellow",badge:"badge-yellow"};
+  if(d<60)  return {row:"row-orange",badge:"badge-orange"};
+  return         {row:"row-red",   badge:"badge-red"};
+}
+function multiplier(d){
+  if(d<20)  return "";
+  if(d<40)  return " <span style='opacity:.65;font-size:10px'>(1x)</span>";
+  if(d<60)  return " <span style='opacity:.65;font-size:10px'>(2x)</span>";
+  return          " <span style='opacity:.65;font-size:10px'>(3x)</span>";
 }
 
 function toast(msg, ok=true){
-  const d = document.createElement("div");
-  d.className = "toast " + (ok ? "ok" : "err");
-  d.textContent = msg;
-  document.getElementById("toasts").appendChild(d);
-  setTimeout(() => d.remove(), 3500);
+  const d=document.createElement("div"); d.className="toast "+(ok?"ok":"err"); d.textContent=msg;
+  document.getElementById("toasts").appendChild(d); setTimeout(()=>d.remove(),3500);
+}
+
+function isWl(){ return activeView.type==="watchlist"; }
+
+// ── Depot Tabs ────────────────────────────────────────────────────
+async function loadDepots(){
+  const r=await fetch(`${API}/depots`); depotsCache=await r.json();
+  renderDepotTabs();
+  // Set active depot
+  if(!activeDepot && depotsCache.length>0){
+    const saved=depotsCache.find(d=>d.id===storedDepotId);
+    activeDepot=saved||depotsCache[0];
+  } else if(activeDepot){
+    activeDepot=depotsCache.find(d=>d.id===activeDepot.id)||depotsCache[0];
+  }
+  // Restore or default view
+  if(storedView && activeDepot){
+    if(storedView.type==="depot"){ activeView={type:"depot",id:null,name:"Bestand"}; }
+    else {
+      const wl=(activeDepot.watchlists||[]).find(w=>w.id===storedView.id);
+      if(wl) activeView={type:"watchlist",id:wl.id,name:wl.name};
+    }
+  }
+  renderDepotTabs(); renderViewTabs(); loadCurrentStocks();
+}
+
+function renderDepotTabs(){
+  const bar=document.getElementById("depotBar");
+  const addBtn=bar.querySelector(".bar-add-btn");
+  bar.innerHTML="";
+  depotsCache.forEach(d=>{
+    const tab=document.createElement("div");
+    tab.className="depot-tab"+(activeDepot&&activeDepot.id===d.id?" active":"");
+    const dc=d;
+    tab.innerHTML=dc.name+'<span class="depot-tab-gear" title="Depot-Einstellungen">&#9881;</span>';
+    tab.querySelector(".depot-tab-gear").addEventListener("click",e=>{e.stopPropagation();openDepotSettings(dc);});
+    tab.addEventListener("click",()=>switchDepot(dc));
+    bar.appendChild(tab);
+  });
+  bar.appendChild(addBtn);
+}
+
+function switchDepot(depot){
+  activeDepot=depot; activeView={type:"depot",id:null,name:"Bestand"};
+  localStorage.setItem("activeDepot",depot.id);
+  localStorage.setItem("activeView",JSON.stringify(activeView));
+  renderDepotTabs(); renderViewTabs(); loadCurrentStocks();
+}
+
+// ── View Tabs (Bestand + Watchlists) ─────────────────────────────
+function renderViewTabs(){
+  const bar=document.getElementById("viewBar"); bar.innerHTML="";
+  if(!activeDepot) return;
+
+  // Bestand tab
+  const bestand=document.createElement("div");
+  bestand.className="view-tab"+(activeView.type==="depot"?" active":"");
+  bestand.textContent="Bestand";
+  bestand.addEventListener("click",()=>switchView({type:"depot",id:null,name:"Bestand"}));
+  bar.appendChild(bestand);
+
+  // Watchlist tabs
+  (activeDepot.watchlists||[]).forEach(wl=>{
+    const tab=document.createElement("div");
+    tab.className="view-tab wl"+(activeView.type==="watchlist"&&activeView.id===wl.id?" active":"");
+    const w=wl;
+    tab.innerHTML='&#128269; '+w.name+'<span class="view-tab-gear" title="Einstellungen">&#9881;</span>';
+    tab.querySelector(".view-tab-gear").addEventListener("click",e=>{e.stopPropagation();openWlSettings(w);});
+    tab.addEventListener("click",()=>switchView({type:"watchlist",id:w.id,name:w.name}));
+    bar.appendChild(tab);
+  });
+
+  // + Neue Beobachtungsliste
+  const addBtn=document.createElement("button");
+  addBtn.className="bar-add-btn"; addBtn.title="Neue Beobachtungsliste"; addBtn.textContent="+";
+  addBtn.addEventListener("click",openNewWlModal); bar.appendChild(addBtn);
+
+  // Update add button label
+  document.getElementById("addModalTitle").textContent=isWl()?`Zu "${activeView.name}" hinzufügen`:`Zu "${activeDepot.name}" hinzufügen`;
+
+  // Watchlist banner
+  const banner=document.getElementById("wlBanner");
+  if(isWl()){
+    banner.style.display="block";
+    banner.innerHTML=`<div class="wl-banner" style="margin:12px 0 0">&#128269; Beobachtungsliste — Aktien können ins Depot verschoben werden</div>`;
+  } else { banner.style.display="none"; }
+}
+
+function switchView(view){
+  activeView=view;
+  localStorage.setItem("activeView",JSON.stringify(view));
+  renderViewTabs(); loadCurrentStocks();
+}
+
+// ── Load stocks based on current view ───────────────────────────
+async function loadCurrentStocks(){
+  if(!activeDepot) return;
+  updateViewTitle();
+  try {
+    let stocks;
+    if(isWl()){
+      const r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`);
+      stocks=await r.json();
+    } else {
+      const r=await fetch(`${API}/stocks?depot=${activeDepot.id}`);
+      stocks=await r.json();
+    }
+    renderTable(stocks);
+    const times=stocks.filter(s=>s.updated).map(s=>s.updated);
+    if(times.length) document.getElementById("lastUpdate").textContent="Stand: "+times[times.length-1];
+  } catch(e){ toast("Fehler beim Laden",false); }
+}
+
+function updateViewTitle(){
+  const title=document.getElementById("viewTitle");
+  if(!activeDepot){ title.textContent="—"; return; }
+  if(isWl()) title.innerHTML=`${activeDepot.name} — &#128269; ${activeView.name}`;
+  else title.innerHTML=`${activeDepot.name} — Bestand`;
+  // Budget anzeigen
+  const budgetEl=document.getElementById("depotBudgetInfo");
+  if(budgetEl){
+    budgetEl.textContent=activeDepot.buy_budget
+      ? `💰 Budget: ${activeDepot.buy_budget.toLocaleString("de-DE")} €`
+      : "";
+  }
+}
+
+// ── Render table/cards ────────────────────────────────────────────
+// ── Nachkauf-Kandidaten ──────────────────────────────────────────
+let _buyFilterActive = false;
+let _buyThreshold    = parseInt(localStorage.getItem("buyThreshold") || "30");
+
+function markBuyCandidates(stocks) {
+  const withVal = stocks.filter(s => s.buy_price_eur && s.shares && s.current_eur > 0);
+  if(withVal.length < 2) { stocks.forEach(s => s._isBuyCandidate = false); return; }
+  const values    = withVal.map(s => s.current_eur * s.shares).sort((a,b) => a-b);
+  const cutoffIdx = Math.max(0, Math.ceil(values.length * _buyThreshold / 100) - 1);
+  const cutoff    = values[cutoffIdx];
+  stocks.forEach(s => {
+    const posVal   = s.current_eur * (s.shares || 0);
+    const discount = s.ath_eur > 0 ? (s.ath_eur - s.current_eur) / s.ath_eur * 100 : 0;
+    s._isBuyCandidate = !!(s.buy_price_eur && s.shares && discount >= 20 && posVal <= cutoff);
+  });
+}
+
+function toggleBuyFilter() {
+  _buyFilterActive = !_buyFilterActive;
+  document.getElementById("buyFilterBtn").classList.toggle("active", _buyFilterActive);
+  document.getElementById("thresholdWrap").style.display = _buyFilterActive ? "flex" : "none";
+  document.getElementById("thresholdSlider").value       = _buyThreshold;
+  document.getElementById("thresholdLabel").textContent  = _buyThreshold + "%";
+  loadCurrentStocks();
+}
+
+function updateThreshold(val) {
+  _buyThreshold = parseInt(val);
+  localStorage.setItem("buyThreshold", _buyThreshold);
+  document.getElementById("thresholdLabel").textContent = _buyThreshold + "%";
+  loadCurrentStocks();
+}
+
+// ── Parqet Client ID ─────────────────────────────────────────────
+function onClientIdChange(){
+  const val = document.getElementById("parqetClientIdInput").value.trim();
+  document.getElementById("parqetClientIdSaveBtn").style.background =
+    val ? "rgba(78,124,246,.2)" : "";
+}
+
+async function saveParqetClientId(){
+  if(!editingDepot) return;
+  const clientId = document.getElementById("parqetClientIdInput").value.trim();
+  const r = await fetch(`${API}/depots/${editingDepot.id}`,{
+    method:"PUT", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({parqet_client_id: clientId})
+  });
+  if(r.ok){
+    const d = await r.json();
+    // Cache aktualisieren
+    const idx = depotsCache.findIndex(x => x.id === editingDepot.id);
+    if(idx >= 0) depotsCache[idx] = d;
+    editingDepot = d;
+    toast(clientId ? "Client ID gespeichert" : "Client ID entfernt");
+    loadParqetStatus(editingDepot.id);
+  } else {
+    toast("Fehler beim Speichern", false);
+  }
+}
+
+// ── Kaufempfehlung ──────────────────────────────────────────────
+function calcBuyQty(budget, discount, price) {
+  if(!budget || !price || price <= 0 || discount < 20) return null;
+  const mult      = discount >= 60 ? 3 : discount >= 40 ? 2 : 1;
+  const effective = budget * mult;
+  let qty         = Math.floor(effective / price);
+  if(qty < 1) return null;
+  if((qty + 1) * price <= effective * 1.2) qty += 1;
+  return {qty, mult, cost: qty * price, effective};
+}
+
+function buyQtyLabel(budget, discount, price) {
+  const r = calcBuyQty(budget, discount, price);
+  if(!r) return null;
+  return `${r.qty} Stk. · ~${fmtEUR(r.cost)}${r.mult > 1 ? ` (${r.mult}×)` : ""}`;
+}
+
+// ── P&L Berechnung ───────────────────────────────────────────────
+function pnlRow(s){
+  if(!s.buy_price_eur || !s.shares) return "";
+  const pnl_pct = ((s.current_eur - s.buy_price_eur) / s.buy_price_eur * 100);
+  const pnl_eur = (s.current_eur - s.buy_price_eur) * s.shares;
+  const pos = pnl_eur >= 0;
+  const cls = pos ? "pnl-pos" : "pnl-neg";
+  const sign = pos ? "+" : "";
+  const buyBadge = s._isBuyCandidate ? '<span class="badge-buy">🛒 Nachkauf</span>' : "";
+  return `<div class="pnl-row">
+    <span class="${cls}">${sign}${pnl_pct.toFixed(1)}%</span>
+    <span class="${cls}">${sign}${fmtEUR(pnl_eur)}</span>
+    <span style="font-size:10px;color:var(--muted)">${s.shares.toFixed(4).replace(/\.?0+$/,"")} Stk. · Einstand: ${fmtEUR(s.buy_price_eur)}</span>
+    ${buyBadge}
+  </div>`;
+}
+
+// ── Theme Toggle ────────────────────────────────────────────────
+function toggleTheme(){
+  const isLight = document.documentElement.classList.toggle("light");
+  localStorage.setItem("theme", isLight ? "light" : "dark");
+  document.getElementById("themeBtn").textContent = isLight ? "☀️" : "🌙";
+}
+function initTheme(){
+  const t = localStorage.getItem("theme");
+  if(t === "light"){
+    document.documentElement.classList.add("light");
+    document.getElementById("themeBtn").textContent = "☀️";
+  }
+}
+
+// ── Performance Badges ───────────────────────────────────────────
+function perfBadge(val, label){
+  if(val === null || val === undefined) return "";
+  const cls = val > 0.1 ? "pb-up" : val < -0.1 ? "pb-dn" : "pb-neu";
+  const sign = val > 0 ? "+" : "";
+  return `<span class="pb ${cls}">${label} ${sign}${val.toFixed(1)}%</span>`;
+}
+function perfWrap(s){
+  const b = perfBadge(s.perf_1d,"1T") + perfBadge(s.perf_1w,"1W") + perfBadge(s.perf_1m,"1M") + perfBadge(s.perf_3m,"3M");
+  return b ? `<div class="perf-wrap">${b}</div>` : "";
 }
 
 function setSortKey(key){
-  if(sortKey === key) sortDir = -sortDir;
-  else { sortKey = key; sortDir = 1; }
-  ["name","current","ath","discount"].forEach(k => {
-    const th = document.getElementById("th-" + k);
-    if(!th) return;
-    th.classList.toggle("sorted", k === sortKey);
-    const arr = th.querySelector(".sort-arrow");
-    if(arr) arr.textContent = k === sortKey ? (sortDir === 1 ? "▲" : "▼") : "⇅";
+  if(sortKey===key) sortDir=-sortDir; else{sortKey=key;sortDir=1;}
+  ["name","current","ath","discount"].forEach(k=>{
+    const th=document.getElementById("th-"+k); if(!th) return;
+    th.classList.toggle("sorted",k===sortKey);
+    const arr=th.querySelector(".sa"); if(arr) arr.textContent=k===sortKey?(sortDir===1?"▲":"▼"):"⇅";
+    const sb=document.getElementById("sb-"+k); if(!sb) return;
+    sb.classList.toggle("active",k===sortKey);
+    sb.textContent={name:"Name",current:"Kurs",ath:"ATH",discount:"% v.ATH"}[k]+(k===sortKey?(sortDir===1?" ▲":" ▼"):"");
   });
   renderTable(stocksCache);
 }
 
 function sortedStocks(stocks){
-  return [...stocks].sort((a, b) => {
-    let va, vb;
-    if(sortKey === "name")     { va = a.name.toLowerCase();  vb = b.name.toLowerCase(); }
-    else if(sortKey === "current") { va = a.current_eur;    vb = b.current_eur; }
-    else if(sortKey === "ath")     { va = a.ath_eur;        vb = b.ath_eur; }
-    else                           { va = disc(a);          vb = disc(b); }
-    if(va < vb) return -sortDir;
-    if(va > vb) return  sortDir;
-    return 0;
+  return [...stocks].sort((a,b)=>{
+    let va,vb;
+    if(sortKey==="name"){va=a.name.toLowerCase();vb=b.name.toLowerCase();}
+    else if(sortKey==="current"){va=a.current_eur;vb=b.current_eur;}
+    else if(sortKey==="ath"){va=a.ath_eur;vb=b.ath_eur;}
+    else{va=disc(a);vb=disc(b);}
+    return va<vb?-sortDir:va>vb?sortDir:0;
   });
 }
 
-function levelCellTd(ath, cur, pct){
-  const p   = ath * (1 - pct / 100);
-  const hit = cur <= p;
+function levelTd(ath,cur,pct){
+  const p=ath*(1-pct/100),hit=cur<=p;
   return `<td class="${hit?"lvl-hit":"lvl-miss"}" style="font-size:12px">${fmtEUR(p)}${hit?" ✓":""}</td>`;
 }
 
-function renderTable(stocks){
-  stocksCache = stocks;
-  // Summary
-  document.getElementById("sc-total").textContent  = stocks.length;
-  document.getElementById("sc-green").textContent  = stocks.filter(s => disc(s) < 20).length;
-  document.getElementById("sc-yellow").textContent = stocks.filter(s => { const d=disc(s); return d>=20 && d<40; }).length;
-  document.getElementById("sc-orange").textContent = stocks.filter(s => { const d=disc(s); return d>=40 && d<60; }).length;
-  document.getElementById("sc-red").textContent    = stocks.filter(s => disc(s) >= 60).length;
+function moveBtn(ticker){
+  return `<button class="icon-btn move" title="Ins Depot verschieben" onclick="moveToDepot('${ticker}')" style="font-size:11px">&#8594; Depot</button>`;
+}
 
-  const empty = document.getElementById("emptyState");
-  const tscrl = document.querySelector(".tbl-scroll");
-  const cards = document.getElementById("cardsView");
+function renderTable(stocks){
+  stocksCache=stocks;
+  document.getElementById("sc-total").textContent=stocks.length;
+  document.getElementById("sc-green").textContent=stocks.filter(s=>disc(s)<20).length;
+  document.getElementById("sc-yellow").textContent=stocks.filter(s=>{const d=disc(s);return d>=20&&d<40;}).length;
+  document.getElementById("sc-orange").textContent=stocks.filter(s=>{const d=disc(s);return d>=40&&d<60;}).length;
+  document.getElementById("sc-red").textContent=stocks.filter(s=>disc(s)>=60).length;
+
+  const empty=document.getElementById("emptyState");
+  const tscrl=document.querySelector(".tbl-scroll");
+  const cards=document.getElementById("cardsView");
+  const wl=isWl();
 
   if(!stocks.length){
-    empty.style.display = "block";
-    tscrl.style.display = "none";
-    cards.innerHTML = "";
+    empty.style.display="block"; tscrl.style.display="none"; cards.innerHTML="";
+    document.getElementById("emptyIcon").textContent=wl?"🔍":"📊";
+    document.getElementById("emptyTitle").textContent=wl?"Beobachtungsliste ist leer":"Noch keine Aktien";
+    document.getElementById("emptyText").textContent="Tippe auf + Hinzufügen um zu starten.";
     return;
   }
-  empty.style.display = "none";
-  tscrl.style.display = "";
+  empty.style.display="none"; tscrl.style.display="";
 
-  const sorted = sortedStocks(stocks);
+  markBuyCandidates(stocks);
+  if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
+  const sorted=sortedStocks(stocks);
+  const did=activeDepot?activeDepot.id:"";
+  const wlId=activeView.id||"";
 
-  // Desktop tbody
-  document.getElementById("tBody").innerHTML = sorted.map(s => {
-    const d = disc(s); const c = dcls(d);
-    const nm = s.name.length > 26 ? s.name.substring(0,25)+"…" : s.name;
+  // Desktop table
+  document.getElementById("tBody").innerHTML=sorted.map(s=>{
+    const d=disc(s),c=dcls(d);
+    const nm=s.name.length>26?s.name.substring(0,25)+"…":s.name;
+    const wls=(activeDepot&&activeDepot.watchlists)||[];
+      const moveToWlBtn=wls.length>0?`<button class="icon-btn move" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="In Beobachtungsliste" style="font-size:11px">&#8594;&#128269;</button>`:"";
+      const actions=wl
+      ? `<button class="icon-btn" onclick="wlRefreshOne('${s.ticker}',this)" title="Aktualisieren">&#8635;</button>
+         ${moveBtn(s.ticker)}
+         <button class="icon-btn" onclick="wlDeleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="Entfernen">&#128465;</button>`
+      : `<button class="icon-btn" onclick="refreshOne('${s.ticker}','${did}',this)" title="Aktualisieren">&#8635;</button>
+         <button class="icon-btn" onclick="openChangeTickerModal('${s.ticker}')" title="Ticker ändern" style="font-size:12px">&#9998;</button>
+         ${moveToWlBtn}
+         <button class="icon-btn" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')" title="Entfernen">&#128465;</button>`;
     return `<tr class="${c.row}">
-      <td><div class="stock-name">${nm}</div><div class="stock-sub">${s.ticker} · ${s.exchange}</div></td>
-      <td style="font-weight:600">${fmtEUR(s.current_eur)}</td>
+      <td>
+        <div class="sn">${nm}${s.buy_price_eur?'<span class="parqet-badge">P</span>':""}</div>
+        <div class="ss">${s.ticker} · ${s.exchange}${s.isin?` · <span class="isin-tag">${s.isin}</span>`:""}</div>
+        ${pnlRow(s)}
+      </td>
+      <td>
+        <div style="font-weight:600">${fmtEUR(s.current_eur)}</div>
+        ${s.market_time?`<div class="ts">Kurs: ${s.market_time}</div>`:""}
+        ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
+        ${perfWrap(s)}
+      </td>
       <td style="color:var(--muted)">${fmtEUR(s.ath_eur)}</td>
-      <td><span class="badge ${c.badge}">&#8722;${fmtPct(d)}</span></td>
-      ${levelCellTd(s.ath_eur, s.current_eur, 20)}
-      ${levelCellTd(s.ath_eur, s.current_eur, 30)}
-      ${levelCellTd(s.ath_eur, s.current_eur, 40)}
-      ${levelCellTd(s.ath_eur, s.current_eur, 50)}
-      ${levelCellTd(s.ath_eur, s.current_eur, 60)}
-      <td><div class="cell-actions">
-        <button class="icon-btn" title="Aktualisieren" onclick="refreshOne('${s.ticker}', this)">&#8635;</button>
-        <button class="icon-btn" title="Entfernen" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,"\'")}')">&#128465;</button>
-      </div></td>
+      <td><span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span></td>
+      <td style="white-space:nowrap">${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return '<span style="opacity:.3;font-size:12px">—</span>';return `<span style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</span>`+`<br><span style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</span>`;})()}</td>
+      ${levelTd(s.ath_eur,s.current_eur,20)}${levelTd(s.ath_eur,s.current_eur,30)}
+      ${levelTd(s.ath_eur,s.current_eur,40)}${levelTd(s.ath_eur,s.current_eur,50)}
+      ${levelTd(s.ath_eur,s.current_eur,60)}
+      <td><div class="cell-actions">${actions}</div></td>
     </tr>`;
   }).join("");
 
   // Mobile cards
-  cards.innerHTML = sorted.map(s => {
-    const d = disc(s); const c = dcls(d);
-    const levels = [20,30,40,50,60].map(l => {
-      const p = s.ath_eur * (1 - l/100);
-      const hit = s.current_eur <= p;
-      return `<div class="card-level ${hit?"hit":""}">
-        <div class="card-level-pct">&#8722;${l}%</div>
-        <div class="card-level-price">${fmtEUR(p).replace(" EUR","")}</div>
-      </div>`;
+  cards.innerHTML=sorted.map(s=>{
+    const d=disc(s),c=dcls(d);
+    const lvls=[20,30,40,50,60].map(l=>{
+      const p=s.ath_eur*(1-l/100),hit=s.current_eur<=p;
+      return `<div class="card-level ${hit?"hit":""}"><div class="card-level-pct">&#8722;${l}%</div><div class="card-level-price">${fmtEUR(p).replace(" EUR","")}</div></div>`;
     }).join("");
-    return `<div class="stock-card ${c.row}">
+    const wls2=(activeDepot&&activeDepot.watchlists)||[];
+    const moveToWlBtn2=wls2.length>0?`<button class="icon-btn move btn-sm" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" >&#8594;&#128269;</button>`:"";
+    const cardActions=wl
+      ? `<button class="icon-btn btn-sm" onclick="wlRefreshOne('${s.ticker}',this)">&#8635;</button>
+         <button class="icon-btn move btn-sm" onclick="moveToDepot('${s.ticker}')">&#8594; Depot</button>
+         <button class="icon-btn btn-sm" onclick="wlDeleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')">&#128465;</button>`
+      : `<button class="icon-btn btn-sm" onclick="refreshOne('${s.ticker}','${did}',this)">&#8635;</button>
+         <button class="icon-btn btn-sm" onclick="openChangeTickerModal('${s.ticker}')" style="font-size:12px">&#9998;</button>
+         ${moveToWlBtn2}
+         <button class="icon-btn btn-sm" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')">&#128465;</button>`;
+    return `<div class="stock-card ${c.row} ${wl?"wl-card":""}">
       <div class="card-top">
-        <div><div class="card-name">${s.name}</div><div class="card-sub">${s.ticker} · ${s.exchange}</div></div>
-        <div class="card-badge-wrap"><span class="badge ${c.badge}">&#8722;${fmtPct(d)}</span></div>
+        <div>
+          <div class="card-name">${s.name}${s.buy_price_eur?'<span class="parqet-badge">P</span>':""}</div>
+          <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
+          ${pnlRow(s)}
+        </div>
+        <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
       </div>
       <div class="card-prices">
-        <div class="card-price-block"><div class="card-price-label">Kurs</div><div class="card-price-val">${fmtEUR(s.current_eur)}</div></div>
-        <div class="card-price-block"><div class="card-price-label">ATH</div><div class="card-price-val" style="color:var(--muted)">${fmtEUR(s.ath_eur)}</div></div>
+        <div class="card-price-block">
+          <div class="card-price-label">Kurs</div>
+          <div class="card-price-val">${fmtEUR(s.current_eur)}</div>
+          ${s.market_time?`<div class="ts">Kurs: ${s.market_time}</div>`:""}
+          ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
+          ${perfWrap(s)}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px"><div class="card-price-block" style="flex:1;padding:6px 10px"><div class="card-price-label">ATH</div><div class="card-price-val" style="color:var(--muted);font-size:13px">${fmtEUR(s.ath_eur)}</div></div>${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return "";return `<div style="flex:1;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:6px 10px"><div style="font-size:10px;color:var(--muted);margin-bottom:2px">Kaufempfehlung</div><div style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</div><div style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</div></div>`;})()}</div>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Discount-Level:</div>
-      <div class="card-levels">${levels}</div>
-      <div class="card-actions">
-        <button class="icon-btn btn-sm" onclick="refreshOne('${s.ticker}', this)">&#8635; Refresh</button>
-        <button class="icon-btn btn-sm" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,"\'")}')">&#128465;</button>
-      </div>
-      <div class="card-updated">Aktualisiert: ${s.updated || "—"}</div>
+      <div class="card-levels">${lvls}</div>
+      <div class="card-actions">${cardActions}</div>
     </div>`;
   }).join("");
 }
 
-async function loadStocks(){
+// ── Stock actions: Bestand ────────────────────────────────────────
+async function refreshOne(ticker, depotId, btn){
+  const orig=btn.innerHTML; btn.innerHTML='<span class="spinning">&#8635;</span>'; btn.disabled=true;
   try {
-    const r = await fetch(`${API}/stocks`);
-    const stocks = await r.json();
-    renderTable(stocks);
-    const times = stocks.filter(s=>s.updated).map(s=>s.updated);
-    if(times.length) document.getElementById("lastUpdate").textContent = "Stand: " + times[times.length-1];
-  } catch(e){ toast("Fehler beim Laden", false); }
+    const r=await fetch(`${API}/stocks/${ticker}/refresh?depot=${depotId}`,{method:"POST"});
+    if(!r.ok) throw new Error((await r.json()).error);
+    toast("Aktualisiert"); loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message,false); }
+  finally{btn.innerHTML=orig;btn.disabled=false;}
 }
 
-async function loadSchedulerStatus(){
-  try {
-    const r = await fetch(`${API}/settings`);
-    const s = await r.json();
-    if(s.next_refresh){
-      const txt = "Nächster Refresh: " + s.next_refresh;
-      document.getElementById("nextRefresh").textContent = txt;
-      document.getElementById("nextRefreshTop").textContent = txt;
-      document.getElementById("nextRefreshTop").style.display = "";
-    }
-  } catch(e){}
+async function deleteStock(ticker, name, depotId){
+  if(!confirm(`"${name}" wirklich aus dem Bestand entfernen?`)) return;
+  await fetch(`${API}/stocks/${ticker}?depot=${depotId}`,{method:"DELETE"});
+  toast(`${name} entfernt`); loadCurrentStocks();
 }
 
-async function refreshOne(ticker, btn){
-  const orig = btn.innerHTML;
-  btn.innerHTML = '<span class="spinning">&#8635;</span>';
-  btn.disabled = true;
+// ── Stock actions: Watchlist ──────────────────────────────────────
+async function wlRefreshOne(ticker, btn){
+  const orig=btn.innerHTML; btn.innerHTML='<span class="spinning">&#8635;</span>'; btn.disabled=true;
   try {
-    const r = await fetch(`${API}/stocks/${ticker}/refresh`, {method:"POST"});
-    if(!r.ok){ const e=await r.json(); throw new Error(e.error); }
-    toast("Aktualisiert");
-    loadStocks(); loadSchedulerStatus();
-  } catch(e){ toast("Fehler: "+e.message, false); }
-  finally { btn.innerHTML = orig; btn.disabled = false; }
+    const r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}/refresh`,{method:"POST"});
+    if(!r.ok) throw new Error((await r.json()).error);
+    toast("Aktualisiert"); loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message,false); }
+  finally{btn.innerHTML=orig;btn.disabled=false;}
 }
 
+async function wlDeleteStock(ticker, name){
+  if(!confirm(`"${name}" aus der Beobachtungsliste entfernen?`)) return;
+  await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}`,{method:"DELETE"});
+  toast(`${name} entfernt`); loadCurrentStocks();
+}
+
+async function moveToDepot(ticker){
+  const stock=stocksCache.find(s=>s.ticker===ticker); if(!stock) return;
+  if(!confirm(`"${stock.name}" in den Bestand "${activeDepot.name}" verschieben?`)) return;
+  try {
+    const r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}/move`,{method:"POST"});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error);
+    toast(`${stock.name} ins Depot verschoben ✓`); loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message,false); }
+}
+
+// ── Refresh all ───────────────────────────────────────────────────
 async function refreshAll(){
-  const btn = document.getElementById("refreshAllBtn");
-  btn.disabled = true; btn.innerHTML = '<span class="spinning">&#8635;</span> Aktualisiere …';
+  const btn=document.getElementById("refreshAllBtn");
+  btn.disabled=true; btn.innerHTML='<span class="spinning">&#8635;</span> Aktualisiere …';
   try {
-    await fetch(`${API}/stocks/refresh-all`, {method:"POST"});
-    toast("Alle Aktien aktualisiert");
-    loadStocks(); loadSchedulerStatus();
-  } catch(e){ toast("Fehler", false); }
-  finally { btn.innerHTML = "&#8635; Alle aktualisieren"; btn.disabled = false; }
+    if(isWl()){
+      // Alle Aktien in dieser Watchlist aktualisieren
+      for(const s of stocksCache){
+        await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${s.ticker}/refresh`,{method:"POST"});
+      }
+    } else {
+      await fetch(`${API}/stocks/refresh-all?depot=${activeDepot.id}`,{method:"POST"});
+    }
+    toast("Alle aktualisiert"); loadCurrentStocks(); loadSchedulerStatus();
+  } catch(e){ toast("Fehler",false); }
+  finally{btn.innerHTML="&#8635; Alle aktualisieren";btn.disabled=false;}
 }
 
-async function deleteStock(ticker, name){
-  if(!confirm(`"${name}" wirklich entfernen?`)) return;
-  try {
-    await fetch(`${API}/stocks/${ticker}`, {method:"DELETE"});
-    toast(`${name} entfernt`); loadStocks();
-  } catch(e){ toast("Fehler", false); }
-}
-
-// ── Aktie hinzufügen ────────────────────────────────────────────
+// ── Aktie hinzufügen ──────────────────────────────────────────────
 function openAddModal(){
-  selectedCompany = null;
-  document.getElementById("searchInput").value = "";
-  document.getElementById("searchResults").innerHTML = "";
-  document.getElementById("selectedInfo").style.display = "none";
-  document.getElementById("confirmAddBtn").disabled = true;
+  if(!activeDepot){ toast("Bitte zuerst ein Depot wählen",false); return; }
+  selectedCompany=null;
+  document.getElementById("searchInput").value="";
+  document.getElementById("searchResults").innerHTML="";
+  document.getElementById("selectedInfo").style.display="none";
+  document.getElementById("confirmAddBtn").disabled=true;
+  document.getElementById("addModalTitle").textContent=isWl()?`Zu "${activeView.name}" hinzufügen`:`Zu "${activeDepot.name}" hinzufügen`;
   openModal("addModal");
-  setTimeout(() => document.getElementById("searchInput").focus(), 100);
+  setTimeout(()=>document.getElementById("searchInput").focus(),100);
 }
-
-document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("searchInput").addEventListener("input", function(){
-    clearTimeout(searchTimer);
-    const q = this.value.trim();
-    if(q.length < 1){ document.getElementById("searchResults").innerHTML = ""; return; }
-    searchTimer = setTimeout(() => doSearch(q), 300);
-  });
-});
 
 async function doSearch(q){
-  const res = document.getElementById("searchResults");
-  res.innerHTML = '<div class="search-results"><div class="no-results">Suche …</div></div>';
+  const res=document.getElementById("searchResults");
+  res.innerHTML='<div class="search-results"><div class="no-results">Suche …</div></div>';
   try {
-    const r = await fetch(`${API}/search?q=${encodeURIComponent(q)}`);
-    const items = await r.json();
-    if(!items.length){ res.innerHTML = '<div class="search-results"><div class="no-results">Keine Treffer — anderen Namen, Ticker oder WKN versuchen</div></div>'; return; }
-    res.innerHTML = '<div class="search-results">' + items.map((it,i) =>
+    const r=await fetch(`${API}/search?q=${encodeURIComponent(q)}`); const items=await r.json();
+    if(!items.length){res.innerHTML='<div class="search-results"><div class="no-results">Keine Treffer</div></div>';return;}
+    res.innerHTML='<div class="search-results">'+items.map((it,i)=>
       `<div class="search-item" onclick="selectCompany(${i},${JSON.stringify(it).replace(/"/g,'&quot;')})">
-        <span class="search-item-name">${it.name}</span>
+        <span style="font-weight:500;font-size:13px">${it.name}</span>
         <div class="si-right">
           <span class="exch-tag">${it.exchange}</span>
-          ${it.type ? `<span class="type-tag">${it.type}</span>` : ""}
+          ${it.type?`<span class="type-tag">${it.type}`+"</span>":""}
           <span class="ticker-tag">${it.ticker}</span>
         </div>
-      </div>`
-    ).join("") + '</div>';
-  } catch(e){ res.innerHTML = ""; }
+      </div>`).join("")+'</div>';
+  } catch(e){res.innerHTML="";}
 }
 
-function selectCompany(idx, co){
-  selectedCompany = co;
-  document.getElementById("selectedInfo").style.display = "block";
-  document.getElementById("selectedName").textContent = co.name;
-  document.getElementById("selectedTicker").textContent = co.ticker + " · " + co.exchange;
-  document.getElementById("searchResults").innerHTML = "";
-  document.getElementById("searchInput").value = co.name;
-  document.getElementById("confirmAddBtn").disabled = false;
+function selectCompany(idx,co){
+  selectedCompany=co;
+  document.getElementById("selectedInfo").style.display="block";
+  document.getElementById("selectedName").textContent=co.name;
+  document.getElementById("selectedTicker").textContent=co.ticker+" · "+co.exchange;
+  document.getElementById("searchResults").innerHTML="";
+  document.getElementById("searchInput").value=co.name;
+  document.getElementById("confirmAddBtn").disabled=false;
 }
 
 async function confirmAdd(){
-  if(!selectedCompany) return;
-  const btn = document.getElementById("confirmAddBtn");
-  btn.disabled = true; btn.textContent = "Lade Daten …";
+  if(!selectedCompany||!activeDepot) return;
+  const btn=document.getElementById("confirmAddBtn"); btn.disabled=true; btn.textContent="Lade Daten …";
   try {
-    const r = await fetch(`${API}/stocks`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(selectedCompany)});
-    const data = await r.json();
-    if(!r.ok) throw new Error(data.error);
-    toast(`${selectedCompany.name} hinzugefügt!`);
-    closeModal("addModal"); loadStocks();
-  } catch(e){ toast("Fehler: "+e.message, false); btn.disabled=false; btn.textContent="Hinzufügen & laden"; }
-}
-
-// ── Einstellungen ───────────────────────────────────────────────
-async function openSettingsModal(){
-  try {
-    const r = await fetch(`${API}/settings`);
-    const s = await r.json();
-    appriseUrls = s.apprise_urls || [];
-    document.getElementById("refreshInterval").value = s.refresh_interval || 3600;
-    document.getElementById("notifsEnabled").checked = s.notifications_enabled !== false;
-    renderUrlList();
-    // Handelsfenster anzeigen
-    if(s.trading_config) {
-      const tc = s.trading_config;
-      const days = ["Mo","Di","Mi","Do","Fr","Sa","So"];
-      const dnames = (tc.days || [0,1,2,3,4]).map(d => days[d]).join(", ");
-      document.getElementById("tradingHint").textContent =
-        "Nur " + dnames + " | " + tc.start_hour + ":00 – " + tc.end_hour + ":00 Uhr " + (s.timezone || "") + " | Erster Refresh täglich um " + tc.start_hour + ":00 Uhr (config/ath-tracker.yml)";
+    let r;
+    if(isWl()){
+      r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`,{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(selectedCompany)});
+    } else {
+      r=await fetch(`${API}/stocks`,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({...selectedCompany,depot:activeDepot.id})});
     }
-    openModal("settingsModal");
-  } catch(e){ toast("Fehler beim Laden", false); }
+    const data=await r.json(); if(!r.ok) throw new Error(data.error);
+    toast(`${selectedCompany.name} hinzugefügt!`); closeModal("addModal"); loadCurrentStocks();
+  } catch(e){toast("Fehler: "+e.message,false);btn.disabled=false;btn.textContent="Hinzufügen & laden";}
 }
 
-function renderUrlList(){
-  document.getElementById("urlList").innerHTML = appriseUrls.length === 0
-    ? '<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs konfiguriert</div>'
-    : appriseUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeUrl(${i})">&#215;</button></div>`).join("");
+// ── Depot management ──────────────────────────────────────────────
+function openNewDepotModal(){
+  document.getElementById("newDepotName").value=""; openModal("newDepotModal");
+  setTimeout(()=>document.getElementById("newDepotName").focus(),100);
 }
-function addAppriseUrl(){ const v=document.getElementById("newUrlInput").value.trim(); if(!v)return; appriseUrls.push(v); document.getElementById("newUrlInput").value=""; renderUrlList(); }
-function removeUrl(i){ appriseUrls.splice(i,1); renderUrlList(); }
+async function createDepot(){
+  const name=document.getElementById("newDepotName").value.trim(); if(!name) return;
+  const r=await fetch(`${API}/depots`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+  const d=await r.json(); if(!r.ok){toast("Fehler: "+d.error,false);return;}
+  closeModal("newDepotModal"); activeDepot=d; localStorage.setItem("activeDepot",d.id);
+  toast(`Depot "${name}" erstellt`); loadDepots();
+}
+
+function openDepotSettings(depot){
+  editingDepot=depot; depotUrls=[...(depot.apprise_urls||[])];
+  document.getElementById("editDepotName").value = depot.name;
+  document.getElementById("parqetClientIdInput").value = depot.parqet_client_id || "";
+  document.getElementById("depotBuyBudget").value = depot.buy_budget || "";
+  document.getElementById("parqetStatusBox").textContent = "Lade …";
+  document.getElementById("parqetActions").innerHTML = "";
+  document.getElementById("parqetPortfolioPicker").style.display = "none";
+  // Dynamische Callback-URL anzeigen
+  const cbEl = document.getElementById("callbackUrlDisplay");
+  if(cbEl) cbEl.value = window.location.origin + "/api/parqet/callback";
+  renderDepotUrlList(); openModal("depotSettingsModal");
+  setTimeout(()=>document.getElementById("editDepotName").focus(), 100);
+  loadParqetStatus(depot.id);
+}
+function renderDepotUrlList(){
+  document.getElementById("depotUrlList").innerHTML=depotUrls.length===0
+    ?'<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
+    :depotUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeDepotUrl(${i})">&#215;</button></div>`).join("");
+}
+function addDepotUrl(){const v=document.getElementById("newDepotUrlInput").value.trim();if(!v)return;depotUrls.push(v);document.getElementById("newDepotUrlInput").value="";renderDepotUrlList();}
+function removeDepotUrl(i){depotUrls.splice(i,1);renderDepotUrlList();}
+async function saveDepotSettings(){
+  if(!editingDepot) return;
+  const name=document.getElementById("editDepotName").value.trim(); if(!name) return;
+  const budgetVal = document.getElementById("depotBuyBudget").value;
+  const buy_budget = budgetVal ? parseFloat(budgetVal) : null;
+  const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget})});
+  if(!r.ok){toast("Fehler",false);return;}
+  closeModal("depotSettingsModal"); toast("Depot gespeichert");
+  if(activeDepot&&activeDepot.id===editingDepot.id){
+    activeDepot.name=name; activeDepot.apprise_urls=depotUrls; activeDepot.buy_budget=buy_budget;
+  }
+  loadDepots();
+}
+async function deleteCurrentDepot(){
+  if(!editingDepot) return;
+  if(!confirm(`Depot "${editingDepot.name}" und alle Daten löschen?`)) return;
+  const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"DELETE"});
+  if(!r.ok){toast((await r.json()).error,false);return;}
+  closeModal("depotSettingsModal");
+  if(activeDepot&&activeDepot.id===editingDepot.id) activeDepot=null;
+  toast("Depot gelöscht"); loadDepots();
+}
+async function testDepotNotification(){
+  if(!depotUrls.length){toast("Keine URLs konfiguriert",false);return;}
+  const r=await fetch(`${API}/notifications/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({urls:depotUrls})});
+  const d=await r.json(); toast(d.ok?"Test gesendet!":"Fehlgeschlagen",d.ok);
+}
+
+// ── Move Bestand -> Watchlist ─────────────────────────────────────
+let movingTicker = null;
+function openMoveToWlModal(ticker, name){
+  movingTicker = ticker;
+  document.getElementById("moveToWlText").textContent = `"${name}" in welche Beobachtungsliste verschieben?`;
+  const list = document.getElementById("moveToWlList");
+  const wls = activeDepot ? (activeDepot.watchlists || []) : [];
+  list.innerHTML = wls.map(wl =>
+    `<button class="btn btn-ghost" style="justify-content:flex-start;gap:8px" onclick="confirmMoveToWl('${wl.id}','${wl.name.replace(/'/g,"\'")}')">
+      &#128269; ${wl.name}
+    </button>`
+  ).join("");
+  openModal("moveToWlModal");
+}
+async function confirmMoveToWl(wlId, wlName){
+  if(!movingTicker || !activeDepot) return;
+  try {
+    const r = await fetch(`${API}/stocks/${movingTicker}/move-to-watchlist`, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({depot_id:activeDepot.id, wl_id:wlId})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error);
+    closeModal("moveToWlModal");
+    toast(`In "${wlName}" verschoben ✓`);
+    loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message, false); }
+}
+
+// ── Watchlist management ──────────────────────────────────────────
+function openNewWlModal(){
+  document.getElementById("newWlName").value=""; openModal("newWlModal");
+  setTimeout(()=>document.getElementById("newWlName").focus(),100);
+}
+async function createWatchlist(){
+  if(!activeDepot) return;
+  const name=document.getElementById("newWlName").value.trim(); if(!name) return;
+  const r=await fetch(`${API}/depots/${activeDepot.id}/watchlists`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+  const wl=await r.json(); if(!r.ok){toast("Fehler: "+wl.error,false);return;}
+  closeModal("newWlModal"); toast(`Beobachtungsliste "${name}" erstellt`);
+  activeDepot.watchlists=(activeDepot.watchlists||[]); activeDepot.watchlists.push(wl);
+  switchView({type:"watchlist",id:wl.id,name:wl.name});
+  loadDepots();
+}
+function openWlSettings(wl){
+  editingWl=wl; document.getElementById("editWlName").value=wl.name;
+  openModal("wlSettingsModal"); setTimeout(()=>document.getElementById("editWlName").focus(),100);
+}
+async function saveWlSettings(){
+  if(!editingWl||!activeDepot) return;
+  const name=document.getElementById("editWlName").value.trim(); if(!name) return;
+  const r=await fetch(`${API}/depots/${activeDepot.id}/watchlists/${editingWl.id}`,{method:"PUT",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+  if(!r.ok){toast("Fehler",false);return;}
+  closeModal("wlSettingsModal"); toast("Beobachtungsliste gespeichert");
+  if(activeView.id===editingWl.id){activeView.name=name;}
+  loadDepots();
+}
+async function deleteCurrentWl(){
+  if(!editingWl||!activeDepot) return;
+  if(!confirm(`Beobachtungsliste "${editingWl.name}" löschen?`)) return;
+  await fetch(`${API}/depots/${activeDepot.id}/watchlists/${editingWl.id}`,{method:"DELETE"});
+  closeModal("wlSettingsModal"); toast("Beobachtungsliste gelöscht");
+  if(activeView.id===editingWl.id) switchView({type:"depot",id:null,name:"Bestand"});
+  loadDepots();
+}
+
+// ── Settings ──────────────────────────────────────────────────────
+let _tradingDays = [0,1,2,3,4];
+
+function toggleDay(day){
+  const idx = _tradingDays.indexOf(day);
+  if(idx >= 0) _tradingDays.splice(idx,1);
+  else         _tradingDays.push(day);
+  _tradingDays.sort((a,b)=>a-b);
+  updateDayButtons();
+}
+
+function updateDayButtons(){
+  document.querySelectorAll(".day-btn").forEach(btn => {
+    const d = parseInt(btn.dataset.day);
+    btn.classList.toggle("on", _tradingDays.includes(d));
+  });
+}
+
+async function openSettingsModal(){
+  const r=await fetch(`${API}/settings`); const s=await r.json();
+  document.getElementById("refreshInterval").value = s.refresh_interval||3600;
+  document.getElementById("notifsEnabled").checked = s.notifications_enabled!==false;
+  // Timezone
+  const tzEl = document.getElementById("settingsTimezone");
+  if(tzEl) tzEl.value = s.timezone || "Europe/Berlin";
+  // Handelstage
+  _tradingDays = (s.trading&&s.trading.days) ? [...s.trading.days] : [0,1,2,3,4];
+  updateDayButtons();
+  // Handelszeiten
+  const sh = (s.trading&&s.trading.start_hour!=null) ? s.trading.start_hour : 8;
+  const eh = (s.trading&&s.trading.end_hour!=null)   ? s.trading.end_hour   : 23;
+  document.getElementById("tradingStart").value = String(sh).padStart(2,"0")+":00";
+  document.getElementById("tradingEnd").value   = String(eh).padStart(2,"0")+":00";
+  openModal("settingsModal");
+  loadSplitsTable();
+}
 
 async function saveSettings(){
-  try {
-    await fetch(`${API}/settings`, {method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({apprise_urls:appriseUrls, refresh_interval:parseInt(document.getElementById("refreshInterval").value), notifications_enabled:document.getElementById("notifsEnabled").checked})});
-    toast("Gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
-  } catch(e){ toast("Fehler", false); }
+  const startVal = document.getElementById("tradingStart").value; // "08:00"
+  const endVal   = document.getElementById("tradingEnd").value;
+  const startH   = parseInt(startVal.split(":")[0]);
+  const endH     = parseInt(endVal.split(":")[0]);
+  await fetch(`${API}/settings`,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      refresh_interval:      parseInt(document.getElementById("refreshInterval").value),
+      notifications_enabled: document.getElementById("notifsEnabled").checked,
+      timezone:              document.getElementById("settingsTimezone").value,
+      trading: {days: _tradingDays, start_hour: startH, end_hour: endH}
+    })});
+  toast("Einstellungen gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
 }
 
-async function testNotification(){
-  const r = await fetch(`${API}/notifications/test`, {method:"POST"});
-  const d = await r.json();
-  toast(d.ok ? "Testbenachrichtigung gesendet!" : "Fehlgeschlagen — URL prüfen", d.ok);
-}
-
-// ── Verlauf ─────────────────────────────────────────────────────
-const typeLabel = {alert:"🔔 Alarm", auto_refresh:"🔄 Auto-Refresh", manual_refresh:"👆 Manuell", test:"✅ Test"};
-const typeClass = {alert:"alert", auto_refresh:"auto_refresh", manual_refresh:"manual_refresh", test:"test"};
-
+// ── Verlauf ───────────────────────────────────────────────────────
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test"};
+const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",test:"test"};
 async function openNotifModal(){
-  try {
-    const r = await fetch(`${API}/notifications`);
-    const items = await r.json();
-    const list = document.getElementById("notifList");
-    if(!items.length){ list.innerHTML='<div style="color:var(--muted);text-align:center;padding:24px">Noch keine Einträge</div>'; }
-    else {
-      list.innerHTML = '<div class="notif-list">' + items.map(n=>`
-        <div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
-          <div class="notif-title">${typeLabel[n.type]||n.type} &nbsp; ${n.title}</div>
-          <div class="notif-body">${n.body}</div>
-          <div class="notif-meta"><span>${n.time}</span><span>${n.success?"✓ OK":"✗ Fehler"}</span></div>
-        </div>`).join("") + '</div>';
-    }
-    openModal("notifModal");
-  } catch(e){ toast("Fehler", false); }
+  const r=await fetch(`${API}/notifications`); const items=await r.json();
+  const list=document.getElementById("notifList");
+  if(!items.length){list.innerHTML='<div style="color:var(--muted);text-align:center;padding:24px">Noch keine Einträge</div>';}
+  else list.innerHTML='<div class="notif-list">'+items.map(n=>`
+    <div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
+      <div class="notif-title">${typeLabel[n.type]||n.type} &nbsp; ${n.title}</div>
+      <div class="notif-body">${n.body}</div>
+      <div class="notif-meta"><span>${n.time}</span><span>${n.success?"✓ OK":"✗ Fehler"}</span></div>
+    </div>`).join("")+'</div>';
+  openModal("notifModal");
 }
 
-// ── Modal Helpers ───────────────────────────────────────────────
-function openModal(id){ document.getElementById(id).style.display="flex"; }
-function closeModal(id){ document.getElementById(id).style.display="none"; }
-function closeIfOverlay(e,id){ if(e.target===document.getElementById(id)) closeModal(id); }
+// ── Scheduler status ──────────────────────────────────────────────
+async function loadSchedulerStatus(){
+  try {
+    const r=await fetch(`${API}/settings`); const s=await r.json();
+    if(s.next_refresh) document.getElementById("nextRefresh").textContent="Nächster Refresh: "+s.next_refresh;
+  } catch(e){}
+}
 
-// ── Init ────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────
+function openModal(id){document.getElementById(id).style.display="flex";}
+function closeModal(id){document.getElementById(id).style.display="none";}
+function closeIfOverlay(e,id){if(e.target===document.getElementById(id))closeModal(id);}
+
+// ── Parqet Integration ───────────────────────────────────────────
+let _parqetDepotId = null;
+
+async function loadParqetStatus(depotId){
+  _parqetDepotId = depotId;
+  const r = await fetch(`${API}/depots/${depotId}/parqet/status`);
+  const s = await r.json();
+  const box     = document.getElementById("parqetStatusBox");
+  const actions = document.getElementById("parqetActions");
+  const picker  = document.getElementById("parqetPortfolioPicker");
+  picker.style.display = "none";
+  if(!s.has_client_id){
+    box.innerHTML = '<span style="color:var(--muted)">Bitte zuerst eine Client ID eintragen.</span>';
+    actions.innerHTML = "";
+    return;
+  }
+  if(s.connected){
+    const lastSync = s.last_sync ? `Letzter Sync: ${s.last_sync}` : "Noch nicht synchronisiert";
+    const portInfo = s.portfolio_id ? "" : " — Portfolio noch nicht ausgewählt";
+    if(s.needs_reconnect){
+      box.innerHTML = `<span style="color:var(--red)">&#128274; Token abgelaufen</span> &nbsp; <span style="color:var(--muted)">${lastSync}</span>`;
+      actions.innerHTML = `
+        <button class="btn btn-primary btn-sm" onclick="doParqetReconnect()">Neu verbinden</button>
+        <button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
+    } else {
+      box.innerHTML = `<span style="color:var(--green)">&#10003; Verbunden</span> &nbsp; <span style="color:var(--muted)">${lastSync}${portInfo}</span>`;
+      let btns = `<button class="btn btn-ghost btn-sm" onclick="doParqetSync()">&#8635; Sync starten</button>`;
+      if(!s.portfolio_id){
+        btns += `<button class="btn btn-ghost btn-sm" onclick="loadParqetPortfolios()">Portfolio wählen</button>`;
+      }
+      btns += `<button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
+      actions.innerHTML = btns;
+    }
+  } else {
+    box.innerHTML = `<span style="color:var(--muted)">Nicht verbunden</span>`;
+    actions.innerHTML = `<button class="btn btn-primary btn-sm" onclick="doParqetConnect()">Mit Parqet verbinden</button>`;
+  }
+}
+
+async function doParqetConnect(){
+  try {
+    const r = await fetch(`${API}/depots/${_parqetDepotId}/parqet/connect`, {method:"POST"});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error);
+    // Öffne OAuth-URL in neuem Tab
+    window.open(d.auth_url, "_blank", "width=500,height=700");
+    toast("Parqet-Autorisierung geöffnet — bitte im Browser bestätigen");
+    // Poll für Status-Update
+    let polls = 0;
+    const iv = setInterval(async () => {
+      polls++;
+      await loadParqetStatus(_parqetDepotId);
+      const r2 = await fetch(`${API}/depots/${_parqetDepotId}/parqet/status`);
+      const s = await r2.json();
+      if(s.connected || polls > 30) clearInterval(iv);
+      if(s.connected && !s.portfolio_id) loadParqetPortfolios();
+    }, 3000);
+  } catch(e){ toast("Fehler: "+e.message, false); }
+}
+
+async function loadParqetPortfolios(){
+  const picker  = document.getElementById("parqetPortfolioPicker");
+  const sel     = document.getElementById("parqetPortfolioSelect");
+  const actions = document.getElementById("parqetActions");
+  try {
+    const r = await fetch(`${API}/depots/${_parqetDepotId}/parqet/portfolios`);
+    const portfolios = await r.json();
+    if(!r.ok) {
+      const errMsg = portfolios.error || "Fehler";
+      if(errMsg.includes("401") || errMsg.includes("Unauthorized")){
+        // Token abgelaufen -> Reconnect anbieten
+        actions.innerHTML = `
+          <div style="font-size:12px;color:var(--red);margin-bottom:8px">Token abgelaufen — bitte neu verbinden.</div>
+          <button class="btn btn-primary btn-sm" onclick="doParqetReconnect()">Neu verbinden</button>
+          <button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
+        return;
+      }
+      throw new Error(errMsg);
+    }
+    const list = Array.isArray(portfolios) ? portfolios : (portfolios.portfolios || portfolios.items || portfolios.data || []);
+    if(!list.length){
+      actions.innerHTML += '<div style="font-size:12px;color:var(--muted);margin-top:8px">Keine Portfolios gefunden — bitte neu verbinden.</div>';
+      actions.innerHTML += '<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="doParqetReconnect()">Neu verbinden</button>';
+      return;
+    }
+    sel.innerHTML = list.map(p => `<option value="${p.id}">${p.name || p.title || p.id}</option>`).join("");
+    picker.style.display = "block";
+    if(list.length === 1) await confirmParqetPortfolio();
+  } catch(e){ toast("Fehler: "+e.message, false); }
+}
+
+async function doParqetReconnect(){
+  // Token löschen und neu autorisieren
+  await fetch(`${API}/depots/${_parqetDepotId}/parqet/reconnect`, {method:"POST"});
+  await loadParqetStatus(_parqetDepotId);
+  await doParqetConnect();
+}
+
+async function confirmParqetPortfolio(){
+  const sel = document.getElementById("parqetPortfolioSelect");
+  const pid = sel.value;
+  if(!pid) return;
+  await fetch(`${API}/depots/${_parqetDepotId}/parqet/select-portfolio`, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({portfolio_id:pid})});
+  document.getElementById("parqetPortfolioPicker").style.display = "none";
+  toast("Portfolio verbunden — Sync kann gestartet werden");
+  loadParqetStatus(_parqetDepotId);
+}
+
+async function doParqetSync(){
+  toast("Parqet Sync läuft …");
+  try {
+    const r = await fetch(`${API}/depots/${_parqetDepotId}/parqet/sync`, {method:"POST"});
+    const d = await r.json();
+    if(r.status === 401 || d.needs_reconnect){
+      // Token abgelaufen
+      const actions = document.getElementById("parqetActions");
+      actions.innerHTML = `
+        <div style="font-size:12px;color:var(--red);margin-bottom:8px">
+          &#128274; Token abgelaufen — bitte neu verbinden.
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="doParqetReconnect()">Neu verbinden</button>
+        <button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
+      toast("Token abgelaufen — bitte Parqet neu verbinden", false);
+      return;
+    }
+    if(!r.ok) throw new Error(d.error);
+    loadParqetStatus(_parqetDepotId);
+    if(d.updated && d.updated.length > 0){
+      toast(`${d.updated.length} Aktie(n) aktualisiert: ${d.updated.join(", ")}`);
+      loadCurrentStocks();
+    }
+    if(d.mismatches && d.mismatches.length > 0){
+      openMismatchModal(d.mismatches);
+    }
+    if(d.new_stocks && d.new_stocks.length > 0){
+      openParqetImportModal(d.new_stocks);
+    } else if(!d.updated || d.updated.length === 0){
+      toast("Sync abgeschlossen — keine Änderungen");
+    }
+  } catch(e){ toast("Sync Fehler: "+e.message, false); }
+}
+
+async function doParqetDisconnect(){
+  if(!confirm("Parqet-Verbindung trennen?")) return;
+  await fetch(`${API}/depots/${_parqetDepotId}/parqet/disconnect`, {method:"POST"});
+  toast("Parqet-Verbindung getrennt");
+  loadParqetStatus(_parqetDepotId);
+}
+
+// ── Parqet Import Modal ───────────────────────────────────────────
+let _parqetImportItems = [];
+let _parqetImportSearchTimers = {};
+
+async function openParqetImportModal(newStocks){
+  _parqetImportItems = newStocks.map((s,i) => ({...s, selectedTicker:null, idx:i}));
+  const list = document.getElementById("parqetImportList");
+
+  // Header mit "Alle importieren" Button
+  list.innerHTML = `<div style="margin-bottom:12px">
+    <button class="btn btn-primary btn-sm" id="pqiAutoBtn" onclick="pqiAutoImportAll()">
+      &#8987; Alle automatisch suchen &amp; importieren
+    </button>
+    <span style="font-size:11px;color:var(--muted);margin-left:8px">oder einzeln unten auswählen</span>
+  </div>` +
+  _parqetImportItems.map((item,i) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px" id="pqi-${i}">
+      <div style="font-weight:600;font-size:13px;margin-bottom:2px">${item.name || item.isin}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+        ISIN: ${item.isin} &nbsp;·&nbsp; ${item.shares} Stk. &nbsp;·&nbsp; Einstand: ${fmtEUR(item.buy_price_eur)}
+      </div>
+      <div id="pqi-status-${i}" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
+      <input class="form-input" placeholder="Ticker suchen …" autocomplete="off" id="pqi-search-${i}"
+             style="margin-bottom:6px" oninput="pqiSearch(${i},this.value)"/>
+      <div id="pqi-results-${i}"></div>
+      <div id="pqi-selected-${i}" style="display:none;font-size:12px;padding:6px 8px;background:rgba(78,124,246,.08);border:1px solid var(--accent);border-radius:6px;margin-top:6px">
+        <span id="pqi-sel-name-${i}"></span>
+        <button class="btn btn-primary btn-sm" style="margin-left:8px;float:right" onclick="pqiImport(${i})">Importieren</button>
+        <button class="btn btn-ghost btn-sm" style="margin-left:4px;float:right" onclick="pqiClear(${i})">&#215;</button>
+      </div>
+    </div>`).join("");
+
+  openModal("parqetImportModal");
+
+  // Auto-Suche per ISIN für jede Position starten
+  for(let i=0; i<_parqetImportItems.length; i++){
+    await pqiAutoSearch(i);
+  }
+}
+
+async function pqiAutoSearch(idx){
+  const item   = _parqetImportItems[idx];
+  const status = document.getElementById(`pqi-status-${idx}`);
+  const nameEl = document.querySelector(`#pqi-${idx} div`);
+  if(!item.isin) return;
+
+  // Schritt 1: Direkte ISIN→XETRA Zuordnung (schnell, kein API-Call)
+  const xetraMatch = ISIN_TO_XETRA[item.isin];
+  if(xetraMatch){
+    if((!item.name || item.name === item.isin) && nameEl)
+      nameEl.textContent = xetraMatch.name;
+    _parqetImportItems[idx].name = xetraMatch.name || item.name;
+    status.innerHTML = `<span style="color:var(--green)">&#127482; XETRA: ${xetraMatch.ticker}</span>`;
+    pqiSelect(idx, 0, xetraMatch);
+    await pqiImport(idx);
+    return;
+  }
+
+  status.textContent = "Suche …";
+  try {
+    const r = await fetch(`${API}/search?q=${encodeURIComponent(item.isin)}`);
+    const results = await r.json();
+    if(!results.length){
+      status.innerHTML = '<span style="color:var(--muted)">Kein Treffer — bitte manuell suchen.</span>';
+      return;
+    }
+    // Namen aus Suchergebnis ins Card-Header übernehmen falls item.name leer
+    if(!item.name || item.name === item.isin){
+      const foundName = results[0].name.replace(/\s*\[WKN.*?\]/,"").trim();
+      if(foundName && nameEl) nameEl.textContent = foundName;
+      _parqetImportItems[idx].name = foundName;
+    }
+    // Wenn nur no_ticker Ergebnisse: anzeigen aber nicht auto-importieren
+    const tradeable = results.filter(r => !r.no_ticker);
+    if(!tradeable.length){
+      // BFF kennt den Namen, aber kein Yahoo-Ticker → manuell suchen
+      status.innerHTML = `<span style="color:var(--muted)">Gefunden: ${results[0].name.replace(/\s*\[WKN.*?\]/,"").trim()} — bitte Handelsplatz manuell wählen.</span>`;
+      document.getElementById(`pqi-search-${idx}`).value = results[0].name.replace(/\s*\[WKN.*?\]/,"").trim();
+      return;
+    }
+    // Ersten handelbaren Treffer vorauswählen
+    pqiSelect(idx, 0, tradeable[0]);
+    status.textContent = "";
+    // Falls genau einer tradeable -> direkt importieren
+    if(tradeable.length === 1){
+      await pqiImport(idx);
+    }
+  } catch(e){
+    status.textContent = "Suchfehler — bitte manuell suchen.";
+  }
+}
+
+async function pqiAutoImportAll(){
+  const btn = document.getElementById("pqiAutoBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spinning">&#8635;</span> Importiere …';
+  for(let i=0; i<_parqetImportItems.length; i++){
+    const box = document.getElementById(`pqi-${i}`);
+    if(box && box.style.opacity === "0.5") continue; // bereits importiert
+    if(!_parqetImportItems[i].selectedCo){
+      await pqiAutoSearch(i);
+    }
+    if(_parqetImportItems[i].selectedCo){
+      await pqiImport(i);
+    }
+  }
+  btn.innerHTML = "&#10003; Fertig";
+  loadCurrentStocks();
+}
+
+async function pqiSearch(idx, q){
+  clearTimeout(_parqetImportSearchTimers[idx]);
+  const res = document.getElementById(`pqi-results-${idx}`);
+  if(q.length < 1){ res.innerHTML=""; return; }
+  _parqetImportSearchTimers[idx] = setTimeout(async () => {
+    // First try ISIN search
+    const query = _parqetImportItems[idx].isin || q;
+    try {
+      const r = await fetch(`${API}/search?q=${encodeURIComponent(query)}`);
+      const items = await r.json();
+      if(!items.length){ res.innerHTML='<div class="no-results" style="padding:8px;font-size:12px;color:var(--muted)">Keine Treffer</div>'; return; }
+      res.innerHTML = '<div class="search-results">' + items.slice(0,8).map((it,j) =>
+        `<div class="search-item" onclick="pqiSelect(${idx},${j},${JSON.stringify(it).replace(/"/g,'&quot;')})">
+          <span style="font-size:12px;font-weight:500">${it.name}</span>
+          <div class="si-right"><span class="exch-tag">${it.exchange}</span><span class="ticker-tag">${it.ticker}</span></div>
+        </div>`).join("") + '</div>';
+    } catch(e){ res.innerHTML=""; }
+  }, 300);
+}
+
+function pqiSelect(idx, j, co){
+  _parqetImportItems[idx].selectedCo = co;
+  document.getElementById(`pqi-results-${idx}`).innerHTML = "";
+  document.getElementById(`pqi-search-${idx}`).value = co.name;
+  document.getElementById(`pqi-sel-name-${idx}`).textContent = `${co.name} · ${co.ticker} · ${co.exchange}`;
+  document.getElementById(`pqi-selected-${idx}`).style.display = "block";
+}
+
+function pqiClear(idx){
+  _parqetImportItems[idx].selectedCo = null;
+  document.getElementById(`pqi-search-${idx}`).value = "";
+  document.getElementById(`pqi-results-${idx}`).innerHTML = "";
+  document.getElementById(`pqi-selected-${idx}`).style.display = "none";
+}
+
+async function pqiImport(idx){
+  const item = _parqetImportItems[idx];
+  const co   = item.selectedCo;
+  if(!co) return;
+  const btn = document.querySelector(`#pqi-selected-${idx} .btn-primary`);
+  btn.disabled = true; btn.textContent = "Lädt …";
+  try {
+    const r = await fetch(`${API}/depots/${_parqetDepotId}/parqet/import`, {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        ticker: co.ticker, name: co.name, exchange: co.exchange,
+        isin: item.isin, buy_price_eur: item.buy_price_eur, shares: item.shares
+      })
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error);
+    // Mark as done
+    const box = document.getElementById(`pqi-${idx}`);
+    box.style.opacity = "0.5";
+    box.style.pointerEvents = "none";
+    box.querySelector('.form-input').disabled = true;
+    toast(`${co.name} importiert`);
+    loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message, false); btn.disabled=false; btn.textContent="Importieren"; }
+}
+
+// Prüfe URL-Parameter nach OAuth Redirect
+function checkParqetCallback(){
+  const params = new URLSearchParams(window.location.search);
+  const connected = params.get("parqet_connected");
+  const error     = params.get("parqet_error");
+  if(connected){
+    toast("Parqet erfolgreich verbunden!");
+    window.history.replaceState({}, "", window.location.pathname);
+    // Depot-Einstellungen öffnen und Portfolio wählen
+    setTimeout(() => {
+      const depot = depotsCache.find(d => d.id === connected);
+      if(depot){ openDepotSettings(depot); loadParqetPortfolios(); }
+    }, 800);
+  }
+  if(error){
+    toast("Parqet Verbindung fehlgeschlagen: "+error, false);
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+}
+
+// ── Parqet Mismatch Modal ────────────────────────────────────────
+function openMismatchModal(mismatches){
+  const list = document.getElementById("mismatchList");
+  list.innerHTML = mismatches.map((m,i) => `
+    <div style="background:var(--bg3);border:1px solid rgba(234,179,8,.3);border-radius:8px;padding:12px 14px">
+      <div style="font-size:11px;color:var(--yellow);font-weight:600;margin-bottom:6px">
+        &#9888; ISIN: ${m.isin}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:12px">
+        <div style="background:var(--bg2);border-radius:6px;padding:8px">
+          <div style="color:var(--muted);margin-bottom:3px">Parqet</div>
+          <div style="font-weight:600">${m.parqet_name}</div>
+          <div style="color:var(--muted);margin-top:3px">${m.shares} Stk. · Einstand: ${fmtEUR(m.avg_price_eur)}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:6px;padding:8px">
+          <div style="color:var(--muted);margin-bottom:3px">ATH-Tracker</div>
+          <div style="font-weight:600">${m.depot_name}</div>
+          <div style="color:var(--muted);margin-top:3px">${m.depot_ticker}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm"
+          onclick="applyMismatch(${i},${JSON.stringify(m).replace(/"/g,'&quot;')})">
+          &#10003; Übernehmen — gleiche Aktie
+        </button>
+        <button class="btn btn-ghost btn-sm"
+          onclick="this.closest('div[id]').style.opacity='0.4';this.closest('div[id]').style.pointerEvents='none'">
+          &#215; Überspringen
+        </button>
+      </div>
+    </div>`).join("");
+  openModal("parqetMismatchModal");
+}
+
+async function applyMismatch(idx, m){
+  if(!activeDepot) return;
+  try {
+    const r = await fetch(`${API}/depots/${activeDepot.id}/parqet/apply-mismatch`, {
+      method: "POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({isin: m.isin, buy_price_eur: m.avg_price_eur, shares: m.shares})
+    });
+    if(!r.ok) throw new Error((await r.json()).error);
+    toast(`Einstandskurs für ${m.depot_name} übernommen`);
+    // Visuell als erledigt markieren
+    const boxes = document.getElementById("mismatchList").children;
+    if(boxes[idx]) boxes[idx].style.opacity = "0.4";
+    loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message, false); }
+}
+
+// ── XETRA Vorschläge ─────────────────────────────────────────────
+// Direkte ISIN → XETRA Zuordnung für Parqet-Import
+// Kombiniert aus ISIN_MAP (Backend) + bestätigten XETRA_SUGGESTIONS
+const ISIN_TO_XETRA = {
+  // US-Aktien
+  "US0378331005": {ticker:"APC.DE",  name:"Apple",                exchange:"XETRA"},
+  "US5949181045": {ticker:"MSF.DE",  name:"Microsoft",            exchange:"XETRA"},
+  "US0231351067": {ticker:"AMZ.DE",  name:"Amazon",               exchange:"XETRA"},
+  "US02079K3059": {ticker:"ABEA.DE", name:"Alphabet (Class A)",   exchange:"XETRA"},
+  "US02079K1079": {ticker:"ABEA.DE", name:"Alphabet (Class C)",   exchange:"XETRA"},
+  "US67066G1040": {ticker:"NVD.DE",  name:"NVIDIA",               exchange:"XETRA"},
+  "US30303M1027": {ticker:"FB2A.DE", name:"Meta Platforms",       exchange:"XETRA"},
+  "US88160R1014": {ticker:"TL0.DE",  name:"Tesla",                exchange:"XETRA"},
+  "US11135F1012": {ticker:"1YD.DE",  name:"Broadcom",             exchange:"XETRA"},
+  "US6541061031": {ticker:"NFC.DE",  name:"Netflix",              exchange:"XETRA"},
+  "US6701002056": {ticker:"NOV.DE",  name:"Novo Nordisk",         exchange:"XETRA"},
+  "US92826C8394": {ticker:"3V64.DE", name:"Visa",                 exchange:"XETRA"},
+  "US57636Q1040": {ticker:"M4I.DE",  name:"Mastercard",           exchange:"XETRA"},
+  "US70450Y1038": {ticker:"2PP.DE",  name:"PayPal",               exchange:"XETRA"},
+  "US09857L1089": {ticker:"BKH.DE",  name:"Booking Holdings",     exchange:"XETRA"},
+  "US7427181091": {ticker:"PRG.DE",  name:"Procter & Gamble",     exchange:"XETRA"},
+  "US2441991054": {ticker:"DCO.DE",  name:"Deere & Company",      exchange:"XETRA"},
+  "US0846707026": {ticker:"BRYN.DE", name:"Berkshire Hathaway B", exchange:"XETRA"},
+  // DE/EU-Aktien: bereits auf XETRA/EUR gelistet, kein Wechsel nötig
+  "DE0007164600": {ticker:"SAP.DE",  name:"SAP",                  exchange:"XETRA"},
+  "DE000BASF111": {ticker:"BAS.DE",  name:"BASF",                 exchange:"XETRA"},
+  "FR0000121667": {ticker:"EL.DE",   name:"EssilorLuxottica",     exchange:"XETRA"},
+  // Shell/BP: Amsterdam-Listing in EUR bevorzugen
+  "GB00BP6MXD84": {ticker:"SHELL.AS",name:"Shell",                exchange:"Amsterdam"},
+  "GB0007980591": {ticker:"BP.AS",   name:"BP",                   exchange:"Amsterdam"},
+  // ETFs
+  "DE000A0F5UF5": {ticker:"EXXT.DE", name:"iShares Nasdaq 100 UCITS ETF (DE)", exchange:"XETRA"},
+  "IE00B4L5Y983": {ticker:"EUNL.DE", name:"iShares MSCI World UCITS ETF",      exchange:"XETRA"},
+  "IE0031442068": {ticker:"IUSA.DE", name:"iShares Core S&P 500 UCITS ETF",    exchange:"XETRA"},
+};
+
+// Nur bestätigte XETRA-Ticker — für alle anderen: Auto-Suche per ISIN
+const XETRA_SUGGESTIONS = {
+  "AAPL":   {ticker:"APC.DE",   name:"Apple",                 exchange:"XETRA"},
+  "MSFT":   {ticker:"MSF.DE",   name:"Microsoft",             exchange:"XETRA"},
+  "AMZN":   {ticker:"AMZ.DE",   name:"Amazon",                exchange:"XETRA"},
+  "GOOGL":  {ticker:"ABEA.DE",  name:"Alphabet (Class A)",    exchange:"XETRA"},
+  "GOOG":   {ticker:"ABEA.DE",  name:"Alphabet (Class C)",    exchange:"XETRA"},
+  "NVDA":   {ticker:"NVD.DE",   name:"NVIDIA",                exchange:"XETRA"},
+  "META":   {ticker:"FB2A.DE",  name:"Meta Platforms",        exchange:"XETRA"},
+  "TSLA":   {ticker:"TL0.DE",   name:"Tesla",                 exchange:"XETRA"},
+  "AVGO":   {ticker:"1YD.DE",   name:"Broadcom",              exchange:"XETRA"},
+  "NFLX":   {ticker:"NFC.DE",   name:"Netflix",               exchange:"XETRA"},
+  "NVO":    {ticker:"NOV.DE",   name:"Novo Nordisk",          exchange:"XETRA"},
+  "V":      {ticker:"3V64.DE",  name:"Visa",                  exchange:"XETRA"},
+  "BRK-B":  {ticker:"BRYN.DE",  name:"Berkshire Hathaway B",  exchange:"XETRA"},
+  "PYPL":   {ticker:"2PP.DE",   name:"PayPal",                exchange:"XETRA"},
+  "PG":     {ticker:"PRG.DE",   name:"Procter & Gamble",      exchange:"XETRA"},
+  "ASML":   {ticker:"ASML.DE",  name:"ASML",                  exchange:"XETRA"},
+  "AMD":    {ticker:"AMD.DE",   name:"AMD",                   exchange:"XETRA"},
+  "PLTR":   {ticker:"PLTR.DE",  name:"Palantir",              exchange:"XETRA"},
+  "DE":     {ticker:"DCO.DE",   name:"Deere & Company",       exchange:"XETRA"},
+  "IWDA.L": {ticker:"EUNL.DE",  name:"iShares MSCI World",    exchange:"XETRA"},
+  "IDUS.L": {ticker:"IUSA.DE",  name:"iShares S&P 500 Dist",  exchange:"XETRA"},
+  "VUSA.L": {ticker:"VUSA.DE",  name:"Vanguard S&P 500",      exchange:"XETRA"},
+  "VUAA.L": {ticker:"VUAA.DE",  name:"Vanguard S&P 500 Acc",  exchange:"XETRA"},
+};
+
+// ── Ticker ändern ─────────────────────────────────────────────────
+let _ctStock = null;
+let _ctSelected = null;
+let _ctSearchTimer = null;
+
+function openChangeTickerModal(ticker){
+  _ctStock    = stocksCache.find(s => s.ticker === ticker);
+  _ctSelected = null;
+  if(!_ctStock) return;
+
+  // XETRA-Vorschlag prüfen
+  const xetra = XETRA_SUGGESTIONS[ticker.toUpperCase()];
+  const suggBox = document.getElementById("ctXetraSuggestion");
+  if(xetra){
+    document.getElementById("ctXetraName").textContent   = xetra.name;
+    document.getElementById("ctXetraTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
+    suggBox.style.display = "block";
+    // Direkt vorauswählen
+    _ctSelected = xetra;
+    document.getElementById("ctSelected").style.display = "block";
+    document.getElementById("ctSelectedName").textContent   = xetra.name;
+    document.getElementById("ctSelectedTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
+    document.getElementById("ctConfirmBtn").disabled = false;
+  } else {
+    suggBox.style.display = "none";
+    document.getElementById("ctSelected").style.display  = "none";
+    document.getElementById("ctConfirmBtn").disabled = true;
+  }
+
+  document.getElementById("ctSearchInput").value   = "";
+  document.getElementById("ctSearchResults").innerHTML = "";
+  openModal("changeTickerModal");
+  if(!xetra) setTimeout(()=>document.getElementById("ctSearchInput").focus(), 100);
+}
+
+function applyXetraSuggestion(){
+  const xetra = XETRA_SUGGESTIONS[_ctStock.ticker.toUpperCase()];
+  if(!xetra) return;
+  _ctSelected = xetra;
+  document.getElementById("ctSelected").style.display  = "block";
+  document.getElementById("ctSelectedName").textContent   = xetra.name;
+  document.getElementById("ctSelectedTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
+  document.getElementById("ctConfirmBtn").disabled = false;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("ctSearchInput").addEventListener("input", function(){
+    clearTimeout(_ctSearchTimer);
+    const q = this.value.trim();
+    if(q.length < 1){ document.getElementById("ctSearchResults").innerHTML=""; return; }
+    _ctSearchTimer = setTimeout(async () => {
+      const r = await fetch(`${API}/search?q=${encodeURIComponent(q)}`);
+      const items = await r.json();
+      const res = document.getElementById("ctSearchResults");
+      if(!items.length){ res.innerHTML='<div class="no-results" style="padding:8px;font-size:12px;color:var(--muted)">Keine Treffer</div>'; return; }
+      // .DE Ergebnisse nach oben sortieren
+      items.sort((a,b) => (b.ticker.endsWith(".DE")?1:0) - (a.ticker.endsWith(".DE")?1:0));
+      res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
+        `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
+          <span style="font-size:13px;font-weight:500">${it.name}</span>
+          <div class="si-right">
+            ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
+            <span class="exch-tag">${it.exchange}</span>
+            <span class="ticker-tag">${it.ticker}</span>
+          </div>
+        </div>`).join("") + '</div>';
+    }, 300);
+  });
+
+  document.getElementById("searchInput").addEventListener("input",function(){
+    clearTimeout(searchTimer); const q=this.value.trim();
+    if(q.length<1){document.getElementById("searchResults").innerHTML="";return;}
+    searchTimer=setTimeout(()=>doSearch(q),300);
+  });
+  ["newDepotName","newWlName"].forEach(id=>{
+    document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")({newDepotName:createDepot,newWlName:createWatchlist})[id]();});
+  });
+});
+
+function ctSelect(co){
+  _ctSelected = co;
+  document.getElementById("ctSearchResults").innerHTML = "";
+  document.getElementById("ctSearchInput").value = co.name;
+  document.getElementById("ctSelected").style.display  = "block";
+  document.getElementById("ctSelectedName").textContent   = co.name;
+  document.getElementById("ctSelectedTicker").textContent = `${co.ticker} · ${co.exchange}`;
+  document.getElementById("ctConfirmBtn").disabled = false;
+}
+
+async function confirmChangeTicker(){
+  if(!_ctSelected || !_ctStock || !activeDepot) return;
+  const btn = document.getElementById("ctConfirmBtn");
+  btn.disabled = true; btn.textContent = "Lädt …";
+  try {
+    const r = await fetch(
+      `${API}/stocks/${_ctStock.ticker}/change-ticker?depot=${activeDepot.id}`,
+      {method:"POST", headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({ticker:_ctSelected.ticker, name:_ctSelected.name, exchange:_ctSelected.exchange})}
+    );
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error);
+    closeModal("changeTickerModal");
+    toast(`${_ctStock.ticker} → ${_ctSelected.ticker} ✓`);
+    loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message, false); }
+  finally{ btn.disabled=false; btn.textContent="Speichern"; }
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+;
+
+// ── Splits Management ────────────────────────────────────────────
+let _splitIsin = ""; let _splitName = ""; let _splitStocks = [];
+
+async function loadSplitsTable(){
+  try {
+    const r = await fetch(`${API}/splits`); const splits = await r.json();
+    const tbody = document.getElementById("splitsTableBody");
+    if(!splits.length){
+      tbody.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;padding:8px">Noch keine Splits definiert</div>';
+      return;
+    }
+    tbody.innerHTML = splits.map(s => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;
+                  background:var(--bg3);border-radius:7px;border:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name||"—"}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:monospace">${s.isin}</div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);white-space:nowrap">${s.date}</div>
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;min-width:36px;text-align:right">${s.ratio}:1</div>
+        <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--muted);flex-shrink:0"
+          onclick="deleteSplit('${s.isin}','${s.date}')">🗑</button>
+      </div>`).join("");
+  } catch(e){ console.error("Splits:", e); }
+}
+
+async function openAddSplitForm(){
+  document.getElementById("addSplitForm").style.display = "block";
+  document.getElementById("splitStockSearch").value     = "";
+  document.getElementById("splitDate").value            = "";
+  document.getElementById("splitRatio").value           = "";
+  document.getElementById("splitIsinHint").textContent  = "";
+  document.getElementById("splitStockResults").style.display = "none";
+  _splitIsin = "";
+  // Alle Aktien mit ISIN vorladen
+  try {
+    const r   = await fetch(`${API}/splits/stocks-with-isin`);
+    _splitStocks = await r.json();
+  } catch(e){ _splitStocks = []; }
+  setTimeout(()=>document.getElementById("splitStockSearch").focus(), 50);
+}
+
+function onSplitStockSearch(q){
+  const box = document.getElementById("splitStockResults");
+  if(!q){ box.style.display="none"; return; }
+  const ql      = q.toLowerCase();
+  const matches = _splitStocks.filter(s =>
+    s.name.toLowerCase().includes(ql) || s.ticker.toLowerCase().includes(ql)
+  ).slice(0, 8);
+  if(!matches.length){ box.style.display="none"; return; }
+  box.innerHTML = matches.map(s =>
+    `<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border)"
+          onmousedown="selectSplitStock('${s.isin}','${s.name.replace(/'/g,"\'")}','${s.ticker}')">
+      <span style="font-weight:500">${s.name}</span>
+      <span style="font-size:11px;color:var(--muted);margin-left:6px">${s.ticker}</span>
+    </div>`
+  ).join("");
+  box.style.display = "block";
+}
+
+function selectSplitStock(isin, name, ticker){
+  _splitIsin = isin; _splitName = name;
+  document.getElementById("splitStockSearch").value         = `${name} (${ticker})`;
+  document.getElementById("splitStockResults").style.display = "none";
+  document.getElementById("splitIsinHint").textContent       = `ISIN: ${isin}`;
+}
+
+function closeAddSplitForm(){
+  document.getElementById("addSplitForm").style.display = "none";
+  document.getElementById("splitStockResults").style.display = "none";
+}
+
+
+
+async function saveSplit(){
+  const isin = _splitIsin;
+  const date  = document.getElementById("splitDate").value;
+  const ratio = parseInt(document.getElementById("splitRatio").value);
+  if(!isin){ toast("Bitte Aktie auswählen", false); return; }
+  if(!date){ toast("Bitte Datum eingeben", false); return; }
+  if(!ratio || ratio < 2){ toast("Faktor muss ≥ 2 sein", false); return; }
+  const r = await fetch(`${API}/splits`, {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({isin, name: _splitName, date, ratio})
+  });
+  if(r.ok){ toast("Split gespeichert"); closeAddSplitForm(); loadSplitsTable(); }
+  else { const e=await r.json(); toast(e.error||"Fehler", false); }
+}
+
+async function deleteSplit(isin, date){
+  if(!confirm("Split wirklich löschen?")) return;
+  const r = await fetch(`${API}/splits/${encodeURIComponent(isin)}/${date}`, {method:"DELETE"});
+  if(r.ok){ toast("Split gelöscht"); loadSplitsTable(); }
+  else toast("Fehler", false);
+}
+
 setSortKey("discount");
-loadStocks();
+initTheme();
+checkParqetCallback();
+fetch(`${API}/health`).then(r=>r.json()).then(d=>{
+  const el=document.getElementById("backendVersion");
+  if(el) el.textContent=d.version||"—";
+}).catch(()=>{});
+loadDepots();
 loadSchedulerStatus();
-setInterval(loadStocks, 60000);
-setInterval(loadSchedulerStatus, 30000);
+setInterval(loadCurrentStocks,60000);
+setInterval(loadSchedulerStatus,30000);
 </script>
+<div class="app-version" id="versionFooter">
+  Frontend v1.7.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+</div>
 </body>
 </html>
