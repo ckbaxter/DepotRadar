@@ -20,7 +20,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.7.1"
+VERSION           = "1.8.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -72,7 +72,8 @@ def load_config():
 
 # ── File helpers ──────────────────────────────────────────────────
 def _safe(s):            return re.sub(r'[^a-z0-9_\-]', '_', s.lower())
-def depot_file(d):       return os.path.join(DATA_DIR, f"depot_{_safe(d)}.json")
+def depot_file(d):        return os.path.join(DATA_DIR, f"depot_{_safe(d)}.json")
+def depot_backup_file(d): return os.path.join(DATA_DIR, f"depot_{_safe(d)}_backup.json")
 def watchlist_file(d,w): return os.path.join(DATA_DIR, f"wl_{_safe(d)}_{_safe(w)}.json")
 
 def _load_json(path, default):
@@ -591,6 +592,20 @@ def parqet_callback():
     save_depots(depots); log.info(f"Parqet verbunden: {depot_id}")
     return redirect(f"{APP_URL}?parqet_connected={depot_id}")
 
+@app.route("/api/depots/<depot_id>/parqet/undo-sync", methods=["POST"])
+def parqet_undo_sync(depot_id):
+    """Stellt den Depot-Stand vor dem letzten Parqet-Sync wieder her."""
+    bak = depot_backup_file(depot_id)
+    if not os.path.exists(bak):
+        return jsonify({"error": "Kein Backup vorhanden"}), 404
+    import shutil
+    shutil.copy2(bak, depot_file(depot_id))
+    os.remove(bak)
+    add_log("manual_refresh", f"Sync rückgängig gemacht",
+            f"Depot {depot_id} auf Stand vor letztem Sync zurückgesetzt", True)
+    log.info(f"Parqet Sync rückgängig: {depot_id}")
+    return jsonify({"ok": True})
+
 @app.route("/api/depots/<depot_id>/parqet/disconnect", methods=["POST"])
 def parqet_disconnect(depot_id):
     depots = load_depots()
@@ -613,7 +628,8 @@ def parqet_status(depot_id):
     return jsonify({"connected": pq.get("connected", False), "portfolio_id": pq.get("portfolio_id"),
                     "last_sync": pq.get("last_sync"),
                     "has_client_id": bool(get_client_id(depot)),
-                    "needs_reconnect": pq.get("needs_reconnect", False)})
+                    "needs_reconnect": pq.get("needs_reconnect", False),
+                    "has_backup": os.path.exists(depot_backup_file(depot_id))})
 
 @app.route("/api/depots/<depot_id>/parqet/portfolios", methods=["GET"])
 def parqet_portfolios(depot_id):
@@ -699,6 +715,10 @@ def parqet_sync(depot_id):
     # 4) Splitbereinigten Einstand berechnen und abgleichen
     holdings = calculate_holdings(all_activities)
     stocks   = load_stocks(depot_id)
+    # Backup vor dem Sync anlegen
+    import shutil
+    src = depot_file(depot_id); bak = depot_backup_file(depot_id)
+    if os.path.exists(src): shutil.copy2(src, bak)
     updated, new_stocks, mismatches = [], [], []
 
     for isin, h in holdings.items():
