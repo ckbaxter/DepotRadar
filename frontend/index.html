@@ -636,6 +636,14 @@ select.form-input{cursor:pointer}
                    max-height:180px;overflow-y:auto;display:none"></div>
               <div class="form-hint" id="splitIsinHint" style="font-family:monospace;font-size:11px;margin-top:4px"></div>
             </div>
+            <!-- Keine-Treffer Hinweis -->
+            <div id="splitManualIsinWrap" style="display:none">
+              <div style="font-size:12px;color:var(--muted);background:var(--bg3);border-radius:6px;padding:10px 12px;line-height:1.6">
+                &#9432; Aktie nicht gefunden.<br>
+                Stelle sicher dass die Aktie im Depot ist und eine ISIN hinterlegt hat.<br>
+                ISINs werden automatisch beim <b style="color:var(--fg)">Parqet-Sync</b> übernommen.
+              </div>
+            </div>
             <!-- Datum -->
             <div>
               <label class="form-label" style="font-size:11px">Split-Datum</label>
@@ -1259,7 +1267,17 @@ async function doSearch(q){
   res.innerHTML='<div class="search-results"><div class="no-results">Suche …</div></div>';
   try {
     const r=await fetch(`${API}/search?q=${encodeURIComponent(q)}`); const items=await r.json();
-    if(!items.length){res.innerHTML='<div class="search-results"><div class="no-results">Keine Treffer</div></div>';return;}
+    if(!items.length){
+    const gUrl=`https://www.google.com/search?q=${encodeURIComponent(q+" ISIN")}`;
+    res.innerHTML=`<div class="search-results"><div class="no-results" style="padding:10px 12px;line-height:1.7">
+      Keine Treffer in Yahoo Finance.<br>
+      <span style="font-size:11px;color:var(--muted)">ISIN über
+        <a href="${gUrl}" target="_blank" style="color:var(--accent)">Google suchen: "${q} ISIN"</a>
+        herausfinden und dann direkt als Ticker eingeben.
+      </span>
+    </div></div>`;
+    return;
+  }
     res.innerHTML='<div class="search-results">'+items.map((it,i)=>
       `<div class="search-item" onclick="selectCompany(${i},${JSON.stringify(it).replace(/"/g,'&quot;')})">
         <span style="font-weight:500;font-size:13px">${it.name}</span>
@@ -2118,21 +2136,33 @@ async function openAddSplitForm(){
 }
 
 function onSplitStockSearch(q){
-  const box = document.getElementById("splitStockResults");
-  if(!q){ box.style.display="none"; return; }
+  const box        = document.getElementById("splitStockResults");
+  const manualWrap = document.getElementById("splitManualIsinWrap");
+  if(!q){
+    box.style.display = "none";
+    manualWrap.style.display = "none";
+    return;
+  }
   const ql      = q.toLowerCase();
   const matches = _splitStocks.filter(s =>
     s.name.toLowerCase().includes(ql) || s.ticker.toLowerCase().includes(ql)
   ).slice(0, 8);
-  if(!matches.length){ box.style.display="none"; return; }
-  box.innerHTML = matches.map(s =>
-    `<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border)"
-          onmousedown="selectSplitStock('${s.isin}','${s.name.replace(/'/g,"\'")}','${s.ticker}')">
-      <span style="font-weight:500">${s.name}</span>
-      <span style="font-size:11px;color:var(--muted);margin-left:6px">${s.ticker}</span>
-    </div>`
-  ).join("");
-  box.style.display = "block";
+
+  if(matches.length){
+    box.innerHTML = matches.map(s =>
+      `<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border)"
+            onmousedown="selectSplitStock('${s.isin}','${s.name.replace(/'/g,"\'")}','${s.ticker}')">
+        <span style="font-weight:500">${s.name}</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:6px">${s.ticker}</span>
+      </div>`
+    ).join("");
+    box.style.display = "block";
+    manualWrap.style.display = "none";
+  } else {
+    box.style.display = "none";
+    manualWrap.style.display = "block";
+    _splitIsin = "";
+  }
 }
 
 function selectSplitStock(isin, name, ticker){
@@ -2145,6 +2175,7 @@ function selectSplitStock(isin, name, ticker){
 function closeAddSplitForm(){
   document.getElementById("addSplitForm").style.display = "none";
   document.getElementById("splitStockResults").style.display = "none";
+  document.getElementById("splitManualIsinWrap").style.display = "none";
 }
 
 
