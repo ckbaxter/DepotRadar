@@ -127,7 +127,10 @@ Bei jeder Benachrichtigung wird berechnet wie viele ganze Aktien mit diesem Budg
 | 40–59% | 2× | 400 € |
 | ≥60% | 3× | 600 € |
 
-Passt eine zusätzliche Aktie noch in 120% des Budgets, wird sie dazugezählt.
+Es wird immer eine ganze Anzahl Aktien berechnet. Passt eine zusätzliche Aktie noch innerhalb von 20% über dem Budget, wird sie dazugezählt.
+
+**Beispiel** — Budget 200 €, Aktie kostet 19 €, Abstand −20%:
+→ **11 Stk. für ~209 €** (liegt innerhalb der 20% Toleranz über 200 €)
 
 ---
 
@@ -142,6 +145,8 @@ Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen �
 4. Speichern
 
 Die ISIN wird automatisch aus dem Depot übernommen — keine manuelle Eingabe nötig.
+
+> **Hinweis:** Die Aktie muss sich bereits im Depot oder einer Watchlist befinden, da die Auswahl ausschließlich aus dem eigenen Bestand befüllt wird.
 
 ---
 
