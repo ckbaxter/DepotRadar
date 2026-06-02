@@ -20,7 +20,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.7.0"
+VERSION           = "1.7.1"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -46,94 +46,7 @@ def splits_as_dict():
         result.setdefault(s["isin"], []).append((s["date"], s["ratio"]))
     return result
 
-COMPANY_DB = [
-    {"name":"Amazon","ticker":"AMZN","exchange":"NASDAQ","keywords":"amazon"},
-    {"name":"Apple","ticker":"AAPL","exchange":"NASDAQ","keywords":"apple"},
-    {"name":"Microsoft","ticker":"MSFT","exchange":"NASDAQ","keywords":"microsoft"},
-    {"name":"Alphabet/Google","ticker":"GOOGL","exchange":"NASDAQ","keywords":"alphabet google"},
-    {"name":"Meta Platforms","ticker":"META","exchange":"NASDAQ","keywords":"meta facebook"},
-    {"name":"NVIDIA","ticker":"NVDA","exchange":"NASDAQ","keywords":"nvidia"},
-    {"name":"Tesla","ticker":"TSLA","exchange":"NASDAQ","keywords":"tesla"},
-    {"name":"Netflix","ticker":"NFLX","exchange":"NASDAQ","keywords":"netflix"},
-    {"name":"AMD","ticker":"AMD","exchange":"NASDAQ","keywords":"amd advanced micro"},
-    {"name":"Intel","ticker":"INTC","exchange":"NASDAQ","keywords":"intel"},
-    {"name":"Broadcom","ticker":"AVGO","exchange":"NASDAQ","keywords":"broadcom"},
-    {"name":"Adobe","ticker":"ADBE","exchange":"NASDAQ","keywords":"adobe"},
-    {"name":"Salesforce","ticker":"CRM","exchange":"NYSE","keywords":"salesforce"},
-    {"name":"Palantir","ticker":"PLTR","exchange":"NASDAQ","keywords":"palantir"},
-    {"name":"Shopify","ticker":"SHOP","exchange":"NYSE","keywords":"shopify"},
-    {"name":"Spotify","ticker":"SPOT","exchange":"NYSE","keywords":"spotify"},
-    {"name":"Coinbase","ticker":"COIN","exchange":"NASDAQ","keywords":"coinbase"},
-    {"name":"PayPal","ticker":"PYPL","exchange":"NASDAQ","keywords":"paypal"},
-    {"name":"ASML","ticker":"ASML","exchange":"NASDAQ","keywords":"asml"},
-    {"name":"Visa","ticker":"V","exchange":"NYSE","keywords":"visa"},
-    {"name":"Mastercard","ticker":"MA","exchange":"NYSE","keywords":"mastercard"},
-    {"name":"JPMorgan","ticker":"JPM","exchange":"NYSE","keywords":"jpmorgan jp morgan"},
-    {"name":"Berkshire B","ticker":"BRK-B","exchange":"NYSE","keywords":"berkshire"},
-    {"name":"Eli Lilly","ticker":"LLY","exchange":"NYSE","keywords":"eli lilly"},
-    {"name":"Novo Nordisk","ticker":"NVO","exchange":"NYSE","keywords":"novo nordisk"},
-    {"name":"AstraZeneca","ticker":"AZN","exchange":"NASDAQ","keywords":"astrazeneca"},
-    {"name":"Pfizer","ticker":"PFE","exchange":"NYSE","keywords":"pfizer"},
-    {"name":"BioNTech","ticker":"BNTX","exchange":"NASDAQ","keywords":"biontech"},
-    {"name":"Uber","ticker":"UBER","exchange":"NYSE","keywords":"uber"},
-    {"name":"Airbnb","ticker":"ABNB","exchange":"NASDAQ","keywords":"airbnb"},
-    {"name":"Booking Holdings","ticker":"BKNG","exchange":"NASDAQ","keywords":"booking"},
-    {"name":"ServiceNow","ticker":"NOW","exchange":"NYSE","keywords":"servicenow"},
-    {"name":"Palo Alto","ticker":"PANW","exchange":"NASDAQ","keywords":"palo alto"},
-    {"name":"CrowdStrike","ticker":"CRWD","exchange":"NASDAQ","keywords":"crowdstrike"},
-    {"name":"Datadog","ticker":"DDOG","exchange":"NASDAQ","keywords":"datadog"},
-    {"name":"Snowflake","ticker":"SNOW","exchange":"NYSE","keywords":"snowflake"},
-    {"name":"MongoDB","ticker":"MDB","exchange":"NASDAQ","keywords":"mongodb"},
-    {"name":"ARM Holdings","ticker":"ARM","exchange":"NASDAQ","keywords":"arm holdings"},
-    {"name":"Qualcomm","ticker":"QCOM","exchange":"NASDAQ","keywords":"qualcomm"},
-    {"name":"Texas Instruments","ticker":"TXN","exchange":"NASDAQ","keywords":"texas instruments"},
-    {"name":"Micron","ticker":"MU","exchange":"NASDAQ","keywords":"micron"},
-    {"name":"TSMC","ticker":"TSM","exchange":"NYSE","keywords":"tsmc taiwan semi"},
-    {"name":"BASF","ticker":"BAS.DE","exchange":"XETRA","keywords":"basf"},
-    {"name":"SAP","ticker":"SAP.DE","exchange":"XETRA","keywords":"sap"},
-    {"name":"Siemens","ticker":"SIE.DE","exchange":"XETRA","keywords":"siemens"},
-    {"name":"Volkswagen Vz.","ticker":"VOW3.DE","exchange":"XETRA","keywords":"volkswagen vw"},
-    {"name":"BMW","ticker":"BMW.DE","exchange":"XETRA","keywords":"bmw"},
-    {"name":"Mercedes-Benz","ticker":"MBG.DE","exchange":"XETRA","keywords":"mercedes daimler"},
-    {"name":"Allianz","ticker":"ALV.DE","exchange":"XETRA","keywords":"allianz"},
-    {"name":"Deutsche Bank","ticker":"DBK.DE","exchange":"XETRA","keywords":"deutsche bank"},
-    {"name":"Bayer","ticker":"BAYN.DE","exchange":"XETRA","keywords":"bayer"},
-    {"name":"Adidas","ticker":"ADS.DE","exchange":"XETRA","keywords":"adidas"},
-    {"name":"Linde","ticker":"LIN.DE","exchange":"XETRA","keywords":"linde"},
-    {"name":"Deutsche Telekom","ticker":"DTE.DE","exchange":"XETRA","keywords":"telekom"},
-    {"name":"Muenchener Rueck","ticker":"MUV2.DE","exchange":"XETRA","keywords":"munich re"},
-    {"name":"Infineon","ticker":"IFX.DE","exchange":"XETRA","keywords":"infineon"},
-    {"name":"Rheinmetall","ticker":"RHM.DE","exchange":"XETRA","keywords":"rheinmetall"},
-    {"name":"Airbus","ticker":"AIR.PA","exchange":"Euronext","keywords":"airbus"},
-    {"name":"LVMH","ticker":"MC.PA","exchange":"Euronext","keywords":"lvmh louis vuitton"},
-    {"name":"TotalEnergies","ticker":"TTE.PA","exchange":"Euronext","keywords":"total"},
-    {"name":"Nestle","ticker":"NESN.SW","exchange":"SIX","keywords":"nestle"},
-    {"name":"Roche","ticker":"ROG.SW","exchange":"SIX","keywords":"roche"},
-    {"name":"Shell","ticker":"SHEL","exchange":"NYSE","keywords":"shell"},
-    {"name":"BP","ticker":"BP","exchange":"NYSE","keywords":"bp british petroleum"},
-    {"name":"Walt Disney","ticker":"DIS","exchange":"NYSE","keywords":"disney walt"},
-]
 
-ISIN_MAP = {
-    "US02079K3059": {"ticker":"GOOGL","name":"Alphabet (Class A)","exchange":"NASDAQ","type":"EQUITY"},
-    "US02079K1079": {"ticker":"GOOG","name":"Alphabet (Class C)","exchange":"NASDAQ","type":"EQUITY"},
-    "DE000A0F5UF5": {"ticker":"EXXT.DE","name":"iShares Nasdaq 100 UCITS ETF (DE)","exchange":"XETRA","type":"ETF"},
-    "US0378331005": {"ticker":"AAPL","name":"Apple Inc.","exchange":"NASDAQ","type":"EQUITY"},
-    "US5949181045": {"ticker":"MSFT","name":"Microsoft","exchange":"NASDAQ","type":"EQUITY"},
-    "US67066G1040": {"ticker":"NVDA","name":"NVIDIA","exchange":"NASDAQ","type":"EQUITY"},
-    "US88160R1014": {"ticker":"TSLA","name":"Tesla","exchange":"NASDAQ","type":"EQUITY"},
-    "US0231351067": {"ticker":"AMZN","name":"Amazon","exchange":"NASDAQ","type":"EQUITY"},
-    "US30303M1027": {"ticker":"META","name":"Meta Platforms","exchange":"NASDAQ","type":"EQUITY"},
-    "US92826C8394": {"ticker":"V","name":"Visa","exchange":"NYSE","type":"EQUITY"},
-    "US57636Q1040": {"ticker":"MA","name":"Mastercard","exchange":"NYSE","type":"EQUITY"},
-    "US70450Y1038": {"ticker":"PYPL","name":"PayPal","exchange":"NASDAQ","type":"EQUITY"},
-    "US6541061031": {"ticker":"NFLX","name":"Netflix","exchange":"NASDAQ","type":"EQUITY"},
-    "US11135F1012": {"ticker":"AVGO","name":"Broadcom","exchange":"NASDAQ","type":"EQUITY"},
-    "US09857L1089": {"ticker":"BKNG","name":"Booking Holdings","exchange":"NASDAQ","type":"EQUITY"},
-    "GB00BP6MXD84": {"ticker":"SHELL.AS","name":"Shell","exchange":"Amsterdam","type":"EQUITY"},
-    "GB0007980591": {"ticker":"BP.AS","name":"BP","exchange":"Amsterdam","type":"EQUITY"},
-    "GB0002634946": {"ticker":"AZN","name":"AstraZeneca","exchange":"NASDAQ","type":"EQUITY"},
-}
 
 # ── Config ────────────────────────────────────────────────────────
 _CFG_DEF = {
@@ -1191,7 +1104,6 @@ def search_companies():
     # ISIN: 2 Buchstaben + 10 Zeichen
     if re.match(r"^[A-Z]{2}[A-Z0-9]{10}$", q.upper()):
         isin = q.upper()
-        if isin in ISIN_MAP: return jsonify([{**ISIN_MAP[isin], "isin": isin}])
         bff_name, bff_wkn = None, None
         try:
             items = bff(isin)
@@ -1214,9 +1126,7 @@ def search_companies():
         res = yahoo(q)
         if res: return jsonify(res[:10])
     except Exception as e: log.warning(f"Yahoo: {e}")
-    ql = q.lower()
-    return jsonify([c for c in COMPANY_DB
-                    if ql in c["name"].lower() or ql in c["ticker"].lower() or ql in c["keywords"].lower()][:10])
+    return jsonify([])
 
 # ── Settings & Notifications ──────────────────────────────────────
 @app.route("/api/settings", methods=["GET"])
