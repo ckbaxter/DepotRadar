@@ -1,165 +1,220 @@
 # ATH-Tracker
 
-> Developed with the assistance of [Claude](https://claude.ai) (Anthropic)
+Ein selbst gehostetes Web-Tool zur Verfolgung von Aktien und ETFs relativ zu ihrem **All-Time-High (ATH)** in Euro.
 
-A self-hosted web application to track your stocks and ETFs relative to their **All-Time High (ATH)**.
-Automatically fetches current prices and ATH values, converts everything to **Euro**, and sends
-**Apprise notifications** when configurable discount levels are reached.
+Entwickelt für private Investoren die wissen wollen: *Wie weit ist meine Aktie gerade vom Hoch entfernt — und lohnt sich ein Nachkauf?*
 
----
-
-> Eine selbst gehostete Web-Applikation zur Verfolgung von Aktien und ETFs relativ zu ihrem
-> **Allzeithoch (ATH)**. Kurs- und ATH-Daten werden automatisch abgerufen, in **Euro** umgerechnet
-> und bei konfigurierbaren Rabattstufen werden **Apprise-Benachrichtigungen** versendet.
+![Version Backend](https://img.shields.io/badge/Backend-v1.7.0-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v1.7.0-blue)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
+![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
+![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
 
 ---
 
-## Screenshot
+## Features
 
-![ATH-Tracker Screenshot](docs/screenshot.png)
-
----
-
-## Features / Funktionen
-
-| | EN | DE |
-|---|---|---|
-| 📈 | Automatic price & ATH data from Yahoo Finance | Automatische Kurs- & ATH-Daten von Yahoo Finance |
-| 💶 | All values in Euro (auto currency conversion) | Alle Werte in Euro (automatische Währungsumrechnung) |
-| 🔔 | Apprise notifications at 10% discount blocks (≥20%) | Apprise-Benachrichtigungen bei 10%-Blöcken (ab 20%) |
-| 🕐 | Configurable trading window (Mon–Fri, 08:00–23:00) | Konfigurierbares Handelsfenster (Mo–Fr, 08–23 Uhr) |
-| 🔍 | Search by company name, ticker, ISIN or WKN | Suche nach Name, Ticker, ISIN oder WKN |
-| 📊 | Sortable table with discount level overview | Sortierbare Tabelle mit Rabattstufenübersicht |
-| 📱 | Responsive design for desktop, tablet & mobile | Responsives Design für Desktop, Tablet & Smartphone |
-| 🐳 | Docker Compose deployment with Traefik support | Docker Compose Deployment mit Traefik-Unterstützung |
+- **Multi-Depot** — mehrere Depots pro Installation, jedes unabhängig konfigurierbar
+- **Watchlists** — Beobachtungslisten pro Depot
+- **ATH-Discount** — farbcodierte Badges: grün (<20%), gelb (20–39%), orange (40–59%), rot (>60%) mit Multiplikator (1×/2×/3×)
+- **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in der Benachrichtigung
+- **Performance-Badges** — 1T / 1W / 1M / 3M direkt unter dem Kurs
+- **P&L** — Gewinn/Verlust in % und € wenn Einstandskurs bekannt
+- **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind
+- **Aktiensplits** — über die UI verwaltbar, splitbereinigter Einstandskurs bei Parqet-Sync
+- **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID
+- **XETRA-Unterstützung** — automatischer Ticker-Vorschlag für deutsche Handelsplätze
+- **Apprise-Benachrichtigungen** — Alarm wenn eine Aktie einen neuen Discount-Block erreicht, inkl. Kaufempfehlung
+- **Einstellungen per UI** — Zeitzone, Handelstage und -zeiten direkt in der App konfigurierbar
+- **Dark / Light Mode**
+- **Mobile-optimiert** — Touch-freundlich für iPad und Smartphone
 
 ---
 
-## Stack
+## Voraussetzungen
 
-- **Backend:** Python, Flask, APScheduler, Apprise, PyYAML
-- **Frontend:** Vanilla HTML/CSS/JS (no framework)
-- **Reverse Proxy:** NGINX
-- **Data:** Yahoo Finance, Frankfurter API (EUR conversion)
-
----
-
-## Quick Start
-
-### Prerequisites / Voraussetzungen
 - Docker & Docker Compose
-- (Optional) Traefik reverse proxy
+- Internetzugang (Yahoo Finance API, Parqet OAuth)
 
-### Installation
+---
+
+## Installation
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/yourname/ath-tracker.git
+git clone https://github.com/DEIN-USER/ath-tracker.git
 cd ath-tracker
-
-# 2. Create config from example
-cp config/ath-tracker.yml.example config/ath-tracker.yml
-
-# 3. Edit config if needed (trading hours, interval, timezone)
-nano config/ath-tracker.yml
-
-# 4. Start
 docker compose up -d --build
 ```
 
-**App is available at:** `http://<your-server-ip>:8080`
-
-> **Erreichbar unter:** `http://<server-ip>:8080`
+Erreichbar unter: **http://localhost:8080**
 
 ---
 
-## Configuration / Konfiguration
-
-All trading-window settings are managed in **`config/ath-tracker.yml`**:
-
-```yaml
-timezone: "Europe/Berlin"
-
-trading:
-  days: [0, 1, 2, 3, 4]   # 0=Mon ... 4=Fri
-  start_hour: 8            # First refresh of day at 08:00
-  end_hour: 23             # No refreshes at or after 23:00
-
-refresh_interval_seconds: 3600   # Default: every hour
-```
-
-The **refresh interval** can also be changed in the web UI (Settings) — the GUI value overrides
-the config file value and is stored in `data/settings.json`.
-
-**Alle Handelszeiten-Einstellungen** werden in `config/ath-tracker.yml` verwaltet. Das Refresh-Intervall
-kann zusätzlich in der Web-Oberfläche (Einstellungen) geändert werden.
-
----
-
-## Apprise Notifications / Benachrichtigungen
-
-Configure one or more Apprise URLs in the web UI under **Settings**:
-
-| Service | URL format |
-|---|---|
-| Telegram | `tgram://BOTTOKEN/CHATID` |
-| Gotify | `gotify://hostname/token` |
-| Apprise API | `http://apprise:8000/notify/MYKEY` |
-| E-Mail | `mailto://user:pass@gmail.com` |
-
-**Notification logic / Benachrichtigungslogik:**
-- Notification when a new 10% block (≥20%) is first reached for a downward move
-- No repeated notifications within the same block
-- If the price recovers and drops again: new notification
-- Starting baseline = current discount at time of adding the stock
-
----
-
-## Project Structure / Projektstruktur
+## Verzeichnisstruktur
 
 ```
 ath-tracker/
 ├── backend/
-│   ├── app.py              # Flask API + scheduler + Yahoo Finance
+│   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── config/
-│   ├── ath-tracker.yml             # Your config (not in git)
-│   └── ath-tracker.yml.example     # Template (in git)
-├── data/                   # Runtime data - not in git
-│   ├── stocks.json
-│   ├── settings.json
-│   └── notifications.json
 ├── frontend/
-│   └── index.html          # Single-page app
+│   └── index.html
 ├── nginx/
 │   └── nginx.conf
+├── data/                     # Wird automatisch angelegt
+│   ├── depots.json
+│   ├── depot_*.json
+│   ├── splits.json           # Aktiensplits (automatisch befüllt)
+│   ├── settings.json
+│   └── ath-tracker.yml       # Optional — siehe Konfiguration
 └── docker-compose.yml
 ```
 
 ---
 
-## Data Sources / Datenquellen
+## Konfiguration
 
-- **[Yahoo Finance](https://finance.yahoo.com)** — prices & ATH history (non-commercial use only)
-- **[Frankfurter API](https://www.frankfurter.app)** — EUR exchange rates
-- **[Börse Frankfurt API](https://www.boerse-frankfurt.de)** — WKN to ISIN lookup
+### docker-compose.yml
+
+```yaml
+environment:
+  - TZ=Europe/Berlin
+  - APP_URL=http://ath.apps.lan   # Eigene URL — wichtig für Parqet OAuth
+```
+
+`APP_URL` muss auf die tatsächlich erreichbare Adresse zeigen.
+
+### Einstellungen (UI)
+
+Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
+
+| Einstellung | Beschreibung |
+|---|---|
+| Automatischer Refresh | Intervall der Kursabfragen |
+| Zeitzone | Für korrekte Handelszeiten-Berechnung |
+| Handelstage | An welchen Tagen aktualisiert wird |
+| Handelszeiten | Zwischen welchen Uhrzeiten aktualisiert wird |
+| Benachrichtigungen | Global ein/aus |
+| Aktiensplits | Splits hinzufügen und verwalten |
+
+### Optionale Konfigurationsdatei
+
+Wer Timezone und Handelszeiten per Datei statt per UI konfigurieren möchte, legt `data/ath-tracker.yml` an:
+
+```yaml
+timezone: Europe/Berlin
+trading:
+  days: [0, 1, 2, 3, 4]   # 0=Mo … 6=So
+  start_hour: 8
+  end_hour: 23
+refresh_interval_seconds: 3600
+```
+
+UI-Einstellungen haben immer Vorrang.
 
 ---
 
-## Disclaimer
+## Kaufempfehlung
 
-This project is for **personal, non-commercial use only**.
-Yahoo Finance data is subject to their [Terms of Service](https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html).
-Nothing in this application constitutes financial advice.
+Pro Depot kann ein optionales **Kaufbudget** in EUR hinterlegt werden (Depot-Einstellungen → ⚙).
+
+Bei jeder Benachrichtigung wird berechnet wie viele ganze Aktien mit diesem Budget gekauft werden könnten:
+
+| Discount-Block | Multiplikator | Beispiel bei 200 € Budget |
+|---|---|---|
+| 20–39% | 1× | 200 € |
+| 40–59% | 2× | 400 € |
+| ≥60% | 3× | 600 € |
+
+Passt eine zusätzliche Aktie noch in 120% des Budgets, wird sie dazugezählt.
 
 ---
 
-*Dieses Projekt ist ausschließlich für den **persönlichen, nicht-kommerziellen Einsatz** bestimmt.
-Keine Anlageberatung.*
+## Aktiensplits
+
+Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen → Aktiensplits** verwaltet. Beim ersten Start werden bekannte Splits automatisch angelegt (NVIDIA, Broadcom, Booking Holdings).
+
+**Split hinzufügen:**
+1. Einstellungen öffnen → „+ Split hinzufügen"
+2. Aktie aus dem eigenen Bestand suchen und auswählen
+3. Datum und Faktor (z.B. `10` für 10:1) eingeben
+4. Speichern
+
+Die ISIN wird automatisch aus dem Depot übernommen — keine manuelle Eingabe nötig.
 
 ---
 
-## License
+## Parqet-Integration
+
+ATH-Tracker verbindet sich mit [Parqet](https://parqet.com) um Einstandskurse und Stückzahlen zu importieren. **Jedes Depot benötigt eine eigene Parqet-Integration.**
+
+### Einrichtung
+
+1. [developer.parqet.com/console](https://developer.parqet.com/console) → **+ New Integration**
+2. Name: beliebig (z.B. `ATH-Tracker`)
+3. Scope: nur **read portfolio** ankreuzen
+4. Redirect URI: `http://DEINE-APP-URL/api/parqet/callback`
+5. **Create** → Client ID kopieren
+6. In ATH-Tracker: Depot-Einstellungen → Client ID eintragen → Verbinden
+
+---
+
+## Benachrichtigungen (Apprise)
+
+Konfigurierbar pro Depot (⚙-Icon im Depot-Tab). Unterstützte Dienste (Auswahl):
+
+| Dienst | URL-Format |
+|---|---|
+| Telegram | `tgram://TOKEN/CHATID` |
+| Gotify | `gotify://host/token` |
+| ntfy | `ntfy://host/topic` |
+| Discord | `discord://WEBHOOK_ID/TOKEN` |
+| Apprise API | `http://apprise.host/notify/tag` |
+
+---
+
+## Kursabfragen
+
+- **Quelle:** Yahoo Finance (kostenlos, kein API-Key nötig)
+- **Historische Daten:** 10 Jahre für ATH-Berechnung
+- **Währungen:** Automatische EUR-Umrechnung via [Frankfurter API](https://www.frankfurter.app)
+- **GBp-Fix:** Londoner Aktien in Pence werden automatisch in GBP umgerechnet
+
+---
+
+## Versionshistorie
+
+| Version | Beschreibung |
+|---|---|
+| 1.7.0 | Aktiensplits über UI verwaltbar, Depot-basierte ISIN-Auswahl |
+| 1.6.x | Kaufempfehlung in Benachrichtigungen, App und Tabelle |
+| 1.5.0 | Zeitzone und Handelszeiten über UI einstellbar |
+| 1.4.1 | config/ und data/ zusammengeführt |
+| 1.4.0 | Parqet Client ID pro Depot, integrierte Einrichtungsanleitung |
+| 1.3.0 | Nachkauf-Kandidaten Filter |
+| 1.2.0 | Parqet OAuth PKCE Integration |
+| 1.1.0 | XETRA-Ticker-Unterstützung, Ticker-Wechsel |
+| 1.0.0 | Erstes Release |
+
+---
+
+## Haftungsausschluss
+
+Dieses Projekt dient ausschließlich dem persönlichen, nicht-kommerziellen Einsatz.
+
+Die Kursdaten stammen von Yahoo Finance und unterliegen deren [Nutzungsbedingungen](https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). Die Nutzung erfolgt auf eigene Verantwortung.
+
+**Keine Anlageberatung.** Alle angezeigten Informationen dienen ausschließlich zur persönlichen Orientierung und stellen keine Empfehlung zum Kauf oder Verkauf von Wertpapieren dar.
+
+---
+
+## Lizenz
 
 MIT
+
+---
+
+## Entstehung
+
+ATH-Tracker wurde vollständig in Zusammenarbeit mit **[Claude](https://claude.ai)** von Anthropic entwickelt — von der ersten Idee bis zur fertigen Anwendung, iterativ über viele Gespräche hinweg.

@@ -1,16 +1,13 @@
-# Persönliche Daten & Laufzeit-Daten
+# Datendateien — nicht ins Repository
 data/
-config/ath-tracker.yml
 
 # Docker
-*.tar.gz
+.env
+
+# macOS
+.DS_Store
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
-.env
-
-# OS
-.DS_Store
-Thumbs.db
