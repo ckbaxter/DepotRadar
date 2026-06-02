@@ -12,6 +12,14 @@ Entwickelt für private Investoren die wissen wollen: *Wie weit ist meine Aktie 
 
 ---
 
+## Vorschau
+
+![ATH-Tracker Vorschau](docs/preview.svg)
+
+*Alle dargestellten Aktien, Kurse, Einstandswerte und Kennzahlen sind frei erfunden und dienen ausschließlich zur Veranschaulichung der Benutzeroberfläche.*
+
+---
+
 ## Features
 
 - **Multi-Depot** — mehrere Depots pro Installation, jedes unabhängig konfigurierbar

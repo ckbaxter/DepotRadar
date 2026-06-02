@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <defs>
+    <style>text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }</style>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#0f1320"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="620" fill="url(#bg)" rx="12"/>
+
+  <!-- Topbar -->
+  <rect x="0" y="0" width="1200" height="52" fill="#131720" rx="12"/>
+  <rect x="0" y="40" width="1200" height="12" fill="#131720"/>
+  <text x="20" y="33" font-size="18" font-weight="700" fill="#4e7cf6">ATH</text>
+  <text x="58" y="33" font-size="18" font-weight="700" fill="#e2e8f0">-Tracker</text>
+  <rect x="1048" y="12" width="132" height="28" rx="6" fill="#4e7cf6"/>
+  <text x="1114" y="31" font-size="13" font-weight="600" fill="#fff" text-anchor="middle">+ Hinzufügen</text>
+  <rect x="908" y="12" width="130" height="28" rx="6" fill="#1e2535" stroke="#2d3748" stroke-width="1"/>
+  <text x="973" y="31" font-size="12" fill="#94a3b8" text-anchor="middle">⚙ Einstellungen</text>
+  <rect x="800" y="12" width="100" height="28" rx="6" fill="#1e2535" stroke="#2d3748" stroke-width="1"/>
+  <text x="850" y="31" font-size="12" fill="#94a3b8" text-anchor="middle">📋 Verlauf</text>
+  <text x="1192" y="33" font-size="16" fill="#64748b" text-anchor="end">🌙</text>
+
+  <!-- Depot Tab -->
+  <rect x="20" y="60" width="150" height="28" rx="6" fill="#1e2535" stroke="#4e7cf6" stroke-width="1"/>
+  <text x="95" y="78" font-size="12" fill="#4e7cf6" text-anchor="middle" font-weight="600">Mein Depot</text>
+
+  <!-- Info bar -->
+  <text x="20"  y="106" font-size="11" fill="#64748b">Bestand  ·  Stand: 01.06.2026 18:30  ·  </text>
+  <text x="228" y="106" font-size="11" fill="#4e7cf6">Nächster Refresh: 02.06.2026 08:00 Uhr</text>
+  <text x="460" y="106" font-size="11" fill="#475569">  ·  </text>
+  <text x="480" y="106" font-size="11" fill="#22c55e">💰 Budget: 500 €</text>
+  <rect x="1122" y="95" width="58" height="20" rx="4" fill="#1e2535"/>
+  <text x="1151" y="109" font-size="11" fill="#94a3b8" text-anchor="middle">↺ Alle</text>
+
+  <!-- Summary Cards -->
+  <rect x="20"  y="116" width="222" height="62" rx="8" fill="#1a1f2e" stroke="#2d3748" stroke-width="1"/>
+  <text x="34"  y="138" font-size="11" fill="#64748b">Aktien gesamt</text>
+  <text x="34"  y="164" font-size="24" font-weight="700" fill="#e2e8f0">8</text>
+
+  <rect x="252" y="116" width="222" height="62" rx="8" fill="#1a1f2e" stroke="#2d3748" stroke-width="1"/>
+  <text x="266" y="138" font-size="11" fill="#64748b">&lt; 20% unter ATH</text>
+  <rect x="266" y="150" width="30" height="3" rx="2" fill="#22c55e"/>
+  <text x="266" y="166" font-size="24" font-weight="700" fill="#22c55e">3</text>
+
+  <rect x="484" y="116" width="222" height="62" rx="8" fill="#1a1f2e" stroke="#2d3748" stroke-width="1"/>
+  <text x="498" y="138" font-size="11" fill="#64748b">20–39% unter ATH</text>
+  <rect x="498" y="150" width="30" height="3" rx="2" fill="#eab308"/>
+  <text x="498" y="166" font-size="24" font-weight="700" fill="#eab308">2</text>
+
+  <rect x="716" y="116" width="222" height="62" rx="8" fill="#1a1f2e" stroke="#2d3748" stroke-width="1"/>
+  <text x="730" y="138" font-size="11" fill="#64748b">40–59% unter ATH</text>
+  <rect x="730" y="150" width="30" height="3" rx="2" fill="#f97316"/>
+  <text x="730" y="166" font-size="24" font-weight="700" fill="#f97316">2</text>
+
+  <rect x="948" y="116" width="232" height="62" rx="8" fill="#1a1f2e" stroke="#2d3748" stroke-width="1"/>
+  <text x="962" y="138" font-size="11" fill="#64748b">&gt; 60% unter ATH</text>
+  <rect x="962" y="150" width="30" height="3" rx="2" fill="#ef4444"/>
+  <text x="962" y="166" font-size="24" font-weight="700" fill="#ef4444">1</text>
+
+  <!-- Table Header -->
+  <rect x="20" y="190" width="1160" height="26" fill="#0d1117"/>
+  <text x="30"   y="207" font-size="10" fill="#64748b">Unternehmen</text>
+  <text x="488"  y="207" font-size="10" fill="#64748b" text-anchor="middle">Kurs</text>
+  <text x="585"  y="207" font-size="10" fill="#64748b" text-anchor="middle">ATH</text>
+  <text x="678"  y="207" font-size="10" fill="#64748b" text-anchor="middle">% v.ATH ▼</text>
+  <text x="782"  y="207" font-size="10" fill="#22c55e" text-anchor="middle">Kaufempfehlung</text>
+  <text x="878"  y="207" font-size="10" fill="#ef4444" text-anchor="middle">−20%</text>
+  <text x="952"  y="207" font-size="10" fill="#f97316" text-anchor="middle">−30%</text>
+  <text x="1026" y="207" font-size="10" fill="#f97316" text-anchor="middle">−40%</text>
+  <text x="1100" y="207" font-size="10" fill="#ef4444" text-anchor="middle">−50%</text>
+
+  <!-- ROW 1: PayPal -->
+  <rect x="20" y="216" width="1160" height="68" fill="#1a1f2e"/>
+  <line x1="20" y1="284" x2="1180" y2="284" stroke="#232b3e" stroke-width="1"/>
+  <text x="30" y="235" font-size="13" font-weight="700" fill="#e2e8f0">PayPal</text>
+  <rect x="80" y="222" width="14" height="14" rx="3" fill="#3b82f6" opacity="0.85"/>
+  <text x="82" y="232" font-size="8" fill="#fff" font-weight="700">P</text>
+  <text x="30" y="251" font-size="10" fill="#64748b">2PP.DE · XETRA · US70450Y1038</text>
+  <text x="30" y="270" font-size="11" fill="#ef4444">−42.1%  −2.840 €</text>
+  <text x="145" y="270" font-size="10" fill="#64748b">125 Stk. · Einstand: 61,42 €</text>
+  <text x="488" y="238" font-size="13" font-weight="700" fill="#e2e8f0" text-anchor="middle">35,56 €</text>
+  <text x="488" y="253" font-size="10" fill="#64748b" text-anchor="middle">01.06.2026 17:35</text>
+  <text x="585" y="238" font-size="13" fill="#94a3b8" text-anchor="middle">267,49 €</text>
+  <rect x="630" y="222" width="98" height="26" rx="6" fill="rgba(239,68,68,0.2)" stroke="rgba(239,68,68,0.4)" stroke-width="1"/>
+  <text x="679" y="239" font-size="12" font-weight="700" fill="#ef4444" text-anchor="middle">−86.7% (3×)</text>
+  <text x="782" y="238" font-size="11" font-weight="600" fill="#22c55e" text-anchor="middle">42 Stk. · ~1.493 €</text>
+  <text x="782" y="252" font-size="10" fill="#22c55e" text-anchor="middle" opacity="0.7">(3× Budget)</text>
+  <text x="878" y="238" font-size="11" fill="#22c55e" text-anchor="middle">213,99 €</text>
+  <text x="878" y="251" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+  <text x="952" y="238" font-size="11" fill="#22c55e" text-anchor="middle">187,24 €</text>
+  <text x="952" y="251" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+  <text x="1026" y="238" font-size="11" fill="#22c55e" text-anchor="middle">160,49 €</text>
+  <text x="1026" y="251" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+  <text x="1100" y="238" font-size="11" fill="#22c55e" text-anchor="middle">133,75 €</text>
+  <text x="1100" y="251" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+
+  <!-- ROW 2: NVIDIA -->
+  <rect x="20" y="284" width="1160" height="68" fill="#181c2a"/>
+  <line x1="20" y1="352" x2="1180" y2="352" stroke="#232b3e" stroke-width="1"/>
+  <text x="30" y="303" font-size="13" font-weight="700" fill="#e2e8f0">NVIDIA</text>
+  <rect x="80" y="290" width="14" height="14" rx="3" fill="#3b82f6" opacity="0.85"/>
+  <text x="82" y="300" font-size="8" fill="#fff" font-weight="700">P</text>
+  <text x="30" y="319" font-size="10" fill="#64748b">NVD.DE · XETRA · US67066G1040</text>
+  <text x="30" y="338" font-size="11" fill="#22c55e">+12.4%  +3.120 €</text>
+  <text x="140" y="338" font-size="10" fill="#64748b">20 Stk. · Einstand: 108,50 €</text>
+  <text x="488" y="306" font-size="13" font-weight="700" fill="#e2e8f0" text-anchor="middle">122,32 €</text>
+  <text x="488" y="321" font-size="10" fill="#64748b" text-anchor="middle">01.06.2026 17:35</text>
+  <text x="585" y="306" font-size="13" fill="#94a3b8" text-anchor="middle">169,80 €</text>
+  <rect x="630" y="290" width="98" height="26" rx="6" fill="rgba(234,179,8,0.15)" stroke="rgba(234,179,8,0.4)" stroke-width="1"/>
+  <text x="679" y="307" font-size="12" font-weight="700" fill="#eab308" text-anchor="middle">−27.9% (1×)</text>
+  <text x="782" y="307" font-size="11" font-weight="600" fill="#22c55e" text-anchor="middle">4 Stk. · ~489 €</text>
+  <text x="782" y="321" font-size="10" fill="#22c55e" text-anchor="middle" opacity="0.7">(1× Budget)</text>
+  <text x="878" y="307" font-size="11" fill="#22c55e" text-anchor="middle">135,84 €</text>
+  <text x="878" y="320" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+  <text x="952" y="307" font-size="11" fill="#475569" text-anchor="middle">118,86 €</text>
+  <text x="1026" y="307" font-size="11" fill="#475569" text-anchor="middle">101,88 €</text>
+  <text x="1100" y="307" font-size="11" fill="#475569" text-anchor="middle">84,90 €</text>
+
+  <!-- ROW 3: SAP -->
+  <rect x="20" y="352" width="1160" height="68" fill="#1a1f2e"/>
+  <line x1="20" y1="420" x2="1180" y2="420" stroke="#232b3e" stroke-width="1"/>
+  <text x="30" y="371" font-size="13" font-weight="700" fill="#e2e8f0">SAP SE</text>
+  <text x="30" y="387" font-size="10" fill="#64748b">SAP.DE · XETRA · DE0007164600</text>
+  <text x="30" y="406" font-size="11" fill="#22c55e">+18.3%  +4.575 €</text>
+  <text x="140" y="406" font-size="10" fill="#64748b">15 Stk. · Einstand: 166,50 €</text>
+  <text x="488" y="374" font-size="13" font-weight="700" fill="#e2e8f0" text-anchor="middle">197,18 €</text>
+  <text x="488" y="389" font-size="10" fill="#64748b" text-anchor="middle">01.06.2026 17:35</text>
+  <text x="585" y="374" font-size="13" fill="#94a3b8" text-anchor="middle">201,50 €</text>
+  <rect x="630" y="358" width="98" height="26" rx="6" fill="rgba(34,197,94,0.12)" stroke="rgba(34,197,94,0.3)" stroke-width="1"/>
+  <text x="679" y="375" font-size="12" font-weight="700" fill="#22c55e" text-anchor="middle">−2.1%</text>
+  <text x="782" y="378" font-size="11" fill="#374151" text-anchor="middle" opacity="0.4">—</text>
+  <text x="878" y="374" font-size="11" fill="#475569" text-anchor="middle">161,20 €</text>
+  <text x="952" y="374" font-size="11" fill="#475569" text-anchor="middle">141,05 €</text>
+  <text x="1026" y="374" font-size="11" fill="#475569" text-anchor="middle">120,90 €</text>
+  <text x="1100" y="374" font-size="11" fill="#475569" text-anchor="middle">100,75 €</text>
+
+  <!-- ROW 4: Apple -->
+  <rect x="20" y="420" width="1160" height="68" fill="#181c2a"/>
+  <line x1="20" y1="488" x2="1180" y2="488" stroke="#232b3e" stroke-width="1"/>
+  <text x="30" y="439" font-size="13" font-weight="700" fill="#e2e8f0">Apple</text>
+  <rect x="72" y="426" width="14" height="14" rx="3" fill="#3b82f6" opacity="0.85"/>
+  <text x="74" y="436" font-size="8" fill="#fff" font-weight="700">P</text>
+  <text x="30" y="455" font-size="10" fill="#64748b">APC.DE · XETRA · US0378331005</text>
+  <text x="30" y="474" font-size="11" fill="#ef4444">−5.8%  −870 €</text>
+  <text x="120" y="474" font-size="10" fill="#64748b">10 Stk. · Einstand: 158,70 €</text>
+  <text x="488" y="442" font-size="13" font-weight="700" fill="#e2e8f0" text-anchor="middle">149,52 €</text>
+  <text x="488" y="457" font-size="10" fill="#64748b" text-anchor="middle">01.06.2026 17:35</text>
+  <text x="585" y="442" font-size="13" fill="#94a3b8" text-anchor="middle">171,80 €</text>
+  <rect x="630" y="426" width="98" height="26" rx="6" fill="rgba(34,197,94,0.12)" stroke="rgba(34,197,94,0.3)" stroke-width="1"/>
+  <text x="679" y="443" font-size="12" font-weight="700" fill="#22c55e" text-anchor="middle">−12.9%</text>
+  <text x="782" y="446" font-size="11" fill="#374151" text-anchor="middle" opacity="0.4">—</text>
+  <text x="878" y="442" font-size="11" fill="#475569" text-anchor="middle">137,44 €</text>
+  <text x="952" y="442" font-size="11" fill="#475569" text-anchor="middle">120,26 €</text>
+  <text x="1026" y="442" font-size="11" fill="#475569" text-anchor="middle">103,08 €</text>
+  <text x="1100" y="442" font-size="11" fill="#475569" text-anchor="middle">85,90 €</text>
+
+  <!-- ROW 5: Nike -->
+  <rect x="20" y="488" width="1160" height="68" fill="#1a1f2e"/>
+  <line x1="20" y1="556" x2="1180" y2="556" stroke="#232b3e" stroke-width="1"/>
+  <text x="30" y="507" font-size="13" font-weight="700" fill="#e2e8f0">Nike</text>
+  <rect x="62" y="494" width="14" height="14" rx="3" fill="#3b82f6" opacity="0.85"/>
+  <text x="64" y="504" font-size="8" fill="#fff" font-weight="700">P</text>
+  <text x="30" y="523" font-size="10" fill="#64748b">NKE.DE · XETRA · US6541061031</text>
+  <text x="30" y="542" font-size="11" fill="#ef4444">−41.2%  −3.090 €</text>
+  <text x="145" y="542" font-size="10" fill="#64748b">75 Stk. · Einstand: 82,40 €</text>
+  <text x="488" y="510" font-size="13" font-weight="700" fill="#e2e8f0" text-anchor="middle">41,20 €</text>
+  <text x="488" y="525" font-size="10" fill="#64748b" text-anchor="middle">01.06.2026 17:35</text>
+  <text x="585" y="510" font-size="13" fill="#94a3b8" text-anchor="middle">76,48 €</text>
+  <rect x="630" y="494" width="98" height="26" rx="6" fill="rgba(249,115,22,0.18)" stroke="rgba(249,115,22,0.4)" stroke-width="1"/>
+  <text x="679" y="511" font-size="12" font-weight="700" fill="#f97316" text-anchor="middle">−46.1% (2×)</text>
+  <text x="782" y="510" font-size="11" font-weight="600" fill="#22c55e" text-anchor="middle">24 Stk. · ~989 €</text>
+  <text x="782" y="524" font-size="10" fill="#22c55e" text-anchor="middle" opacity="0.7">(2× Budget)</text>
+  <text x="878" y="510" font-size="11" fill="#22c55e" text-anchor="middle">61,18 €</text>
+  <text x="878" y="523" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+  <text x="952" y="510" font-size="11" fill="#22c55e" text-anchor="middle">53,54 €</text>
+  <text x="952" y="523" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+  <text x="1026" y="510" font-size="11" fill="#22c55e" text-anchor="middle">45,89 €</text>
+  <text x="1026" y="523" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+  <text x="1100" y="510" font-size="11" fill="#22c55e" text-anchor="middle">38,24 €</text>
+  <text x="1100" y="523" font-size="9" fill="#22c55e" text-anchor="middle">✓</text>
+
+  <!-- Version footer -->
+  <text x="600" y="610" font-size="10" fill="#374151" text-anchor="middle" opacity="0.6">Frontend v1.7.0 · Backend v1.7.0</text>
+</svg>
