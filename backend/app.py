@@ -20,7 +20,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.9.1"
+VERSION           = "1.9.2"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -369,7 +369,7 @@ def _refresh_depot(depot, trigger="auto"):
     did       = depot["id"]; dname = depot["name"]
     urls      = depot.get("apprise_urls", [])
     budget    = depot.get("buy_budget") or None
-    threshold = int(depot.get("nachkauf_threshold") or 30)
+    raw_t = depot.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else 30
 
     # ── Phase 1: Alle Kurse holen ─────────────────────────────────
     stocks = load_stocks(did)
@@ -461,8 +461,11 @@ def calc_nachkauf_set(stocks, threshold=30):
     """
     Berechnet welche Aktien Nachkauf-Kandidaten sind:
     ≥20% unter ATH UND in den unteren threshold% nach Positionswert.
+    threshold=0 bedeutet deaktiviert → leeres Set.
     Gibt ein Set von Tickern zurück.
     """
+    if not threshold:
+        return set()
     with_val = [s for s in stocks
                 if s.get("buy_price_eur") and s.get("shares") and s.get("current_eur", 0) > 0]
     if len(with_val) < 2:
@@ -949,7 +952,7 @@ def update_depot(depot_id):
                 d["buy_budget"] = float(raw) if raw else None
             if "nachkauf_threshold" in body:
                 raw = body["nachkauf_threshold"]
-                d["nachkauf_threshold"] = max(10, min(50, int(raw))) if raw else 30
+                d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
             save_depots(depots); return jsonify(d)
     return jsonify({"error": "Nicht gefunden"}), 404
 
