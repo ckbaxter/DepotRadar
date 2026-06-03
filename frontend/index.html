@@ -842,6 +842,12 @@ function renderDepotTabs(){
 
 function switchDepot(depot){
   activeDepot=depot; activeView={type:"depot",id:null,name:"Bestand"};
+  // Nachkauf-Filter zurücksetzen beim Depot-Wechsel
+  _buyFilterActive = false;
+  const btn  = document.getElementById("buyFilterBtn");
+  const wrap = document.getElementById("thresholdWrap");
+  if(btn)  btn.classList.remove("active");
+  if(wrap) wrap.style.display = "none";
   localStorage.setItem("activeDepot",depot.id);
   localStorage.setItem("activeView",JSON.stringify(activeView));
   renderDepotTabs(); renderViewTabs(); loadCurrentStocks();
@@ -895,6 +901,8 @@ function switchView(view){
 // ── Load stocks based on current view ───────────────────────────
 async function loadCurrentStocks(){
   if(!activeDepot) return;
+  // Nachkauf-Schwelle vom aktiven Depot laden
+  _buyThreshold = activeDepot.nachkauf_threshold || 30;
   updateViewTitle();
   try {
     let stocks;
@@ -908,7 +916,7 @@ async function loadCurrentStocks(){
     renderTable(stocks);
     const times=stocks.filter(s=>s.updated).map(s=>s.updated);
     if(times.length) document.getElementById("lastUpdate").textContent="Stand: "+times[times.length-1];
-  } catch(e){ toast("Fehler beim Laden",false); }
+  } catch(e){ console.error("loadCurrentStocks:", e); toast("Fehler beim Laden",false); }
 }
 
 function updateViewTitle(){
@@ -947,21 +955,29 @@ function toggleBuyFilter() {
   _buyFilterActive = !_buyFilterActive;
   document.getElementById("buyFilterBtn").classList.toggle("active", _buyFilterActive);
   document.getElementById("thresholdWrap").style.display = _buyFilterActive ? "flex" : "none";
-  document.getElementById("thresholdSlider").value       = _buyThreshold;
-  document.getElementById("thresholdLabel").textContent  = _buyThreshold + "%";
+  document.getElementById("thresholdSlider").value      = _buyThreshold;
+  document.getElementById("thresholdLabel").textContent = _buyThreshold + "%";
   loadCurrentStocks();
 }
 
+let _thresholdTimer = null;
 function updateThreshold(val) {
   _buyThreshold = parseInt(val);
   localStorage.setItem("buyThreshold", _buyThreshold);
   document.getElementById("thresholdLabel").textContent = _buyThreshold + "%";
-  // Wert ans Backend senden (für Benachrichtigungen)
-  fetch(`${API}/settings`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({nachkauf_threshold: _buyThreshold})
-  }).catch(()=>{});
-  loadCurrentStocks();
+  // Sofort neu rendern — kein API-Call, nur Cache neu filtern
+  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+  // Debounce: erst nach 500ms ans Backend speichern
+  clearTimeout(_thresholdTimer);
+  _thresholdTimer = setTimeout(() => {
+    if(activeDepot){
+      activeDepot.nachkauf_threshold = _buyThreshold;
+      fetch(`${API}/depots/${activeDepot.id}`, {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({nachkauf_threshold: _buyThreshold})
+      }).catch(()=>{});
+    }
+  }, 500);
 }
 
 // ── Parqet Client ID ─────────────────────────────────────────────
@@ -1359,15 +1375,16 @@ function addDepotUrl(){const v=document.getElementById("newDepotUrlInput").value
 function removeDepotUrl(i){depotUrls.splice(i,1);renderDepotUrlList();}
 async function saveDepotSettings(){
   if(!editingDepot) return;
-  const name=document.getElementById("editDepotName").value.trim(); if(!name) return;
-  const budgetVal = document.getElementById("depotBuyBudget").value;
-  const buy_budget = budgetVal ? parseFloat(budgetVal) : null;
+  const name         = document.getElementById("editDepotName").value.trim(); if(!name) return;
+  const budgetVal    = document.getElementById("depotBuyBudget").value;
+  const buy_budget   = budgetVal ? parseFloat(budgetVal) : null;
   const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget})});
+    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget, nachkauf_threshold:nk_threshold})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
   if(activeDepot&&activeDepot.id===editingDepot.id){
-    activeDepot.name=name; activeDepot.apprise_urls=depotUrls; activeDepot.buy_budget=buy_budget;
+    activeDepot.name=name; activeDepot.apprise_urls=depotUrls;
+    activeDepot.buy_budget=buy_budget; activeDepot.nachkauf_threshold=nk_threshold;
   }
   loadDepots();
 }
@@ -1486,10 +1503,7 @@ async function openSettingsModal(){
   const eh = (s.trading&&s.trading.end_hour!=null)   ? s.trading.end_hour   : 23;
   document.getElementById("tradingStart").value = String(sh).padStart(2,"0")+":00";
   document.getElementById("tradingEnd").value   = String(eh).padStart(2,"0")+":00";
-  // Nachkauf-Schwellenwert
-  _buyThreshold = s.nachkauf_threshold || 30;
-  document.getElementById("thresholdSlider").value      = _buyThreshold;
-  document.getElementById("thresholdLabel").textContent = _buyThreshold + "%";
+
   openModal("settingsModal");
   loadSplitsTable();
 }
@@ -1505,7 +1519,6 @@ async function saveSettings(){
       notifications_enabled: document.getElementById("notifsEnabled").checked,
       timezone:              document.getElementById("settingsTimezone").value,
       trading:               {days: _tradingDays, start_hour: startH, end_hour: endH},
-      nachkauf_threshold:    _buyThreshold
     })});
   toast("Einstellungen gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
 }
@@ -2242,7 +2255,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v1.9.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v1.9.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
 </div>
 </body>
 </html>
