@@ -1376,16 +1376,16 @@ function addDepotUrl(){const v=document.getElementById("newDepotUrlInput").value
 function removeDepotUrl(i){depotUrls.splice(i,1);renderDepotUrlList();}
 async function saveDepotSettings(){
   if(!editingDepot) return;
-  const name         = document.getElementById("editDepotName").value.trim(); if(!name) return;
-  const budgetVal    = document.getElementById("depotBuyBudget").value;
-  const buy_budget   = budgetVal ? parseFloat(budgetVal) : null;
+  const name       = document.getElementById("editDepotName").value.trim(); if(!name) return;
+  const budgetVal  = document.getElementById("depotBuyBudget").value;
+  const buy_budget = budgetVal ? parseFloat(budgetVal) : null;
   const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget, nachkauf_threshold:nk_threshold})});
+    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
   if(activeDepot&&activeDepot.id===editingDepot.id){
     activeDepot.name=name; activeDepot.apprise_urls=depotUrls;
-    activeDepot.buy_budget=buy_budget; activeDepot.nachkauf_threshold=nk_threshold;
+    activeDepot.buy_budget=buy_budget;
   }
   loadDepots();
 }
