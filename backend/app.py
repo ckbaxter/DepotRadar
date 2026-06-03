@@ -20,7 +20,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.9.0"
+VERSION           = "1.9.1"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -101,11 +101,10 @@ def load_settings():
         "notifications_enabled": True,
         "timezone":              cfg["timezone"],
         "trading":               dict(cfg["trading"]),
-        "nachkauf_threshold":    30,
     }
     if os.path.exists(SETTINGS_FILE):
         saved = json.load(open(SETTINGS_FILE, encoding="utf-8"))
-        for key in ("notifications_enabled", "refresh_interval", "timezone", "nachkauf_threshold"):
+        for key in ("notifications_enabled", "refresh_interval", "timezone"):
             if key in saved: s[key] = saved[key]
         if "trading" in saved:
             s["trading"].update(saved["trading"])
@@ -370,7 +369,7 @@ def _refresh_depot(depot, trigger="auto"):
     did       = depot["id"]; dname = depot["name"]
     urls      = depot.get("apprise_urls", [])
     budget    = depot.get("buy_budget") or None
-    threshold = load_settings().get("nachkauf_threshold", 30)
+    threshold = int(depot.get("nachkauf_threshold") or 30)
 
     # ── Phase 1: Alle Kurse holen ─────────────────────────────────
     stocks = load_stocks(did)
@@ -948,6 +947,9 @@ def update_depot(depot_id):
             if "buy_budget" in body:
                 raw = body["buy_budget"]
                 d["buy_budget"] = float(raw) if raw else None
+            if "nachkauf_threshold" in body:
+                raw = body["nachkauf_threshold"]
+                d["nachkauf_threshold"] = max(10, min(50, int(raw))) if raw else 30
             save_depots(depots); return jsonify(d)
     return jsonify({"error": "Nicht gefunden"}), 404
 
@@ -1226,8 +1228,6 @@ def update_settings():
         if "days"        in t: s["trading"]["days"]        = [int(d) for d in t["days"]]
         if "start_hour"  in t: s["trading"]["start_hour"]  = int(t["start_hour"])
         if "end_hour"    in t: s["trading"]["end_hour"]     = int(t["end_hour"])
-    if "nachkauf_threshold" in body:
-        s["nachkauf_threshold"] = max(10, min(50, int(body["nachkauf_threshold"])))
     save_settings(s); return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
