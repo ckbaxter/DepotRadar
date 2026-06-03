@@ -1,4 +1,4 @@
-import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math
+import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, shutil
 from datetime import datetime, timedelta
 from urllib.parse import quote as urlquote
 
@@ -20,7 +20,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.9.2"
+VERSION           = "1.9.3"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -137,31 +137,9 @@ def gen_id(name):
 
 # ── Migration ─────────────────────────────────────────────────────
 def migrate_if_needed():
-    if os.path.exists(DEPOTS_FILE):
-        depots = load_depots(); changed = False
-        for d in depots:
-            if "apprise_urls" not in d: d["apprise_urls"] = []; changed = True
-            if "watchlists"   not in d: d["watchlists"]   = []; changed = True
-        if changed: save_depots(depots)
-        # Splits-Datei anlegen falls nicht vorhanden (für bestehende Installationen)
-        if not os.path.exists(SPLITS_FILE): load_splits()
-        return
-    old = os.path.join(DATA_DIR, "stocks.json")
-    did, dname = "mein_depot", "Mein Depot"; global_urls = []
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            s = json.load(open(SETTINGS_FILE, encoding="utf-8"))
-            global_urls = s.pop("apprise_urls", [])
-            _save_json(SETTINGS_FILE, s)
-        except: pass
-    if os.path.exists(old):
-        import shutil; shutil.copy(old, depot_file(did))
-    else:
-        save_stocks(did, [])
-    save_depots([{"id": did, "name": dname, "apprise_urls": global_urls, "watchlists": []}])
-    # Splits-Datei anlegen falls nicht vorhanden
-    if not os.path.exists(SPLITS_FILE): load_splits()
-    log.info("Migration abgeschlossen")
+    """Stellt sicher dass splits.json existiert. Alle Datenmigration bereits abgeschlossen."""
+    if not os.path.exists(SPLITS_FILE):
+        load_splits()
 
 # ── Discount / Notification logic ─────────────────────────────────
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
@@ -656,7 +634,6 @@ def parqet_undo_sync(depot_id):
     bak = depot_backup_file(depot_id)
     if not os.path.exists(bak):
         return jsonify({"error": "Kein Backup vorhanden"}), 404
-    import shutil
     shutil.copy2(bak, depot_file(depot_id))
     os.remove(bak)
     add_log("manual_refresh", f"Sync rückgängig gemacht",
@@ -774,7 +751,6 @@ def parqet_sync(depot_id):
     holdings = calculate_holdings(all_activities)
     stocks   = load_stocks(depot_id)
     # Backup vor dem Sync anlegen
-    import shutil
     src = depot_file(depot_id); bak = depot_backup_file(depot_id)
     if os.path.exists(src): shutil.copy2(src, bak)
     updated, new_stocks, mismatches = [], [], []
