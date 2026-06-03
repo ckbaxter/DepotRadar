@@ -4,7 +4,7 @@ Ein selbst gehostetes Web-Tool zur Verfolgung von Aktien und ETFs relativ zu ihr
 
 Entwickelt für private Investoren die wissen wollen: *Wie weit ist meine Aktie gerade vom Hoch entfernt — und lohnt sich ein Nachkauf?*
 
-![Version Backend](https://img.shields.io/badge/Backend-v1.9.2-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v1.9.3-blue)
 ![Version Frontend](https://img.shields.io/badge/Frontend-v1.9.2-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
