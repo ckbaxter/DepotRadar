@@ -230,7 +230,7 @@ select.form-input{cursor:pointer}
     <div class="logo">ATH<span>-Tracker</span></div>
   </div>
   <div class="topbar-right">
-    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Dark/Light Mode">🌙</button>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Farbschema: Auto / Hell / Dunkel">A</button>
     <button class="btn btn-ghost btn-sm" onclick="openNotifModal()">&#128236;<span class="btn-label"> Verlauf</span></button>
     <button class="btn btn-ghost btn-sm" onclick="openSettingsModal()">&#9881;<span class="btn-label"> Einstellungen</span></button>
     <button class="btn btn-primary btn-sm" id="addStockBtn" onclick="openAddModal()">+<span class="btn-label"> Hinzufügen</span></button>
@@ -1043,17 +1043,28 @@ function pnlRow(s){
 }
 
 // ── Theme Toggle ────────────────────────────────────────────────
+function _applyTheme(mode){
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const useDark = mode === "dark" || (mode === "auto" && prefersDark);
+  document.documentElement.classList.toggle("light", !useDark);
+  const btn = document.getElementById("themeBtn");
+  if(btn) btn.textContent = mode === "auto" ? "A" : (useDark ? "🌙" : "☀️");
+}
+
 function toggleTheme(){
-  const isLight = document.documentElement.classList.toggle("light");
-  localStorage.setItem("theme", isLight ? "light" : "dark");
-  document.getElementById("themeBtn").textContent = isLight ? "☀️" : "🌙";
+  const modes = ["auto", "light", "dark"];
+  const cur   = localStorage.getItem("themeMode") || "auto";
+  const next  = modes[(modes.indexOf(cur) + 1) % modes.length];
+  localStorage.setItem("themeMode", next);
+  _applyTheme(next);
 }
 function initTheme(){
-  const t = localStorage.getItem("theme");
-  if(t === "light"){
-    document.documentElement.classList.add("light");
-    document.getElementById("themeBtn").textContent = "☀️";
-  }
+  const mode = localStorage.getItem("themeMode") || "auto";
+  _applyTheme(mode);
+  // Live-Reaktion auf OS-Wechsel (nur im Auto-Modus)
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if((localStorage.getItem("themeMode") || "auto") === "auto") _applyTheme("auto");
+  });
 }
 
 // ── Performance Badges ───────────────────────────────────────────
@@ -2256,7 +2267,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v1.9.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v1.9.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
 </div>
 </body>
 </html>
