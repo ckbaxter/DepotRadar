@@ -75,6 +75,9 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
 /* Summary */
 .summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.scard-clickable{cursor:pointer;transition:box-shadow .15s,transform .1s}
+.scard-clickable:hover{box-shadow:0 0 0 2px var(--accent);transform:translateY(-1px)}
+.scard-clickable.active{box-shadow:0 0 0 2px var(--accent);background:var(--accent-dim,rgba(78,124,246,.12))}
 .scard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
 .scard-label{font-size:11px;color:var(--muted);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .scard-val{font-size:20px;font-weight:700}
@@ -248,11 +251,11 @@ select.form-input{cursor:pointer}
 
 <div class="main">
   <div class="summary">
-    <div class="scard"><div class="scard-label">Aktien gesamt</div><div class="scard-val" id="sc-total" style="color:var(--text)">—</div></div>
-    <div class="scard"><div class="scard-label">&lt; 20% unter ATH</div><div class="scard-val" id="sc-green" style="color:var(--green)">—</div></div>
-    <div class="scard"><div class="scard-label">20–39% unter ATH</div><div class="scard-val" id="sc-yellow" style="color:var(--yellow)">—</div></div>
-    <div class="scard"><div class="scard-label">40–59% unter ATH</div><div class="scard-val" id="sc-orange" style="color:var(--orange)">—</div></div>
-    <div class="scard"><div class="scard-label">&gt; 60% unter ATH</div><div class="scard-val" id="sc-red" style="color:var(--red)">—</div></div>
+    <div class="scard scard-clickable" id="scard-all" onclick="setSummaryFilter('all')" title="Alle anzeigen"><div class="scard-label">Aktien gesamt</div><div class="scard-val" id="sc-total" style="color:var(--text)">—</div></div>
+    <div class="scard scard-clickable" id="scard-green" onclick="setSummaryFilter('green')" title="< 20% unter ATH filtern"><div class="scard-label">&lt; 20% unter ATH</div><div class="scard-val" id="sc-green" style="color:var(--green)">—</div></div>
+    <div class="scard scard-clickable" id="scard-yellow" onclick="setSummaryFilter('yellow')" title="20-39% filtern"><div class="scard-label">20–39% unter ATH</div><div class="scard-val" id="sc-yellow" style="color:var(--yellow)">—</div></div>
+    <div class="scard scard-clickable" id="scard-orange" onclick="setSummaryFilter('orange')" title="40-59% filtern"><div class="scard-label">40–59% unter ATH</div><div class="scard-val" id="sc-orange" style="color:var(--orange)">—</div></div>
+    <div class="scard scard-clickable" id="scard-red" onclick="setSummaryFilter('red')" title="> 60% filtern"><div class="scard-label">&gt; 60% unter ATH</div><div class="scard-val" id="sc-red" style="color:var(--red)">—</div></div>
   </div>
 
   <!-- Portfolio-Übersicht (nur wenn Einstandsdaten vorhanden) -->
@@ -883,8 +886,12 @@ function renderDepotTabs(){
 
 function switchDepot(depot){
   activeDepot=depot; activeView={type:"depot",id:null,name:"Bestand"};
-  // Nachkauf-Filter zurücksetzen beim Depot-Wechsel
-  _buyFilterActive = false;
+  // Filter zurücksetzen beim Depot-Wechsel
+  _buyFilterActive = false; _summaryFilter = "all";
+  ["green","yellow","orange","red"].forEach(k => {
+    const el = document.getElementById("scard-"+k);
+    if(el) el.classList.remove("active");
+  });
   const btn  = document.getElementById("buyFilterBtn");
   const wrap = document.getElementById("thresholdWrap");
   if(btn)  btn.classList.remove("active");
@@ -978,6 +985,31 @@ function updateViewTitle(){
 // ── Nachkauf-Kandidaten ──────────────────────────────────────────
 let _buyFilterActive = false;
 let _buyThreshold    = parseInt(localStorage.getItem("buyThreshold") || "30");
+
+let _summaryFilter = "all";
+
+function setSummaryFilter(key){
+  _summaryFilter = _summaryFilter === key ? "all" : key;  // toggle
+  ["all","green","yellow","orange","red"].forEach(k => {
+    const el = document.getElementById("scard-"+k);
+    if(el) el.classList.toggle("active", _summaryFilter === k && k !== "all");
+    if(k === "all" && el) el.classList.toggle("active", false);
+  });
+  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+}
+
+function _applySummaryFilter(stocks){
+  if(_summaryFilter === "all") return stocks;
+  return stocks.filter(s => {
+    if(!s.ath_eur || !s.current_eur) return false;
+    const d = (s.ath_eur - s.current_eur) / s.ath_eur * 100;
+    if(_summaryFilter === "green")  return d >= 0  && d < 20;
+    if(_summaryFilter === "yellow") return d >= 20 && d < 40;
+    if(_summaryFilter === "orange") return d >= 40 && d < 60;
+    if(_summaryFilter === "red")    return d >= 60;
+    return true;
+  });
+}
 
 function markBuyCandidates(stocks) {
   if(!_buyThreshold){ stocks.forEach(s => s._isBuyCandidate = false); return; }
@@ -1239,6 +1271,7 @@ function renderTable(stocks){
   empty.style.display="none"; tscrl.style.display="";
 
   renderPortfolioStats(stocks);
+  stocks = _applySummaryFilter(stocks);
   markBuyCandidates(stocks);
   if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
   const sorted=sortedStocks(stocks);
@@ -1759,11 +1792,9 @@ async function loadParqetStatus(depotId){
         btns += `<button class="btn btn-ghost btn-sm" onclick="loadParqetPortfolios()">Portfolio wählen</button>`;
       }
       if(s.has_backup){
-        btns += `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:1px">
-          <button class="btn btn-ghost btn-sm" style="color:var(--muted)"
-                  onclick="parqetUndoSync('${depotId}')">&#8617; Rückgängig</button>
-          ${s.backup_time ? `<span style="font-size:10px;color:var(--muted);opacity:.7">vom ${s.backup_time}</span>` : ""}
-        </span>`;
+        const btime = s.backup_time ? `<br><span style="font-size:10px;font-weight:400;opacity:.6">vom ${s.backup_time}</span>` : "";
+        btns += `<button class="btn btn-ghost btn-sm" style="color:var(--muted);line-height:1.4"
+                   onclick="parqetUndoSync('${depotId}')">&#8617; Rückgängig${btime}</button>`;
       }
       btns += `<button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
       actions.innerHTML = btns;
