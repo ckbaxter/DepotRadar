@@ -395,8 +395,14 @@ def _restore_last_refresh():
         raw = _load_json(SETTINGS_FILE, {})
         ts  = raw.get("last_refresh_ts")
         if ts:
-            tz = pytz.timezone(raw.get("timezone", "Europe/Berlin"))
-            _last_refresh = datetime.fromtimestamp(float(ts), tz)
+            tz       = pytz.timezone(raw.get("timezone", "Europe/Berlin"))
+            interval = raw.get("refresh_interval", 3600)
+            restored = datetime.fromtimestamp(float(ts), tz)
+            now_dt   = datetime.now(tz)
+            # Verpasste Intervalle überspringen damit kein sofortiger Refresh ausgelöst wird
+            while (now_dt - restored).total_seconds() >= interval:
+                restored += timedelta(seconds=interval)
+            _last_refresh = restored
             log.info(f"Letzter Refresh wiederhergestellt: {_last_refresh.strftime('%d.%m.%Y %H:%M')}")
         else:
             log.info("Kein gespeicherter Refresh-Zeitpunkt — warte volles Intervall")
@@ -432,10 +438,17 @@ def get_next_run_info():
         if c.hour < sh:
             c = tz.localize(datetime(c.year, c.month, c.day, sh, 0))
         return c.strftime("%d.%m.%Y %H:%M") + " Uhr"
+    # Kein letzter Refresh bekannt — falls wir gerade in der Handelszeit sind,
+    # now als Referenz nehmen damit das Intervall korrekt berechnet wird
+    ref = now
     d = now.date()
     for i in range(0, 8):
         check = d if i == 0 else d + timedelta(days=i)
         if check.weekday() in days:
+            if i == 0 and sh <= now.hour < eh:
+                # Mitten in der Handelszeit: Intervall ab jetzt
+                c = ref + timedelta(seconds=interval)
+                return c.strftime("%d.%m.%Y %H:%M") + " Uhr"
             if i == 0 and now.hour < sh:
                 return tz.localize(datetime(check.year, check.month, check.day, sh, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
             elif i > 0:
@@ -443,8 +456,9 @@ def get_next_run_info():
     return "unbekannt"
 
 def start_scheduler():
+    _restore_last_refresh()
     scheduler.add_job(trading_window_check, "cron", minute="*", id="trading_check",
-                      replace_existing=True, misfire_grace_time=120)
+                      replace_existing=True, misfire_grace_time=None)
     if not scheduler.running: scheduler.start()
     log.info("Scheduler gestartet")
 
