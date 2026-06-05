@@ -5,12 +5,10 @@ from urllib.parse import quote as urlquote
 import pytz, yaml, requests, apprise as apprise_lib
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, request, redirect
-from flask_cors import CORS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 app = Flask(__name__)
-CORS(app)
 
 DATA_DIR      = "/data"
 CONFIG_FILE   = "/data/ath-tracker.yml"   # Optional — Defaults werden verwendet wenn nicht vorhanden
