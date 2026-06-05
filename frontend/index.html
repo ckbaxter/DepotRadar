@@ -275,11 +275,11 @@ select.form-input{cursor:pointer}
       <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-pnl-pct"></div>
     </div>
     <div class="scard">
-      <div class="scard-label">&#127881; Bester</div>
+      <div class="scard-label">&#127881; Top 3</div>
       <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-best">—</div>
     </div>
     <div class="scard">
-      <div class="scard-label">&#128577; Schlechtester</div>
+      <div class="scard-label">&#128577; Flop 3</div>
       <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-worst">—</div>
     </div>
   </div>
@@ -1128,9 +1128,6 @@ function renderPortfolioStats(stocks){
   const ranked = withCost
     .map(s => ({name: s.name, pct: ((s.current_eur - s.buy_price_eur) / s.buy_price_eur) * 100}))
     .sort((a,b) => b.pct - a.pct);
-  const best  = ranked[0];
-  const worst = ranked[ranked.length - 1];
-
   const fmt = v => v.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
 
   document.getElementById("ps-total").textContent   = fmt(totalVal) + " EUR";
@@ -1141,12 +1138,22 @@ function renderPortfolioStats(stocks){
   pctEl.textContent  = (totalPct >= 0 ? "+" : "") + totalPct.toFixed(1) + "%";
   pctEl.style.color  = totalPct >= 0 ? "var(--green)" : "var(--red)";
 
-  document.getElementById("ps-best").innerHTML  =
-    `<span style="color:var(--green)">${best.name}</span>
-     <span style="font-size:11px;color:var(--green);font-weight:400"> +${best.pct.toFixed(1)}%</span>`;
-  document.getElementById("ps-worst").innerHTML =
-    `<span style="color:var(--red)">${worst.name}</span>
-     <span style="font-size:11px;color:var(--red);font-weight:400"> ${worst.pct.toFixed(1)}%</span>`;
+  const top3  = ranked.slice(0, 3);
+  const flop3 = ranked.slice(-3).reverse();
+
+  document.getElementById("ps-best").innerHTML = top3.map(s =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+      <span style="color:var(--green);font-size:12px;font-weight:600">${s.name}</span>
+      <span style="color:var(--green);font-size:11px;margin-left:6px;white-space:nowrap">+${s.pct.toFixed(1)}%</span>
+    </div>`
+  ).join("");
+
+  document.getElementById("ps-worst").innerHTML = flop3.map(s =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+      <span style="color:var(--red);font-size:12px;font-weight:600">${s.name}</span>
+      <span style="color:var(--red);font-size:11px;margin-left:6px;white-space:nowrap">${s.pct.toFixed(1)}%</span>
+    </div>`
+  ).join("");
 
   document.getElementById("portfolioSummaryWrap").style.display = "";
   // Gespeicherten Zustand wiederherstellen (Standard: eingeklappt)
