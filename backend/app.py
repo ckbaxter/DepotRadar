@@ -389,6 +389,20 @@ def refresh_all_depots(trigger="auto"):
 scheduler = BackgroundScheduler(daemon=True)
 _last_refresh = None; _start_of_day_done = None
 
+def _restore_last_refresh():
+    """Stellt _last_refresh aus settings.json wieder her — damit das Intervall nach Neustart weiterläuft."""
+    global _last_refresh
+    try:
+        s = load_settings()
+        ts = s.get("last_refresh_ts")
+        if ts:
+            sett = load_settings()
+            tz   = pytz.timezone(sett.get("timezone", "Europe/Berlin"))
+            _last_refresh = datetime.fromtimestamp(ts, tz)
+            log.info(f"Letzter Refresh wiederhergestellt: {_last_refresh.strftime('%d.%m.%Y %H:%M')}")
+    except Exception as e:
+        log.warning(f"Konnte letzten Refresh nicht wiederherstellen: {e}")
+
 def trading_window_check():
     global _last_refresh, _start_of_day_done
     s        = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
@@ -397,9 +411,11 @@ def trading_window_check():
     if now.weekday() not in days or now.hour < sh or now.hour >= eh: return
     today = now.date()
     if now.hour == sh and now.minute == 0 and _start_of_day_done != today:
-        _start_of_day_done = today; _last_refresh = now; refresh_all_depots("auto"); return
+        _start_of_day_done = today; _last_refresh = now; s["last_refresh_ts"] = now.timestamp(); save_settings(s); refresh_all_depots("auto"); return
     if _last_refresh is None or (now - _last_refresh).total_seconds() >= interval:
-        _last_refresh = now; refresh_all_depots("auto")
+        _last_refresh = now
+        s["last_refresh_ts"] = now.timestamp(); save_settings(s)
+        refresh_all_depots("auto")
 
 def get_next_run_info():
     s        = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
