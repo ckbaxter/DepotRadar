@@ -20,7 +20,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.9.3"
+VERSION           = "1.9.5"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -664,7 +664,12 @@ def parqet_status(depot_id):
                     "last_sync": pq.get("last_sync"),
                     "has_client_id": bool(get_client_id(depot)),
                     "needs_reconnect": pq.get("needs_reconnect", False),
-                    "has_backup": os.path.exists(depot_backup_file(depot_id))})
+                    "has_backup": os.path.exists(depot_backup_file(depot_id)),
+                    "backup_time": (
+                        datetime.fromtimestamp(os.path.getmtime(depot_backup_file(depot_id)))
+                        .strftime("%d.%m.%Y %H:%M")
+                        if os.path.exists(depot_backup_file(depot_id)) else None
+                    )})
 
 @app.route("/api/depots/<depot_id>/parqet/portfolios", methods=["GET"])
 def parqet_portfolios(depot_id):
@@ -750,9 +755,7 @@ def parqet_sync(depot_id):
     # 4) Splitbereinigten Einstand berechnen und abgleichen
     holdings = calculate_holdings(all_activities)
     stocks   = load_stocks(depot_id)
-    # Backup vor dem Sync anlegen
     src = depot_file(depot_id); bak = depot_backup_file(depot_id)
-    if os.path.exists(src): shutil.copy2(src, bak)
     updated, new_stocks, mismatches = [], [], []
 
     for isin, h in holdings.items():
@@ -773,6 +776,9 @@ def parqet_sync(depot_id):
             new_stocks.append({"isin": isin, "name": h["name"],
                                "shares": round(h["shares"], 6), "buy_price_eur": h["avg_price_eur"]})
 
+    # Backup nur anlegen wenn wirklich etwas geändert wurde
+    if updated and os.path.exists(src):
+        shutil.copy2(src, bak)
     save_stocks(depot_id, stocks)
     for d in depots:
         if d["id"] == depot_id:
