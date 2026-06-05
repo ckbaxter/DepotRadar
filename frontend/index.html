@@ -207,6 +207,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .btn-buy-filter.active{background:rgba(34,197,94,.25);border-color:#22c55e}
 .threshold-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .threshold-wrap input[type=range]{width:120px;min-height:28px;accent-color:#22c55e}
+.notif-filter-btn.active{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
 .app-version{font-size:10px;color:var(--muted);text-align:center;padding:8px 0 4px;opacity:.5}
 
 .day-btn{min-width:36px;min-height:36px;border:1px solid var(--border);border-radius:6px;
@@ -252,6 +253,36 @@ select.form-input{cursor:pointer}
     <div class="scard"><div class="scard-label">20–39% unter ATH</div><div class="scard-val" id="sc-yellow" style="color:var(--yellow)">—</div></div>
     <div class="scard"><div class="scard-label">40–59% unter ATH</div><div class="scard-val" id="sc-orange" style="color:var(--orange)">—</div></div>
     <div class="scard"><div class="scard-label">&gt; 60% unter ATH</div><div class="scard-val" id="sc-red" style="color:var(--red)">—</div></div>
+  </div>
+
+  <!-- Portfolio-Übersicht (nur wenn Einstandsdaten vorhanden) -->
+  <div id="portfolioSummaryWrap" style="display:none">
+    <button onclick="togglePortfolioSummary()"
+            style="background:none;border:none;cursor:pointer;width:100%;text-align:left;
+                   padding:4px 16px;font-size:12px;color:var(--muted);display:flex;
+                   align-items:center;gap:6px;user-select:none">
+      <span id="portfolioToggleIcon">▶</span>
+      <span>Portfolio-Übersicht</span>
+    </button>
+    <div class="summary" id="portfolioSummary" style="display:none">
+    <div class="scard">
+      <div class="scard-label">Gesamtwert</div>
+      <div class="scard-val" id="ps-total" style="color:var(--text)">—</div>
+    </div>
+    <div class="scard">
+      <div class="scard-label">Gewinn / Verlust</div>
+      <div class="scard-val" id="ps-pnl">—</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-pnl-pct"></div>
+    </div>
+    <div class="scard">
+      <div class="scard-label">&#127881; Bester</div>
+      <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-best">—</div>
+    </div>
+    <div class="scard">
+      <div class="scard-label">&#128577; Schlechtester</div>
+      <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-worst">—</div>
+    </div>
+  </div>
   </div>
 
   <div class="table-wrap">
@@ -682,6 +713,16 @@ select.form-input{cursor:pointer}
       <span class="modal-title">&#128236; Verlauf</span>
       <button class="close-btn" onclick="closeModal('notifModal')">&#215;</button>
     </div>
+    <!-- Filter bar -->
+    <div style="padding:10px 16px 0;display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--border);padding-bottom:10px">
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm notif-filter-btn active" id="nfAll"
+                onclick="setNotifTypeFilter('all')" style="font-size:12px">Alle</button>
+        <button class="btn btn-ghost btn-sm notif-filter-btn" id="nfAlarm"
+                onclick="setNotifTypeFilter('alarm')" style="font-size:12px">🔔 Nur Alarme</button>
+      </div>
+      <div id="notifDepotFilters" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+    </div>
     <div class="modal-body"><div id="notifList"></div></div>
   </div>
 </div>
@@ -1067,6 +1108,62 @@ function initTheme(){
   });
 }
 
+// ── Portfolio-Übersicht ──────────────────────────────────────────
+function renderPortfolioStats(stocks){
+  // Nur für Bestand-Ansicht, nicht Watchlist
+  const wrap = document.getElementById("portfolioSummary");
+  if(isWl()){ wrap.style.display = "none"; return; }
+
+  const withCost = stocks.filter(s => s.buy_price_eur && s.shares && s.current_eur > 0);
+  if(!withCost.length){ wrap.style.display = "none"; return; }
+
+  // Gesamtwert
+  const totalVal  = withCost.reduce((a,s) => a + s.current_eur * s.shares, 0);
+  // Gesamtkosten
+  const totalCost = withCost.reduce((a,s) => a + s.buy_price_eur * s.shares, 0);
+  const totalPnl  = totalVal - totalCost;
+  const totalPct  = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+
+  // Bester / Schlechtester nach P&L %
+  const ranked = withCost
+    .map(s => ({name: s.name, pct: ((s.current_eur - s.buy_price_eur) / s.buy_price_eur) * 100}))
+    .sort((a,b) => b.pct - a.pct);
+  const best  = ranked[0];
+  const worst = ranked[ranked.length - 1];
+
+  const fmt = v => v.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  document.getElementById("ps-total").textContent   = fmt(totalVal) + " EUR";
+  const pnlEl = document.getElementById("ps-pnl");
+  pnlEl.textContent  = (totalPnl >= 0 ? "+" : "") + fmt(totalPnl) + " EUR";
+  pnlEl.style.color  = totalPnl >= 0 ? "var(--green)" : "var(--red)";
+  const pctEl = document.getElementById("ps-pnl-pct");
+  pctEl.textContent  = (totalPct >= 0 ? "+" : "") + totalPct.toFixed(1) + "%";
+  pctEl.style.color  = totalPct >= 0 ? "var(--green)" : "var(--red)";
+
+  document.getElementById("ps-best").innerHTML  =
+    `<span style="color:var(--green)">${best.name}</span>
+     <span style="font-size:11px;color:var(--green);font-weight:400"> +${best.pct.toFixed(1)}%</span>`;
+  document.getElementById("ps-worst").innerHTML =
+    `<span style="color:var(--red)">${worst.name}</span>
+     <span style="font-size:11px;color:var(--red);font-weight:400"> ${worst.pct.toFixed(1)}%</span>`;
+
+  document.getElementById("portfolioSummaryWrap").style.display = "";
+  // Gespeicherten Zustand wiederherstellen (Standard: eingeklappt)
+  const open = localStorage.getItem("portfolioOpen") === "1";
+  wrap.style.display = open ? "" : "none";
+  document.getElementById("portfolioToggleIcon").textContent = open ? "▼" : "▶";
+}
+
+function togglePortfolioSummary(){
+  const cards = document.getElementById("portfolioSummary");
+  const icon  = document.getElementById("portfolioToggleIcon");
+  const open  = cards.style.display === "none";
+  cards.style.display = open ? "" : "none";
+  icon.textContent    = open ? "▼" : "▶";
+  localStorage.setItem("portfolioOpen", open ? "1" : "0");
+}
+
 // ── Performance Badges ───────────────────────────────────────────
 function perfBadge(val, label){
   if(val === null || val === undefined) return "";
@@ -1134,6 +1231,7 @@ function renderTable(stocks){
   }
   empty.style.display="none"; tscrl.style.display="";
 
+  renderPortfolioStats(stocks);
   markBuyCandidates(stocks);
   if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
   const sorted=sortedStocks(stocks);
@@ -1538,17 +1636,76 @@ async function saveSettings(){
 // ── Verlauf ───────────────────────────────────────────────────────
 const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test"};
 const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",test:"test"};
+let _notifItems = []; let _notifTypeFilter = "all"; let _notifDepotFilter = "all"; let _notifDepotFilterName = "all";
+
 async function openNotifModal(){
-  const r=await fetch(`${API}/notifications`); const items=await r.json();
-  const list=document.getElementById("notifList");
-  if(!items.length){list.innerHTML='<div style="color:var(--muted);text-align:center;padding:24px">Noch keine Einträge</div>';}
-  else list.innerHTML='<div class="notif-list">'+items.map(n=>`
+  // Benachrichtigungen + Depots parallel laden
+  const [rN, rD] = await Promise.all([
+    fetch(`${API}/notifications`),
+    fetch(`${API}/depots`)
+  ]);
+  _notifItems = await rN.json();
+  const depots = await rD.json();
+
+  // Depot-Filter Chips rendern
+  const chipWrap = document.getElementById("notifDepotFilters");
+  chipWrap.innerHTML = depots.map(d =>
+    `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfD_${d.id}"
+             onclick="setNotifDepotFilter('${d.id}','${d.name.replace(/'/g,"\'")}')"
+             style="font-size:12px">${d.name}</button>`
+  ).join("");
+
+  // Filter zurücksetzen
+  _notifTypeFilter = "all"; _notifDepotFilter = "all"; _notifDepotFilterName = "all";
+  _updateNotifFilterBtns();
+  _renderNotifList();
+  openModal("notifModal");
+}
+
+function setNotifTypeFilter(type){
+  _notifTypeFilter = type;
+  _updateNotifFilterBtns();
+  _renderNotifList();
+}
+
+function setNotifDepotFilter(id, name){
+  _notifDepotFilter      = _notifDepotFilter === id ? "all" : id;
+  _notifDepotFilterName  = _notifDepotFilter === "all" ? "all" : name;
+  _updateNotifFilterBtns();
+  _renderNotifList();
+}
+
+function _updateNotifFilterBtns(){
+  document.getElementById("nfAll").classList.toggle("active",   _notifTypeFilter === "all");
+  document.getElementById("nfAlarm").classList.toggle("active", _notifTypeFilter === "alarm");
+  document.querySelectorAll("[id^='nfD_']").forEach(btn => {
+    const id = btn.id.replace("nfD_","");
+    btn.classList.toggle("active", _notifDepotFilter === id);
+  });
+}
+
+function _renderNotifList(){
+  const list = document.getElementById("notifList");
+  let items = _notifItems;
+
+  // Typ-Filter: nur Alarme (anhand Titel, robust gegenüber type-Feldvarianten)
+  if(_notifTypeFilter === "alarm")
+    items = items.filter(n => n.title && n.title.includes("ATH-Alarm"));
+
+  // Depot-Filter
+  if(_notifDepotFilter !== "all")
+    items = items.filter(n => n.title && n.title.includes(_notifDepotFilterName));
+
+  if(!items.length){
+    list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">Keine Einträge</div>';
+    return;
+  }
+  list.innerHTML = '<div class="notif-list">' + items.map(n=>`
     <div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
       <div class="notif-title">${typeLabel[n.type]||n.type} &nbsp; ${n.title}</div>
       <div class="notif-body">${n.body}</div>
       <div class="notif-meta"><span>${n.time}</span><span>${n.success?"✓ OK":"✗ Fehler"}</span></div>
-    </div>`).join("")+'</div>';
-  openModal("notifModal");
+    </div>`).join("") + '</div>';
 }
 
 // ── Scheduler status ──────────────────────────────────────────────
@@ -2267,7 +2424,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v1.9.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v1.9.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
