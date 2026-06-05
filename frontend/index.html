@@ -1759,8 +1759,11 @@ async function loadParqetStatus(depotId){
         btns += `<button class="btn btn-ghost btn-sm" onclick="loadParqetPortfolios()">Portfolio wählen</button>`;
       }
       if(s.has_backup){
-        btns += `<button class="btn btn-ghost btn-sm" style="color:var(--muted)"
-                   onclick="parqetUndoSync('${depotId}')">&#8617; Rückgängig</button>`;
+        btns += `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:1px">
+          <button class="btn btn-ghost btn-sm" style="color:var(--muted)"
+                  onclick="parqetUndoSync('${depotId}')">&#8617; Rückgängig</button>
+          ${s.backup_time ? `<span style="font-size:10px;color:var(--muted);opacity:.7">vom ${s.backup_time}</span>` : ""}
+        </span>`;
       }
       btns += `<button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
       actions.innerHTML = btns;
@@ -2431,7 +2434,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v1.9.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v1.9.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
