@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Python/pip Abhängigkeiten
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+
+  # Docker Base Image
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: monthly
+      timezone: Europe/Berlin
+    labels:
+      - dependencies
