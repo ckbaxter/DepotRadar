@@ -391,13 +391,15 @@ def _restore_last_refresh():
     """Stellt _last_refresh aus settings.json wieder her — damit das Intervall nach Neustart weiterläuft."""
     global _last_refresh
     try:
-        s = load_settings()
-        ts = s.get("last_refresh_ts")
+        # Direkt aus der rohen JSON-Datei lesen — load_settings() filtert unbekannte Keys heraus
+        raw = _load_json(SETTINGS_FILE, {})
+        ts  = raw.get("last_refresh_ts")
         if ts:
-            sett = load_settings()
-            tz   = pytz.timezone(sett.get("timezone", "Europe/Berlin"))
-            _last_refresh = datetime.fromtimestamp(ts, tz)
+            tz = pytz.timezone(raw.get("timezone", "Europe/Berlin"))
+            _last_refresh = datetime.fromtimestamp(float(ts), tz)
             log.info(f"Letzter Refresh wiederhergestellt: {_last_refresh.strftime('%d.%m.%Y %H:%M')}")
+        else:
+            log.info("Kein gespeicherter Refresh-Zeitpunkt — warte volles Intervall")
     except Exception as e:
         log.warning(f"Konnte letzten Refresh nicht wiederherstellen: {e}")
 
