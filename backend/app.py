@@ -767,11 +767,21 @@ def parqet_sync(depot_id):
                                    "shares": round(h["shares"], 6)})
                 log.warning(f"ISIN-Konflikt: {isin} Parqet='{h['name']}' Depot='{match['name']}'")
             else:
-                match["buy_price_eur"] = h["avg_price_eur"]
-                match["shares"]        = round(h["shares"], 6)
+                new_price  = h["avg_price_eur"]
+                new_shares = round(h["shares"], 6)
+                # Nur als geändert markieren wenn sich Werte wirklich unterscheiden
+                actually_changed = (
+                    round(match.get("buy_price_eur") or 0, 4) != round(new_price or 0, 4) or
+                    round(match.get("shares") or 0, 6) != new_shares
+                )
+                match["buy_price_eur"] = new_price
+                match["shares"]        = new_shares
                 match["isin"]          = isin
-                updated.append(match["name"])
-                log.info(f"Sync OK: {match['name']} Einstand={h['avg_price_eur']:.2f}€ Stk={h['shares']:.4f}")
+                if actually_changed:
+                    updated.append(match["name"])
+                    log.info(f"Sync GEÄNDERT: {match['name']} Einstand={new_price:.2f}€ Stk={new_shares:.4f}")
+                else:
+                    log.debug(f"Sync unverändert: {match['name']}")
         else:
             new_stocks.append({"isin": isin, "name": h["name"],
                                "shares": round(h["shares"], 6), "buy_price_eur": h["avg_price_eur"]})
