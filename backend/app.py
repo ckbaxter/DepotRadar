@@ -49,7 +49,7 @@ def splits_as_dict():
 # ── Config ────────────────────────────────────────────────────────
 _CFG_DEF = {
     "timezone": "Europe/Berlin",
-    "trading":  {"days": [0,1,2,3,4], "start_hour": 8, "end_hour": 23},
+    "trading":  {"days": [0,1,2,3,4], "start_hour": 8, "start_minute": 0, "end_hour": 23, "end_minute": 0},
     "refresh_interval_seconds": 3600,
 }
 
@@ -98,11 +98,17 @@ def load_settings():
         "refresh_interval":      cfg["refresh_interval_seconds"],
         "notifications_enabled": True,
         "timezone":              cfg["timezone"],
-        "trading":               dict(cfg["trading"]),
+        "trading":               {
+            "days":         list(cfg["trading"]["days"]),
+            "start_hour":   cfg["trading"]["start_hour"],
+            "start_minute": cfg["trading"].get("start_minute", 0),
+            "end_hour":     cfg["trading"]["end_hour"],
+            "end_minute":   cfg["trading"].get("end_minute", 0),
+        },
     }
     if os.path.exists(SETTINGS_FILE):
         saved = json.load(open(SETTINGS_FILE, encoding="utf-8"))
-        for key in ("notifications_enabled", "refresh_interval", "timezone"):
+        for key in ("notifications_enabled", "refresh_interval", "timezone", "next_refresh_ts"):
             if key in saved: s[key] = saved[key]
         if "trading" in saved:
             s["trading"].update(saved["trading"])
@@ -388,48 +394,63 @@ scheduler = BackgroundScheduler(daemon=True)
 _last_refresh = None; _start_of_day_done = None
 
 def _restore_last_refresh():
-    """Stellt _last_refresh aus settings.json wieder her — damit das Intervall nach Neustart weiterläuft."""
+    """Liest next_refresh_ts aus settings.json und setzt _last_refresh so dass der
+    geplante nächste Refresh korrekt eingehalten wird — auch nach Neustart."""
     global _last_refresh
     try:
-        # Direkt aus der rohen JSON-Datei lesen — load_settings() filtert unbekannte Keys heraus
-        raw = _load_json(SETTINGS_FILE, {})
-        ts  = raw.get("last_refresh_ts")
-        if ts:
-            tz       = pytz.timezone(raw.get("timezone", "Europe/Berlin"))
-            interval = raw.get("refresh_interval", 3600)
-            restored = datetime.fromtimestamp(float(ts), tz)
-            now_dt   = datetime.now(tz)
-            # Verpasste Intervalle überspringen damit kein sofortiger Refresh ausgelöst wird
-            while (now_dt - restored).total_seconds() >= interval:
-                restored += timedelta(seconds=interval)
-            _last_refresh = restored
-            log.info(f"Letzter Refresh wiederhergestellt: {_last_refresh.strftime('%d.%m.%Y %H:%M')}")
+        raw      = _load_json(SETTINGS_FILE, {})
+        next_ts  = raw.get("next_refresh_ts")
+        interval = raw.get("refresh_interval", 3600)
+        tz       = pytz.timezone(raw.get("timezone", "Europe/Berlin"))
+        now_dt   = datetime.now(tz)
+        # Migration: falls next_refresh_ts fehlt, aus last_refresh_ts berechnen
+        if not next_ts and raw.get("last_refresh_ts"):
+            next_ts = float(raw["last_refresh_ts"]) + interval
+            log.info("Migration: next_refresh_ts aus last_refresh_ts berechnet")
+        if next_ts:
+            next_dt = datetime.fromtimestamp(float(next_ts), tz)
+            if next_dt > now_dt:
+                # Nächster Refresh liegt in der Zukunft — darauf warten
+                _last_refresh = next_dt - timedelta(seconds=interval)
+                log.info(f"Nächster Refresh geplant: {next_dt.strftime('%d.%m.%Y %H:%M')}")
+            else:
+                # Nächster Refresh verpasst — sofort nachholen
+                _last_refresh = None
+                log.info(f"Geplanter Refresh ({next_dt.strftime('%H:%M')}) verpasst — wird sofort nachgeholt")
         else:
             log.info("Kein gespeicherter Refresh-Zeitpunkt — warte volles Intervall")
     except Exception as e:
-        log.warning(f"Konnte letzten Refresh nicht wiederherstellen: {e}")
+        log.warning(f"Konnte Refresh-Zeitpunkt nicht wiederherstellen: {e}")
 
 def trading_window_check():
     global _last_refresh, _start_of_day_done
     s        = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
     interval = s["refresh_interval"]
-    t = s["trading"]; days = t.get("days", [0,1,2,3,4]); sh = t.get("start_hour", 8); eh = t.get("end_hour", 23)
-    if now.weekday() not in days or now.hour < sh or now.hour >= eh: return
+    t = s["trading"]; days = t.get("days", [0,1,2,3,4])
+    sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
+    eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
+    now_mins = now.hour * 60 + now.minute
+    start_mins = sh * 60 + sm; end_mins = eh * 60 + em
+    if now.weekday() not in days or now_mins < start_mins or now_mins > end_mins: return
     today = now.date()
-    if now.hour == sh and now.minute == 0 and _start_of_day_done != today:
-        _start_of_day_done = today; _last_refresh = now; s["last_refresh_ts"] = now.timestamp(); save_settings(s); refresh_all_depots("auto"); return
+    if now.hour == sh and now.minute == sm and _start_of_day_done != today:
+        _start_of_day_done = today; _last_refresh = now; s["next_refresh_ts"] = (now + timedelta(seconds=interval)).timestamp(); save_settings(s); refresh_all_depots("auto"); return
     if _last_refresh is None or (now - _last_refresh).total_seconds() >= interval:
         _last_refresh = now
-        s["last_refresh_ts"] = now.timestamp(); save_settings(s)
+        s["next_refresh_ts"] = (now + timedelta(seconds=interval)).timestamp(); save_settings(s)
         refresh_all_depots("auto")
 
 def get_next_run_info():
     s        = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
     interval = s["refresh_interval"]
-    t = s["trading"]; days = t.get("days", [0,1,2,3,4]); sh = t.get("start_hour", 8); eh = t.get("end_hour", 23)
+    t = s["trading"]; days = t.get("days", [0,1,2,3,4])
+    sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
+    eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
+    end_mins = eh * 60 + em
     if _last_refresh:
         c = _last_refresh + timedelta(seconds=interval)
-        if c.hour >= eh or c.weekday() not in days:
+        c_mins = c.hour * 60 + c.minute
+        if c_mins > end_mins or c.weekday() not in days:
             d = c.date()
             for _ in range(1, 8):
                 d += timedelta(days=1)
@@ -1250,9 +1271,11 @@ def update_settings():
         s["timezone"] = str(body["timezone"])
     if "trading" in body:
         t = body["trading"]
-        if "days"        in t: s["trading"]["days"]        = [int(d) for d in t["days"]]
-        if "start_hour"  in t: s["trading"]["start_hour"]  = int(t["start_hour"])
-        if "end_hour"    in t: s["trading"]["end_hour"]     = int(t["end_hour"])
+        if "days"         in t: s["trading"]["days"]         = [int(d) for d in t["days"]]
+        if "start_hour"   in t: s["trading"]["start_hour"]   = int(t["start_hour"])
+        if "start_minute" in t: s["trading"]["start_minute"] = int(t["start_minute"])
+        if "end_hour"     in t: s["trading"]["end_hour"]      = int(t["end_hour"])
+        if "end_minute"   in t: s["trading"]["end_minute"]    = int(t["end_minute"])
     save_settings(s); return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
