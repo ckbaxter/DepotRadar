@@ -315,6 +315,19 @@ select.form-input{cursor:pointer}
     <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
   <button class="btn-buy-filter" id="buyFilterBtn" onclick="toggleBuyFilter()">🛒 Nachkauf</button>
+  <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center">
+    <span style="position:absolute;left:8px;font-size:13px;color:var(--muted);pointer-events:none">🔍</span>
+    <input id="stockSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
+           oninput="onStockSearch(this.value)" onkeydown="if(event.key==='Escape'){clearStockSearch()}"
+           style="padding:5px 8px 5px 26px;border:1px solid var(--border);border-radius:20px;
+                  background:var(--bg2);color:var(--text);font-size:12px;width:120px;
+                  transition:width .2s,border-color .2s;outline:none"
+           onfocus="this.style.width='180px';this.style.borderColor='var(--accent)'"
+           onblur="if(!this.value)this.style.width='120px';this.style.borderColor='var(--border)'"/>
+    <button id="stockSearchClear" onclick="clearStockSearch()"
+            style="display:none;position:absolute;right:7px;background:none;border:none;
+                   cursor:pointer;color:var(--muted);font-size:14px;padding:0;line-height:1">✕</button>
+  </div>
   <div class="threshold-wrap" id="thresholdWrap" style="display:none">
     <span>Untere</span>
     <input type="range" id="thresholdSlider" min="0" max="50" step="5" value="30"
@@ -457,11 +470,13 @@ select.form-input{cursor:pointer}
         <div class="form-group" style="margin-bottom:10px">
           <label class="form-label">Parqet Client ID</label>
           <div style="display:flex;gap:8px">
-            <input class="form-input" id="parqetClientIdInput"
+            <input type="password" class="form-input" id="parqetClientIdInput"
                    placeholder="z.B. abc123..." style="flex:1;font-family:monospace;font-size:12px"
                    oninput="onClientIdChange()"/>
+            <button type="button" class="btn btn-ghost btn-sm"
+                    onclick="toggleClientIdVisibility(this)" title="Anzeigen/Verbergen">👁</button>
             <button class="btn btn-ghost btn-sm" id="parqetClientIdSaveBtn"
-                    onclick="saveParqetClientId()" style="white-space:nowrap">Speichern</button>
+                    onclick="saveParqetClientId()" style="white-space:nowrap">💾 Speichern</button>
           </div>
         </div>
 
@@ -480,9 +495,8 @@ select.form-input{cursor:pointer}
                 <code style="background:var(--bg2);padding:1px 5px;border-radius:3px">ATH-Tracker</code></li>
               <li><b style="color:var(--fg)">Scopes:</b> nur
                 <code style="background:var(--bg2);padding:1px 5px;border-radius:3px">read portfolio</code>
-                ankreuzen — <i>write portfolio</i> weglassen</li>
-              <li><b style="color:var(--fg)">Redirect URIs:</b> folgende URL eintragen
-                (exakt so, inkl. <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">/api/parqet/callback</code>):
+                ankreuzen</li>
+              <li><b style="color:var(--fg)">Redirect URI:</b> folgende URL eintragen:
                 <input id="callbackUrlDisplay" readonly
                   style="display:block;width:100%;margin:5px 0 2px;background:var(--bg2);
                          border:1px solid var(--border);border-radius:4px;padding:5px 8px;
@@ -493,8 +507,14 @@ select.form-input{cursor:pointer}
                   title="Tippen → Alles auswählen → Kopieren"/>
                 <span style="font-size:10px;opacity:.7">💡 Tippen → Alles auswählen → Kopieren</span>
               </li>
-              <li><b style="color:var(--fg)">Create</b> klicken →
-                erscheinende <b style="color:var(--fg)">Client ID</b> kopieren und oben einfügen</li>
+              <li><b style="color:var(--fg)">Create</b> klicken → die angezeigte
+                <b style="color:var(--fg)">Client ID</b> kopieren →
+                <button onclick="highlightClientIdField()" type="button"
+                  style="background:var(--accent);color:#fff;border:none;border-radius:4px;
+                         padding:2px 8px;font-size:11px;cursor:pointer;vertical-align:middle">
+                  ↑ hier einfügen
+                </button>
+                und auf <b style="color:var(--fg)">💾 Speichern</b> klicken</li>
             </ol>
           </div>
         </details>
@@ -932,6 +952,7 @@ function switchDepot(depot){
   activeDepot=depot; activeView={type:"depot",id:null,name:"Bestand"};
   // Filter zurücksetzen beim Depot-Wechsel
   _buyFilterActive = false; _summaryFilter = "all";
+  clearStockSearch();
   ["green","yellow","orange","red"].forEach(k => {
     const el = document.getElementById("scard-"+k);
     if(el) el.classList.remove("active");
@@ -1034,6 +1055,31 @@ let _buyFilterActive = false;
 let _buyThreshold    = parseInt(localStorage.getItem("buyThreshold") || "30");
 
 let _summaryFilter = "all";
+let _stockSearchQuery = "";
+
+function onStockSearch(val){
+  _stockSearchQuery = val.toLowerCase().trim();
+  const clearBtn = document.getElementById("stockSearchClear");
+  if(clearBtn) clearBtn.style.display = _stockSearchQuery ? "block" : "none";
+  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+}
+
+function clearStockSearch(){
+  _stockSearchQuery = "";
+  const input = document.getElementById("stockSearchInput");
+  if(input){ input.value = ""; input.style.width="120px"; input.style.borderColor="var(--border)"; }
+  const clearBtn = document.getElementById("stockSearchClear");
+  if(clearBtn) clearBtn.style.display = "none";
+  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+}
+
+function _applyStockSearch(stocks){
+  if(!_stockSearchQuery) return stocks;
+  return stocks.filter(s =>
+    (s.name   || "").toLowerCase().includes(_stockSearchQuery) ||
+    (s.ticker || "").toLowerCase().includes(_stockSearchQuery)
+  );
+}
 
 function setSummaryFilter(key){
   _summaryFilter = _summaryFilter === key ? "all" : key;  // toggle
@@ -1185,6 +1231,30 @@ function initTheme(){
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if((localStorage.getItem("themeMode") || "auto") === "auto") _applyTheme("auto");
   });
+}
+
+// ── Client ID Highlight ──────────────────────────────────────────
+function highlightClientIdField(){
+  // Anleitung schließen
+  const details = document.querySelector('#depotSettingsModal details');
+  if(details) details.open = false;
+  // Zum Feld scrollen
+  const field = document.getElementById("parqetClientIdInput");
+  if(!field) return;
+  field.scrollIntoView({behavior:"smooth", block:"center"});
+  field.focus();
+  // Kurz hervorheben
+  field.style.transition = "box-shadow .2s";
+  field.style.boxShadow  = "0 0 0 3px var(--accent)";
+  setTimeout(() => { field.style.boxShadow = ""; }, 2000);
+}
+
+function toggleClientIdVisibility(btn){
+  const field = document.getElementById("parqetClientIdInput");
+  if(!field) return;
+  const show = field.type === "password";
+  field.type = show ? "text" : "password";
+  btn.textContent = show ? "🙈" : "👁";
 }
 
 // ── ATH-Prüfung ──────────────────────────────────────────────────
@@ -1475,6 +1545,7 @@ function renderTable(stocks){
 
   renderPortfolioStats(stocks);
   stocks = _applySummaryFilter(stocks);
+  stocks = _applyStockSearch(stocks);
   markBuyCandidates(stocks);
   if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
   const sorted=sortedStocks(stocks);
@@ -2820,7 +2891,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.0.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.0.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
