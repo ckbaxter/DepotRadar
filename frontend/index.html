@@ -599,6 +599,7 @@ select.form-input{cursor:pointer}
         </div>
       </div>
 
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0"/>
       <!-- Refresh -->
       <div class="form-group">
         <label class="form-label">Automatischer Refresh</label>
@@ -661,7 +662,16 @@ select.form-input{cursor:pointer}
         <div class="form-hint">Außerhalb dieser Zeiten findet kein automatischer Refresh statt.</div>
       </div>
 
-
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0"/>
+      <!-- Verlauf-Aufbewahrung -->
+      <div class="form-group" style="margin-top:4px">
+        <label class="form-label">Verlauf aufbewahren</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="verlaufRetention" class="form-input"
+                 min="1" max="365" style="width:80px;text-align:center"/>
+          <span style="font-size:12px;color:var(--muted)">Tage — ältere Einträge werden täglich gelöscht</span>
+        </div>
+      </div>
 
       <!-- Aktiensplits -->
       <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 12px">
@@ -1247,6 +1257,16 @@ async function openAthCheck(){
     if(lbl) lbl.textContent = "Prüfung abgeschlossen";
     if(cnt) cnt.textContent = `${stocks.length} / ${stocks.length}`;
     await new Promise(r => setTimeout(r, 400));
+    // Ergebnis in Verlauf schreiben
+    await fetch(`${API}/depots/${activeDepot.id}/ath-log`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        count: _athCheckResults.length,
+        items: _athCheckResults.map(r => ({
+          name: r.name, stored_ath: r.stored_ath, yahoo_ath: r.yahoo_ath
+        }))
+      })
+    });
     renderAthCheckResults();
   } catch(e){
     el.innerHTML = '<div style="color:var(--red);padding:16px">Fehler: '+e.message+'</div>';
@@ -1825,6 +1845,7 @@ async function openSettingsModal(){
   const r=await fetch(`${API}/settings`); const s=await r.json();
   document.getElementById("refreshInterval").value = s.refresh_interval||3600;
   document.getElementById("notifsEnabled").checked = s.notifications_enabled!==false;
+  document.getElementById("verlaufRetention").value = s.verlauf_retention_days ?? 60;
   // Timezone
   const tzEl = document.getElementById("settingsTimezone");
   if(tzEl) tzEl.value = s.timezone || "Europe/Berlin";
@@ -1849,6 +1870,7 @@ async function saveSettings(){
   await fetch(`${API}/settings`,{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
       refresh_interval:      parseInt(document.getElementById("refreshInterval").value),
+      verlauf_retention_days: parseInt(document.getElementById("verlaufRetention").value) || 60,
       notifications_enabled: document.getElementById("notifsEnabled").checked,
       timezone:              document.getElementById("settingsTimezone").value,
       trading:               {days: _tradingDays, start_hour: startH, start_minute: startM, end_hour: endH, end_minute: endM},
