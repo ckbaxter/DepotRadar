@@ -97,6 +97,7 @@ def load_settings():
     s = {
         "refresh_interval":      cfg["refresh_interval_seconds"],
         "notifications_enabled": True,
+    "verlauf_retention_days": 60,
         "timezone":              cfg["timezone"],
         "trading":               {
             "days":         list(cfg["trading"]["days"]),
@@ -108,7 +109,7 @@ def load_settings():
     }
     if os.path.exists(SETTINGS_FILE):
         saved = json.load(open(SETTINGS_FILE, encoding="utf-8"))
-        for key in ("notifications_enabled", "refresh_interval", "timezone", "next_refresh_ts"):
+        for key in ("notifications_enabled", "refresh_interval", "timezone", "next_refresh_ts", "verlauf_retention_days"):
             if key in saved: s[key] = saved[key]
         if "trading" in saved:
             s["trading"].update(saved["trading"])
@@ -425,6 +426,23 @@ def _restore_last_refresh():
     except Exception as e:
         log.warning(f"Konnte Refresh-Zeitpunkt nicht wiederherstellen: {e}")
 
+def cleanup_old_logs():
+    """Entfernt Verlauf-Einträge die älter als konfigurierte Tage sind."""
+    try:
+        s        = load_settings()
+        days     = s.get("verlauf_retention_days", 60)
+        cutoff   = (datetime.now(pytz.timezone(s.get("timezone","Europe/Berlin")))
+                    - timedelta(days=days)).isoformat()
+        notifs   = load_notifications()
+        before   = len(notifs)
+        notifs   = [n for n in notifs if n.get("timestamp","") >= cutoff]
+        removed  = before - len(notifs)
+        if removed > 0:
+            save_notifications(notifs)
+            log.info(f"Verlauf bereinigt: {removed} Einträge älter als {days} Tage entfernt")
+    except Exception as e:
+        log.warning(f"Verlauf-Bereinigung fehlgeschlagen: {e}")
+
 def trading_window_check():
     global _last_refresh, _start_of_day_done
     s        = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
@@ -437,7 +455,7 @@ def trading_window_check():
     if now.weekday() not in days or now_mins < start_mins or now_mins > end_mins: return
     today = now.date()
     if now.hour == sh and now.minute == sm and _start_of_day_done != today:
-        _start_of_day_done = today; _last_refresh = now; s["next_refresh_ts"] = (now + timedelta(seconds=interval)).timestamp(); save_settings(s); refresh_all_depots("auto"); return
+        _start_of_day_done = today; _last_refresh = now; s["next_refresh_ts"] = (now + timedelta(seconds=interval)).timestamp(); save_settings(s); cleanup_old_logs(); refresh_all_depots("auto"); return
     if _last_refresh is None or (now - _last_refresh).total_seconds() >= interval:
         _last_refresh = now
         s["next_refresh_ts"] = (now + timedelta(seconds=interval)).timestamp(); save_settings(s)
@@ -1000,7 +1018,34 @@ def ath_check(depot_id):
                 })
         except Exception as e:
             log.warning(f"ATH-Check {s['ticker']}: {e}")
+    depots = load_depots()
+    depot  = next((d for d in depots if d["id"] == depot_id), {})
+    if results:
+        add_log("manual_refresh",
+                f"ATH-Prüfung: {depot.get('name', depot_id)}",
+                f"{len(results)} Abweichung(en) gefunden — " +
+                ", ".join(f"{r['name']}: {r['stored_ath']:.2f}→{r['yahoo_ath']:.2f} EUR ({r['direction']})" for r in results),
+                True)
+    else:
+        add_log("manual_refresh",
+                f"ATH-Prüfung: {depot.get('name', depot_id)}",
+                "Alle ATH-Werte sind korrekt ✓", True)
     return jsonify(results)
+
+@app.route("/api/depots/<depot_id>/ath-log", methods=["POST"])
+def ath_log(depot_id):
+    """Schreibt das Ergebnis einer ATH-Prüfung in den Verlauf."""
+    data   = request.get_json() or {}
+    depots = load_depots()
+    depot  = next((d for d in depots if d["id"] == depot_id), {})
+    count  = data.get("count", 0)
+    items  = data.get("items", [])
+    if count:
+        body = f"{count} Abweichung(en) gefunden — " +                ", ".join(f"{r['name']}: {r['stored_ath']:.2f}→{r['yahoo_ath']:.2f} EUR" for r in items)
+    else:
+        body = "Alle ATH-Werte sind korrekt ✓"
+    add_log("manual_refresh", f"ATH-Prüfung: {depot.get('name', depot_id)}", body, True)
+    return jsonify({"ok": True})
 
 @app.route("/api/ath-check-single", methods=["GET"])
 def ath_check_single():
@@ -1019,15 +1064,25 @@ def ath_correct(depot_id):
     corrections = request.get_json()  # [{ticker, new_ath}]
     if not corrections:
         return jsonify({"error": "Keine Korrekturen übergeben"}), 400
-    stocks = load_stocks(depot_id)
+    stocks  = load_stocks(depot_id)
+    depots  = load_depots()
+    depot   = next((d for d in depots if d["id"] == depot_id), {})
     updated = []
+    details = []
     for c in corrections:
         for s in stocks:
             if s["ticker"] == c["ticker"]:
+                old_ath = s.get("ath_eur", 0)
                 s["ath_eur"] = round(float(c["new_ath"]), 2)
                 updated.append(s["ticker"])
+                details.append(f"{s['name']}: {old_ath:.2f} → {s['ath_eur']:.2f} EUR")
                 break
     save_stocks(depot_id, stocks)
+    if updated:
+        add_log("manual_refresh",
+                f"ATH-Korrektur: {depot.get('name', depot_id)}",
+                f"{len(updated)} Wert(e) korrigiert — " + ", ".join(details),
+                True)
     return jsonify({"updated": updated})
 
 # ── Splits CRUD ──────────────────────────────────────────────────
@@ -1384,6 +1439,8 @@ def update_settings():
     body = request.get_json(); s = load_settings()
     if "notifications_enabled" in body:
         s["notifications_enabled"] = bool(body["notifications_enabled"])
+    if "verlauf_retention_days" in body:
+        s["verlauf_retention_days"] = max(1, int(body["verlauf_retention_days"]))
     if "refresh_interval" in body:
         s["refresh_interval"] = int(body["refresh_interval"])
     if "timezone" in body:
