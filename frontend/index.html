@@ -1713,7 +1713,15 @@ async function doSearch(q){
   const res=document.getElementById("searchResults");
   res.innerHTML='<div class="search-results"><div class="no-results">Suche …</div></div>';
   try {
-    const r=await fetch(`${API}/search?q=${encodeURIComponent(q)}`); const items=await r.json();
+    const r=await fetch(`${API}/search?q=${encodeURIComponent(q)}`); let items=await r.json();
+    // XETRA-Eintrag aus ISIN_TO_XETRA ergänzen falls nicht in Ergebnissen
+    const knownIsins = new Set(items.map(it => it.isin).filter(Boolean));
+    const xetraTickersInResults = new Set(items.map(it => it.ticker));
+    for(const [isin, xetra] of Object.entries(ISIN_TO_XETRA)){
+      if(knownIsins.has(isin) && !xetraTickersInResults.has(xetra.ticker)){
+        items = [{...xetra, isin, type:"EQUITY"}, ...items];
+      }
+    }
     if(!items.length){
     const gUrl=`https://www.google.com/search?q=${encodeURIComponent(q+" ISIN")}`;
     res.innerHTML=`<div class="search-results"><div class="no-results" style="padding:10px 12px;line-height:1.7">
@@ -2712,7 +2720,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if(q.length < 1){ document.getElementById("ctSearchResults").innerHTML=""; return; }
     _ctSearchTimer = setTimeout(async () => {
       const r = await fetch(`${API}/search?q=${encodeURIComponent(q)}`);
-      const items = await r.json();
+      let items = await r.json();
+      // XETRA-Eintrag aus ISIN_TO_XETRA ergänzen falls nicht in Ergebnissen
+      const _ctKnownIsins = new Set(items.map(it => it.isin).filter(Boolean));
+      const _ctKnownTickers = new Set(items.map(it => it.ticker));
+      for(const [isin, xetra] of Object.entries(ISIN_TO_XETRA)){
+        if(_ctKnownIsins.has(isin) && !_ctKnownTickers.has(xetra.ticker)){
+          items = [{...xetra, isin, type:"EQUITY"}, ...items];
+        }
+      }
       const res = document.getElementById("ctSearchResults");
       if(!items.length){ res.innerHTML='<div class="no-results" style="padding:8px;font-size:12px;color:var(--muted)">Keine Treffer</div>'; return; }
       // .DE Ergebnisse nach oben sortieren
@@ -2893,7 +2909,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.0.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.0.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
