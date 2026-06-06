@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "1.9.5"
+VERSION           = "2.0.2"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -213,7 +213,10 @@ def fetch_stock_data(ticker):
             j = r.json()
             if j.get("chart", {}).get("result"): data = j; break
         except Exception as e: last_err = str(e)
-    if not data: raise ValueError(f"Kein Zugriff auf Yahoo Finance: {last_err}")
+    if not data:
+        if '404' in last_err:
+            raise ValueError(f"Ticker '{ticker}' bei Yahoo Finance nicht gefunden")
+        raise ValueError("Yahoo Finance nicht erreichbar (Timeout oder Fehler)")
 
     result   = data["chart"]["result"][0]; meta = result["meta"]
     currency = meta.get("currency", "USD")
@@ -581,12 +584,16 @@ def _split_adj(isin, buy_dt_str, raw_shares):
     return adjusted
 
 def _names_match(n1, n2):
-    """Grobe Namens-Plausibilitätsprüfung über gemeinsame Schlüsselwörter."""
-    clean = lambda n: re.sub(r"[^a-z0-9 ]", "", n.lower())
-    w1 = {w for w in clean(n1).split() if len(w) > 3}
-    w2 = {w for w in clean(n2).split() if len(w) > 3}
-    if not w1 or not w2: return True
-    return bool(w1 & w2)
+    """Strenger Namens-Abgleich: erstes signifikantes Wort muss übereinstimmen.
+    Punkte werden zu Leerzeichen, generische Suffixe (Inc, Corp, SE...) werden ignoriert.
+    Verhindert False-Matches z.B. PayPal vs SAP SE."""
+    GENERIC = {"corp", "inc", "ltd", "llc", "plc", "holding", "holdings",
+               "group", "company", "international", "global"}
+    clean = lambda n: re.sub(r"[^a-z0-9 ]", " ", n.lower())  # Sonderzeichen → Leerzeichen
+    sig   = lambda n: [w for w in clean(n).split() if len(w) >= 4 and w not in GENERIC]
+    w1, w2 = sig(n1), sig(n2)
+    if not w1 or not w2: return False   # kein signifikantes Wort → kein Match
+    return w1[0] == w2[0]               # erstes signifikantes Wort muss übereinstimmen
 
 def calculate_holdings(activities):
     """
@@ -771,14 +778,14 @@ def parqet_sync(depot_id):
     isin_map = {ph.get("asset", {}).get("isin"): ph.get("asset", {}).get("name", "")
                 for ph in pq_holdings if ph.get("asset", {}).get("isin")}
 
-    # 2) Fehlende ISINs in Depot-Aktien ergänzen
+    # 2) Fehlende ISINs in Depot-Aktien ergänzen (strenger Namens-Abgleich)
     stocks = load_stocks(depot_id); enriched = 0
     for s in stocks:
         if s.get("isin"): continue
         for isin, pname in isin_map.items():
             if _names_match(s["name"], pname):
                 s["isin"] = isin; enriched += 1
-                log.info(f"ISIN ergänzt: '{s['name']}' → {isin}")
+                log.info(f"ISIN ergänzt: '{s['name']}' → {isin} (via '{pname}')")
                 break
     if enriched: save_stocks(depot_id, stocks); log.info(f"{enriched} ISINs ergänzt")
 
@@ -812,33 +819,28 @@ def parqet_sync(depot_id):
     for isin, h in holdings.items():
         match = next((s for s in stocks if s.get("isin") == isin), None)
         if match:
-            if not _names_match(match["name"], h["name"]):
-                mismatches.append({"isin": isin, "parqet_name": h["name"], "depot_name": match["name"],
-                                   "depot_ticker": match["ticker"], "avg_price_eur": h["avg_price_eur"],
-                                   "shares": round(h["shares"], 6)})
-                log.warning(f"ISIN-Konflikt: {isin} Parqet='{h['name']}' Depot='{match['name']}'")
+            # ISIN stimmt überein → direkt aktualisieren (kein Namens-Check nötig)
+            new_price  = h["avg_price_eur"]
+            new_shares = round(h["shares"], 6)
+            # Nur als geändert markieren wenn sich Werte wirklich unterscheiden
+            actually_changed = (
+                round(match.get("buy_price_eur") or 0, 4) != round(new_price or 0, 4) or
+                round(match.get("shares") or 0, 6) != new_shares
+            )
+            match["buy_price_eur"] = new_price
+            match["shares"]        = new_shares
+            match["isin"]          = isin
+            if actually_changed:
+                updated.append(match["name"])
+                log.info(f"Sync GEÄNDERT: {match['name']} Einstand={new_price:.2f}€ Stk={new_shares:.4f}")
             else:
-                new_price  = h["avg_price_eur"]
-                new_shares = round(h["shares"], 6)
-                # Nur als geändert markieren wenn sich Werte wirklich unterscheiden
-                actually_changed = (
-                    round(match.get("buy_price_eur") or 0, 4) != round(new_price or 0, 4) or
-                    round(match.get("shares") or 0, 6) != new_shares
-                )
-                match["buy_price_eur"] = new_price
-                match["shares"]        = new_shares
-                match["isin"]          = isin
-                if actually_changed:
-                    updated.append(match["name"])
-                    log.info(f"Sync GEÄNDERT: {match['name']} Einstand={new_price:.2f}€ Stk={new_shares:.4f}")
-                else:
-                    log.debug(f"Sync unverändert: {match['name']}")
+                log.debug(f"Sync unverändert: {match['name']}")
         else:
             new_stocks.append({"isin": isin, "name": h["name"],
                                "shares": round(h["shares"], 6), "buy_price_eur": h["avg_price_eur"]})
 
-    # Backup nur anlegen wenn wirklich etwas geändert wurde
-    if updated and os.path.exists(src):
+    # Backup nur wenn sich etwas ändert
+    if (updated or new_stocks) and os.path.exists(src):
         shutil.copy2(src, bak)
     save_stocks(depot_id, stocks)
     for d in depots:
@@ -863,6 +865,55 @@ def parqet_apply_mismatch(depot_id):
     match["buy_price_eur"] = buy_price; match["shares"] = round(shares, 6)
     save_stocks(depot_id, stocks); return jsonify({"ok": True})
 
+@app.route("/api/depots/<depot_id>/parqet/import-bulk", methods=["POST"])
+def parqet_import_bulk(depot_id):
+    """Importiert mehrere neue Aktien in einem einzigen Schreibvorgang.
+    Gibt Ergebnisse als Liste zurück — Index entspricht Input-Index."""
+    items  = request.get_json()
+    if not items: return jsonify({"error": "Keine Daten"}), 400
+    stocks          = load_stocks(depot_id)
+    # Backup vor Import anlegen (Import = immer Änderung)
+    src = depot_file(depot_id); bak = depot_backup_file(depot_id)
+    if os.path.exists(src): shutil.copy2(src, bak)
+    existing_isins  = {s.get("isin","").upper() for s in stocks if s.get("isin")}
+    existing_ticker = {s["ticker"].upper() for s in stocks}
+    results = []
+    for item in items:
+        ticker = item.get("ticker","").strip()
+        isin   = (item.get("isin") or "").strip().upper()
+        # Duplikat-Check: ISIN oder Ticker bereits vorhanden
+        if isin and isin in existing_isins:
+            results.append({"ok": False, "skipped": True, "reason": "ISIN bereits im Depot"})
+            continue
+        if ticker.upper() in existing_ticker:
+            # Ticker existiert — ISIN nachträglich ergänzen falls fehlend
+            if isin:
+                for s in stocks:
+                    if s["ticker"].upper() == ticker.upper() and not s.get("isin"):
+                        s["isin"] = item.get("isin","")
+                        log.info(f"ISIN nachträglich gesetzt: {ticker} → {isin}")
+                        break
+            results.append({"ok": False, "skipped": True, "reason": "Ticker bereits im Depot"})
+            continue
+        if not ticker:
+            results.append({"ok": False, "error": "Kein Ticker"})
+            continue
+        try:
+            data  = fetch_stock_data(ticker)
+            stock = _make_stock(data, {
+                "ticker": ticker, "name": item.get("name",""), "exchange": item.get("exchange",""),
+                "isin": item.get("isin",""), "buy_price_eur": item.get("buy_price_eur"),
+                "shares": item.get("shares"), "last_notified_block": 0
+            })
+            stocks.append(stock)
+            existing_ticker.add(ticker.upper())
+            if isin: existing_isins.add(isin)
+            results.append({"ok": True})
+        except Exception as e:
+            results.append({"ok": False, "error": str(e)})
+    save_stocks(depot_id, stocks)
+    return jsonify(results)
+
 @app.route("/api/depots/<depot_id>/parqet/import", methods=["POST"])
 def parqet_import_stock(depot_id):
     body      = request.get_json() or {}
@@ -880,6 +931,10 @@ def parqet_import_stock(depot_id):
         save_stocks(depot_id, stocks)
         return jsonify({"ok": True, "action": "updated", "stock": existing})
     try: data = fetch_stock_data(ticker)
+    except ValueError as e:
+        msg = str(e)
+        code = 404 if "nicht gefunden" in msg else 502
+        return jsonify({"error": msg, "ticker_not_found": code == 404}), code
     except Exception as e: return jsonify({"error": str(e)}), 502
     stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
              "isin": isin, "buy_price_eur": buy_price, "shares": shares,
@@ -918,6 +973,62 @@ def parqet_debug(depot_id):
         out["error"] = str(e)
     return jsonify(out)
 
+
+# ── ATH-Prüfung ──────────────────────────────────────────────────
+@app.route("/api/depots/<depot_id>/ath-check", methods=["GET"])
+def ath_check(depot_id):
+    """Vergleicht gespeicherte ATH-Werte mit aktuellen Yahoo-Daten."""
+    stocks    = load_stocks(depot_id)
+    threshold = float(request.args.get("threshold", 5)) / 100
+    results   = []
+    for s in stocks:
+        try:
+            data      = fetch_stock_data(s["ticker"])
+            yahoo_ath = data["ath_eur"]
+            stored    = s.get("ath_eur", 0)
+            if stored <= 0:
+                continue
+            diff_pct = abs(yahoo_ath - stored) / stored
+            if diff_pct > threshold:
+                results.append({
+                    "ticker":      s["ticker"],
+                    "name":        s["name"],
+                    "stored_ath":  round(stored, 2),
+                    "yahoo_ath":   round(yahoo_ath, 2),
+                    "diff_pct":    round(diff_pct * 100, 1),
+                    "direction":   "lower" if yahoo_ath < stored else "higher"
+                })
+        except Exception as e:
+            log.warning(f"ATH-Check {s['ticker']}: {e}")
+    return jsonify(results)
+
+@app.route("/api/ath-check-single", methods=["GET"])
+def ath_check_single():
+    """Gibt den aktuellen Yahoo-ATH für einen einzelnen Ticker zurück."""
+    ticker = request.args.get("ticker", "").strip()
+    if not ticker: return jsonify({"error": "ticker fehlt"}), 400
+    try:
+        data = fetch_stock_data(ticker)
+        return jsonify({"ticker": ticker, "yahoo_ath": data["ath_eur"]})
+    except Exception as e:
+        return jsonify({"ticker": ticker, "error": str(e)}), 502
+
+@app.route("/api/depots/<depot_id>/ath-correct", methods=["POST"])
+def ath_correct(depot_id):
+    """Übernimmt korrigierte ATH-Werte in die Depot-Datei."""
+    corrections = request.get_json()  # [{ticker, new_ath}]
+    if not corrections:
+        return jsonify({"error": "Keine Korrekturen übergeben"}), 400
+    stocks = load_stocks(depot_id)
+    updated = []
+    for c in corrections:
+        for s in stocks:
+            if s["ticker"] == c["ticker"]:
+                s["ath_eur"] = round(float(c["new_ath"]), 2)
+                updated.append(s["ticker"])
+                break
+    save_stocks(depot_id, stocks)
+    return jsonify({"updated": updated})
 
 # ── Splits CRUD ──────────────────────────────────────────────────
 @app.route("/api/splits", methods=["GET"])
@@ -1061,6 +1172,10 @@ def api_add_stock():
     if any(s["ticker"] == ticker for s in stocks):
         return jsonify({"error": f"{name} bereits im Depot"}), 409
     try: data = fetch_stock_data(ticker)
+    except ValueError as e:
+        msg = str(e)
+        code = 404 if "nicht gefunden" in msg else 502
+        return jsonify({"error": msg, "ticker_not_found": code == 404}), code
     except Exception as e: return jsonify({"error": str(e)}), 502
     stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
              "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
@@ -1146,6 +1261,10 @@ def wl_add_stock(depot_id, wl_id):
     stocks = load_wl_stocks(depot_id, wl_id)
     if any(s["ticker"] == ticker for s in stocks): return jsonify({"error": "Bereits in dieser Liste"}), 409
     try: data = fetch_stock_data(ticker)
+    except ValueError as e:
+        msg = str(e)
+        code = 404 if "nicht gefunden" in msg else 502
+        return jsonify({"error": msg, "ticker_not_found": code == 404}), code
     except Exception as e: return jsonify({"error": str(e)}), 502
     stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
              "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
