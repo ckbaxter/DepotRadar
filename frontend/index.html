@@ -218,7 +218,8 @@ tr:hover td{background:rgba(255,255,255,.015)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .next-refresh{font-size:11px;color:var(--accent)}
 .badge-buy{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3);font-size:11px;padding:3px 7px;border-radius:4px;font-weight:600;display:inline-block;margin-top:3px}
-.btn-buy-filter{min-height:38px;padding:6px 14px;font-size:13px;font-weight:500;background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.25);border-radius:6px;cursor:pointer}
+.btn-buy-filter{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.3);border-radius:6px;cursor:pointer}
+.btn.btn-ghost.btn-sm.active{background:rgba(78,124,246,.15);color:var(--accent);border-color:var(--accent)}
 .btn-buy-filter.active{background:rgba(34,197,94,.25);border-color:#22c55e}
 .threshold-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .threshold-wrap input[type=range]{width:120px;min-height:28px;accent-color:#22c55e}
@@ -308,27 +309,28 @@ select.form-input{cursor:pointer}
         <span class="next-refresh" id="nextRefresh"></span>
         <span class="next-refresh" id="depotBudgetInfo" style="color:var(--green)"></span>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn">&#8635; Alle aktualisieren</button>
-        <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn"
-                style="display:none" title="ATH-Werte mit Yahoo vergleichen">&#128269; ATH prüfen</button>
     </div>
     <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
-  <button class="btn-buy-filter" id="buyFilterBtn" onclick="toggleBuyFilter()">🛒 Nachkauf</button>
-  <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center">
-    <span style="position:absolute;left:8px;font-size:13px;color:var(--muted);pointer-events:none">🔍</span>
-    <input id="stockSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
-           oninput="onStockSearch(this.value)" onkeydown="if(event.key==='Escape'){clearStockSearch()}"
-           style="padding:5px 8px 5px 26px;border:1px solid var(--border);border-radius:20px;
-                  background:var(--bg2);color:var(--text);font-size:12px;width:120px;
-                  transition:width .2s,border-color .2s;outline:none"
-           onfocus="this.style.width='180px';this.style.borderColor='var(--accent)'"
-           onblur="if(!this.value)this.style.width='120px';this.style.borderColor='var(--border)'"/>
-    <button id="stockSearchClear" onclick="clearStockSearch()"
-            style="display:none;position:absolute;right:7px;background:none;border:none;
-                   cursor:pointer;color:var(--muted);font-size:14px;padding:0;line-height:1">✕</button>
-  </div>
-  <div class="threshold-wrap" id="thresholdWrap" style="display:none">
+    <!-- Einheitliche Aktionsleiste -->
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
+      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn">&#8635; Alle aktualisieren</button>
+      <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn"
+              style="display:none">&#128269; ATH prüfen</button>
+      <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()">🛒 Nachkauf</button>
+      <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center;margin-left:auto">
+        <span style="position:absolute;left:8px;font-size:13px;color:var(--muted);pointer-events:none">🔍</span>
+        <input id="stockSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
+               oninput="onStockSearch(this.value)" onkeydown="if(event.key==='Escape'){clearStockSearch()}"
+               style="padding:5px 8px 5px 26px;border:1px solid var(--border);border-radius:20px;
+                      background:var(--bg2);color:var(--text);font-size:12px;width:120px;
+                      transition:width .2s,border-color .2s;outline:none"
+               onfocus="this.style.width='180px';this.style.borderColor='var(--accent)'"
+               onblur="if(!this.value)this.style.width='120px';this.style.borderColor='var(--border)'"/>
+        <button id="stockSearchClear" onclick="clearStockSearch()"
+                style="display:none;position:absolute;right:7px;background:none;border:none;
+                       cursor:pointer;color:var(--muted);font-size:14px;padding:0;line-height:1">✕</button>
+      </div>
+  <div class="threshold-wrap" id="thresholdWrap" style="display:none;width:100%;flex-basis:100%">
     <span>Untere</span>
     <input type="range" id="thresholdSlider" min="0" max="50" step="5" value="30"
            oninput="updateThreshold(this.value)"/>
@@ -1568,7 +1570,7 @@ function renderTable(stocks){
          <button class="icon-btn" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')" title="Entfernen">&#128465;</button>`;
     return `<tr class="${c.row}">
       <td>
-        <div class="sn">${nm}${s.buy_price_eur?'<span class="parqet-badge">P</span>':""}</div>
+        <div class="sn">${nm}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
         <div class="ss">${s.ticker} · ${s.exchange}${s.isin?` · <span class="isin-tag">${s.isin}</span>`:""}</div>
         ${pnlRow(s)}
       </td>
@@ -1608,7 +1610,7 @@ function renderTable(stocks){
     return `<div class="stock-card ${c.row} ${wl?"wl-card":""}">
       <div class="card-top">
         <div>
-          <div class="card-name">${s.name}${s.buy_price_eur?'<span class="parqet-badge">P</span>':""}</div>
+          <div class="card-name">${s.name}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
           <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
           ${pnlRow(s)}
         </div>
