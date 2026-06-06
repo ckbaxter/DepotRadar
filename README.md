@@ -177,7 +177,7 @@ ATH-Tracker verbindet sich mit [Parqet](https://parqet.com) um Einstandskurse un
 
 ### Einrichtung
 
-1. [developer.parqet.com/console](https://developer.parqet.com/console) → **+ New Integration**
+1. [developer.parqet.com/console/integrations](https://developer.parqet.com/console/integrations) → **+ New Integration**
 1. Name: beliebig (z.B. `ATH-Tracker`)
 1. Scope: nur **read portfolio** ankreuzen
 1. Redirect URI: `http://DEINE-APP-URL/api/parqet/callback`
