@@ -1661,26 +1661,26 @@ async function openSettingsModal(){
   _tradingDays = (s.trading&&s.trading.days) ? [...s.trading.days] : [0,1,2,3,4];
   updateDayButtons();
   // Handelszeiten
-  const sh = (s.trading&&s.trading.start_hour!=null) ? s.trading.start_hour : 8;
-  const eh = (s.trading&&s.trading.end_hour!=null)   ? s.trading.end_hour   : 23;
-  document.getElementById("tradingStart").value = String(sh).padStart(2,"0")+":00";
-  document.getElementById("tradingEnd").value   = String(eh).padStart(2,"0")+":00";
+  const sh = (s.trading&&s.trading.start_hour!=null)   ? s.trading.start_hour   : 8;
+  const sm = (s.trading&&s.trading.start_minute!=null) ? s.trading.start_minute : 0;
+  const eh = (s.trading&&s.trading.end_hour!=null)     ? s.trading.end_hour     : 23;
+  const em = (s.trading&&s.trading.end_minute!=null)   ? s.trading.end_minute   : 0;
+  document.getElementById("tradingStart").value = String(sh).padStart(2,"0")+":"+String(sm).padStart(2,"0");
+  document.getElementById("tradingEnd").value   = String(eh).padStart(2,"0")+":"+String(em).padStart(2,"0");
 
   openModal("settingsModal");
   loadSplitsTable();
 }
 
 async function saveSettings(){
-  const startVal = document.getElementById("tradingStart").value; // "08:00"
-  const endVal   = document.getElementById("tradingEnd").value;
-  const startH   = parseInt(startVal.split(":")[0]);
-  const endH     = parseInt(endVal.split(":")[0]);
+  const [startH, startM] = document.getElementById("tradingStart").value.split(":").map(Number);
+  const [endH,   endM]   = document.getElementById("tradingEnd").value.split(":").map(Number);
   await fetch(`${API}/settings`,{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
       refresh_interval:      parseInt(document.getElementById("refreshInterval").value),
       notifications_enabled: document.getElementById("notifsEnabled").checked,
       timezone:              document.getElementById("settingsTimezone").value,
-      trading:               {days: _tradingDays, start_hour: startH, end_hour: endH},
+      trading:               {days: _tradingDays, start_hour: startH, start_minute: startM, end_hour: endH, end_minute: endM},
     })});
   toast("Einstellungen gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
 }
