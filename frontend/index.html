@@ -86,6 +86,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .toggle-switch input:checked + .toggle-track{background:var(--accent)}
 .toggle-switch input:checked + .toggle-track:before{transform:translateX(18px)}
+.selected-result{background:rgba(78,124,246,.06)!important;border-left:2px solid var(--accent)}
 .scard-clickable{cursor:pointer;transition:box-shadow .15s,transform .1s}
 .scard-clickable:hover{box-shadow:0 0 0 2px var(--accent);transform:translateY(-1px)}
 .scard-clickable.active{box-shadow:0 0 0 2px var(--accent);background:var(--accent-dim,rgba(78,124,246,.12))}
@@ -2241,10 +2242,14 @@ async function openParqetImportModal(newStocks){
         <input class="form-input" placeholder="Ticker suchen …" autocomplete="off" id="pqi-search-${i}"
                style="margin-bottom:6px" oninput="pqiSearch(${i},this.value)" value="${item.name || ''}"/>
         <div id="pqi-results-${i}"></div>
-        <div id="pqi-selected-${i}" style="display:none;font-size:12px;padding:6px 8px;background:rgba(78,124,246,.08);border:1px solid var(--accent);border-radius:6px;margin-top:6px">
-          <span id="pqi-sel-name-${i}"></span>
-          <button class="btn btn-primary btn-sm" style="margin-left:8px;float:right" onclick="pqiImport(${i})">Importieren</button>
-          <button class="btn btn-ghost btn-sm" style="margin-left:4px;float:right" onclick="pqiClear(${i})">&#215;</button>
+        <div id="pqi-selected-${i}" style="display:none;margin-top:6px">
+          <div style="display:flex;align-items:center;gap:6px;background:rgba(78,124,246,.08);
+                      border:1px solid var(--accent);border-radius:6px;padding:6px 8px">
+            <span id="pqi-sel-name-${i}" style="font-size:12px;flex:1;min-width:0;
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+<button class="btn btn-primary btn-sm" style="flex-shrink:0"
+                    onclick="pqiImport(${i})">Importieren</button>
+          </div>
         </div>
       </div>`;
     }).join("");
@@ -2333,10 +2338,18 @@ async function pqiSearch(idx, q){
       const r = await fetch(`${API}/search?q=${encodeURIComponent(query)}`);
       const items = await r.json();
       if(!items.length){ res.innerHTML='<div class="no-results" style="padding:8px;font-size:12px;color:var(--muted)">Keine Treffer</div>'; return; }
+      // XETRA bevorzugen, sonst ersten Treffer nehmen
+      const preferred = items.find(it => it.ticker.endsWith(".DE")) || items[0];
+      pqiSelect(idx, 0, preferred);
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map((it,j) =>
-        `<div class="search-item" onclick="pqiSelect(${idx},${j},${JSON.stringify(it).replace(/"/g,'&quot;')})">
+        `<div class="search-item${it.ticker===preferred.ticker?' selected-result':''}"
+              onclick="pqiSelect(${idx},${j},${JSON.stringify(it).replace(/"/g,'&quot;')})">
           <span style="font-size:12px;font-weight:500">${it.name}</span>
-          <div class="si-right"><span class="exch-tag">${it.exchange}</span><span class="ticker-tag">${it.ticker}</span></div>
+          <div class="si-right">
+            ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
+            <span class="exch-tag">${it.exchange}</span>
+            <span class="ticker-tag">${it.ticker}</span>
+          </div>
         </div>`).join("") + '</div>';
     } catch(e){ res.innerHTML=""; }
   }, 300);
