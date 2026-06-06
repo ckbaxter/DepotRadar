@@ -76,6 +76,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 /* Summary */
 .summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
 /* iOS-style Toggle Switch */
+.spinning{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .toggle-switch{position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0}
 .toggle-switch input{opacity:0;width:0;height:0;position:absolute}
 .toggle-track{position:absolute;inset:0;background:var(--border);border-radius:13px;
@@ -306,6 +308,8 @@ select.form-input{cursor:pointer}
         <span class="next-refresh" id="depotBudgetInfo" style="color:var(--green)"></span>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn">&#8635; Alle aktualisieren</button>
+        <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn"
+                style="display:none" title="ATH-Werte mit Yahoo vergleichen">&#128269; ATH prüfen</button>
     </div>
     <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
@@ -742,6 +746,26 @@ select.form-input{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal: ATH-Prüfung -->
+<div class="overlay" id="athCheckModal" style="display:none" onclick="closeIfOverlay(event,'athCheckModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:580px">
+    <div class="modal-header">
+      <span class="modal-title">&#128269; ATH-Prüfung</span>
+      <button class="close-btn" onclick="closeModal('athCheckModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div id="athCheckContent">
+        <div style="text-align:center;padding:24px;color:var(--muted)">Prüfe ATH-Werte…</div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <button class="btn btn-ghost btn-sm" onclick="closeModal('athCheckModal')">Schließen</button>
+        <button class="btn btn-primary btn-sm" id="athCorrectBtn" style="display:none"
+                onclick="applyAthCorrections()">Korrekturen übernehmen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Parqet ISIN-Konflikt -->
 <div class="overlay" id="parqetMismatchModal" style="display:none" onclick="closeIfOverlay(event,'parqetMismatchModal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
@@ -766,13 +790,10 @@ select.form-input{cursor:pointer}
 <div class="overlay" id="parqetImportModal" style="display:none" onclick="closeIfOverlay(event,'parqetImportModal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:580px">
     <div class="modal-header">
-      <span class="modal-title">Parqet Import — Handelsplatz wählen</span>
+      <span class="modal-title" id="parqetImportTitle">Parqet Import</span>
       <button class="close-btn" onclick="closeModal('parqetImportModal')">&#215;</button>
     </div>
     <div class="modal-body">
-      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
-        Diese Positionen aus Parqet wurden noch nicht im Depot gefunden. Bitte wähle für jede den passenden Handelsplatz.
-      </p>
       <div id="parqetImportList" style="display:flex;flex-direction:column;gap:14px"></div>
     </div>
     <div class="modal-footer">
@@ -781,11 +802,11 @@ select.form-input{cursor:pointer}
   </div>
 </div>
 
-<!-- Modal: Ticker ändern -->
+<!-- Modal: Handelsplatz wechseln -->
 <div class="overlay" id="changeTickerModal" style="display:none" onclick="closeIfOverlay(event,'changeTickerModal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:480px">
     <div class="modal-header">
-      <span class="modal-title">&#9998; Ticker ändern</span>
+      <span class="modal-title">&#9998; Handelsplatz wechseln</span>
       <button class="close-btn" onclick="closeModal('changeTickerModal')">&#215;</button>
     </div>
     <div class="modal-body">
@@ -963,6 +984,9 @@ async function loadCurrentStocks(){
   if(!activeDepot) return;
   // Nachkauf-Schwelle vom aktiven Depot laden
   _buyThreshold = activeDepot.nachkauf_threshold ?? 30;
+  // ATH-Prüfen Button nur im Bestand anzeigen
+  const athBtn = document.getElementById("athCheckBtn");
+  if(athBtn) athBtn.style.display = isWl() ? "none" : "";
   updateViewTitle();
   try {
     let stocks;
@@ -1152,6 +1176,152 @@ function initTheme(){
   });
 }
 
+// ── ATH-Prüfung ──────────────────────────────────────────────────
+let _athCheckResults = [];
+
+async function openAthCheck(){
+  if(!activeDepot) return;
+  _athCheckResults = [];
+  document.getElementById("athCorrectBtn").style.display = "none";
+
+  // Stocks laden für Fortschrittsanzeige
+  const sr = await fetch(`${API}/stocks?depot=${activeDepot.id}`);
+  const stocks = await sr.json();
+  const total = stocks.length;
+
+  const el = document.getElementById("athCheckContent");
+  el.innerHTML = `
+    <div style="text-align:center;padding:16px 8px">
+      <div class="spinning" style="font-size:24px;margin-bottom:8px">&#128269;</div>
+      <div id="athProgressLabel" style="font-size:13px;color:var(--muted);margin-bottom:10px">
+        Starte Prüfung…
+      </div>
+      <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+        <div id="athProgressBar" style="height:100%;background:var(--accent);
+             border-radius:4px;width:0%;transition:width .3s"></div>
+      </div>
+      <div id="athProgressCount" style="font-size:11px;color:var(--muted);margin-top:6px">
+        0 / ${total}
+      </div>
+    </div>`;
+
+  openModal("athCheckModal");
+
+  // Stocks einzeln prüfen — echter Fortschritt pro Aktie
+  const threshold = 0.05;
+  try {
+    for(let i = 0; i < stocks.length; i++){
+      const s = stocks[i];
+      const pct = Math.round((i / stocks.length) * 100);
+      const bar = document.getElementById("athProgressBar");
+      const lbl = document.getElementById("athProgressLabel");
+      const cnt = document.getElementById("athProgressCount");
+      if(bar) bar.style.width = pct + "%";
+      if(lbl) lbl.textContent = `Prüfe: ${s.name}`;
+      if(cnt) cnt.textContent = `${i} / ${stocks.length}`;
+
+      try {
+        const r = await fetch(`${API}/ath-check-single?ticker=${encodeURIComponent(s.ticker)}`);
+        const d = await r.json();
+        if(d.yahoo_ath && s.ath_eur){
+          const diffPct = Math.abs(d.yahoo_ath - s.ath_eur) / s.ath_eur;
+          if(diffPct > threshold){
+            _athCheckResults.push({
+              ticker:     s.ticker,
+              name:       s.name,
+              stored_ath: s.ath_eur,
+              yahoo_ath:  d.yahoo_ath,
+              diff_pct:   Math.round(diffPct * 1000) / 10,
+              direction:  d.yahoo_ath < s.ath_eur ? "lower" : "higher"
+            });
+          }
+        }
+      } catch(e){ /* einzelne Aktie überspringen */ }
+    }
+
+    // Abschluss
+    const bar = document.getElementById("athProgressBar");
+    const lbl = document.getElementById("athProgressLabel");
+    const cnt = document.getElementById("athProgressCount");
+    if(bar) bar.style.width = "100%";
+    if(lbl) lbl.textContent = "Prüfung abgeschlossen";
+    if(cnt) cnt.textContent = `${stocks.length} / ${stocks.length}`;
+    await new Promise(r => setTimeout(r, 400));
+    renderAthCheckResults();
+  } catch(e){
+    el.innerHTML = '<div style="color:var(--red);padding:16px">Fehler: '+e.message+'</div>';
+  }
+}
+
+function renderAthCheckResults(){
+  const el = document.getElementById("athCheckContent");
+  if(!_athCheckResults.length){
+    el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--green)">&#10003; Alle ATH-Werte sehen korrekt aus!</div>';
+    document.getElementById("athCorrectBtn").style.display = "none";
+    return;
+  }
+  document.getElementById("athCorrectBtn").style.display = "";
+  el.innerHTML = `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      ${_athCheckResults.length} Aktie(n) mit Abweichung &gt;5% gefunden.
+      Vorausgefüllt ist der Yahoo-Wert — du kannst ihn anpassen oder „Behalten" klicken.
+    </p>` +
+    _athCheckResults.map((s,i) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+                padding:12px 14px;margin-bottom:8px" id="ath-row-${i}">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">
+        ${s.name}
+        <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px">${s.ticker}</span>
+      </div>
+      <div style="display:flex;gap:16px;font-size:12px;margin-bottom:8px;flex-wrap:wrap">
+        <span>Gespeichert: <b>${s.stored_ath.toFixed(2)} EUR</b></span>
+        <span style="color:${s.direction==='lower'?'var(--red)':'var(--green)'}">
+          Yahoo: <b>${s.yahoo_ath.toFixed(2)} EUR</b>
+          (${s.direction==='lower'?'−':'+'}${s.diff_pct}%)
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="font-size:11px;color:var(--muted)">Neuer Wert:</label>
+        <input class="form-input" id="ath-val-${i}" type="number" step="0.01"
+               value="${s.yahoo_ath.toFixed(2)}"
+               style="width:120px;font-size:12px"/>
+        <span style="font-size:11px;color:var(--muted)">EUR</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:11px"
+                onclick="athKeep(${i})">Behalten</button>
+      </div>
+    </div>`
+  ).join("");
+}
+
+function athKeep(i){
+  const row = document.getElementById(`ath-row-${i}`);
+  row.style.opacity = "0.4";
+  row.style.pointerEvents = "none";
+  _athCheckResults[i]._keep = true;
+}
+
+async function applyAthCorrections(){
+  const corrections = _athCheckResults
+    .filter((_,i) => !_athCheckResults[i]._keep)
+    .map((_,i) => ({
+      ticker:  _athCheckResults[i].ticker,
+      new_ath: parseFloat(document.getElementById(`ath-val-${i}`).value)
+    }))
+    .filter(c => !isNaN(c.new_ath) && c.new_ath > 0);
+  if(!corrections.length){ closeModal("athCheckModal"); return; }
+  const r = await fetch(`${API}/depots/${activeDepot.id}/ath-correct`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(corrections)
+  });
+  if(r.ok){
+    toast(`${corrections.length} ATH-Wert(e) korrigiert ✓`);
+    closeModal("athCheckModal");
+    loadCurrentStocks();
+  } else {
+    toast("Fehler beim Speichern", false);
+  }
+}
+
 // ── Portfolio-Übersicht ──────────────────────────────────────────
 function renderPortfolioStats(stocks){
   // Nur für Bestand-Ansicht, nicht Watchlist
@@ -1301,7 +1471,7 @@ function renderTable(stocks){
          ${moveBtn(s.ticker)}
          <button class="icon-btn" onclick="wlDeleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="Entfernen">&#128465;</button>`
       : `<button class="icon-btn" onclick="refreshOne('${s.ticker}','${did}',this)" title="Aktualisieren">&#8635;</button>
-         <button class="icon-btn" onclick="openChangeTickerModal('${s.ticker}')" title="Ticker ändern" style="font-size:12px">&#9998;</button>
+         <button class="icon-btn" onclick="openChangeTickerModal('${s.ticker}')" title="Handelsplatz wechseln" style="font-size:12px">&#9998;</button>
          ${moveToWlBtn}
          <button class="icon-btn" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')" title="Entfernen">&#128465;</button>`;
     return `<tr class="${c.row}">
@@ -1465,6 +1635,7 @@ async function doSearch(q){
       `<div class="search-item" onclick="selectCompany(${i},${JSON.stringify(it).replace(/"/g,'&quot;')})">
         <span style="font-weight:500;font-size:13px">${it.name}</span>
         <div class="si-right">
+          ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
           <span class="exch-tag">${it.exchange}</span>
           ${it.type?`<span class="type-tag">${it.type}`+"</span>":""}
           <span class="ticker-tag">${it.ticker}</span>
@@ -1948,41 +2119,140 @@ let _parqetImportSearchTimers = {};
 async function openParqetImportModal(newStocks){
   _parqetImportItems = newStocks.map((s,i) => ({...s, selectedTicker:null, idx:i}));
   const list = document.getElementById("parqetImportList");
+  const total = _parqetImportItems.length;
 
-  // Header mit "Alle importieren" Button
-  list.innerHTML = `<div style="margin-bottom:12px">
-    <button class="btn btn-primary btn-sm" id="pqiAutoBtn" onclick="pqiAutoImportAll()">
-      &#8987; Alle automatisch suchen &amp; importieren
-    </button>
-    <span style="font-size:11px;color:var(--muted);margin-left:8px">oder einzeln unten auswählen</span>
-  </div>` +
-  _parqetImportItems.map((item,i) => `
-    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px" id="pqi-${i}">
-      <div style="font-weight:600;font-size:13px;margin-bottom:2px">${item.name || item.isin}</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-        ISIN: ${item.isin} &nbsp;·&nbsp; ${item.shares} Stk. &nbsp;·&nbsp; Einstand: ${fmtEUR(item.buy_price_eur)}
+  // Lade-Anzeige während Auto-Import
+  list.innerHTML = `
+    <div style="text-align:center;padding:20px 8px">
+      <div class="spinning" style="font-size:22px;margin-bottom:8px">&#8635;</div>
+      <div id="pqiAutoLabel" style="font-size:13px;color:var(--muted);margin-bottom:10px">
+        Importiere automatisch…
       </div>
-      <div id="pqi-status-${i}" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
-      <input class="form-input" placeholder="Ticker suchen …" autocomplete="off" id="pqi-search-${i}"
-             style="margin-bottom:6px" oninput="pqiSearch(${i},this.value)"/>
-      <div id="pqi-results-${i}"></div>
-      <div id="pqi-selected-${i}" style="display:none;font-size:12px;padding:6px 8px;background:rgba(78,124,246,.08);border:1px solid var(--accent);border-radius:6px;margin-top:6px">
-        <span id="pqi-sel-name-${i}"></span>
-        <button class="btn btn-primary btn-sm" style="margin-left:8px;float:right" onclick="pqiImport(${i})">Importieren</button>
-        <button class="btn btn-ghost btn-sm" style="margin-left:4px;float:right" onclick="pqiClear(${i})">&#215;</button>
+      <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+        <div id="pqiAutoBar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .3s"></div>
       </div>
-    </div>`).join("");
-
+      <div id="pqiAutoCount" style="font-size:11px;color:var(--muted);margin-top:6px">0 / ${total}</div>
+    </div>`;
   openModal("parqetImportModal");
 
-  // Auto-Suche per ISIN für jede Position starten
-  for(let i=0; i<_parqetImportItems.length; i++){
-    await pqiAutoSearch(i);
+  // Phase 1: Handelsplatz für alle Aktien suchen
+  for(let i=0; i<total; i++){
+    const item = _parqetImportItems[i];
+    const pct  = Math.round((i / total) * 50);  // erste Hälfte: Suche
+    document.getElementById("pqiAutoBar").style.width   = pct + "%";
+    document.getElementById("pqiAutoLabel").textContent = `Suche: ${item.name || item.isin}`;
+    document.getElementById("pqiAutoCount").textContent = `${i} / ${total}`;
+    await pqiAutoSearch(i, false);
+  }
+
+  // Phase 2: Alle gefundenen in einem einzigen Backend-Call importieren
+  document.getElementById("pqiAutoLabel").textContent = "Importiere alle gefundenen Aktien…";
+  document.getElementById("pqiAutoBar").style.width = "60%";
+
+  const toImport = _parqetImportItems
+    .map((item, i) => item.selectedCo ? {idx: i, item, co: item.selectedCo} : null)
+    .filter(Boolean);
+  const noMatch  = _parqetImportItems
+    .map((_,i) => _parqetImportItems[i].selectedCo ? null : i)
+    .filter(x => x !== null);
+
+  const failed = [...noMatch];
+
+  if(toImport.length){
+    try {
+      const payload = toImport.map(({item, co}) => ({
+        ticker: co.ticker, name: co.name, exchange: co.exchange,
+        isin: item.isin, buy_price_eur: item.buy_price_eur, shares: item.shares
+      }));
+      const r = await fetch(`${API}/depots/${_parqetDepotId}/parqet/import-bulk`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const results = await r.json();
+      // Index-basiertes Mapping: results[i] entspricht toImport[i]
+      results.forEach((res, i) => {
+        if(!res.ok && !res.skipped){
+          failed.push(toImport[i].idx);
+        }
+      });
+    } catch(e){
+      // Bei Netzwerkfehler alle als fehlgeschlagen markieren
+      toImport.forEach(({idx}) => failed.push(idx));
+    }
+  }
+  document.getElementById("pqiAutoBar").style.width = "90%";
+
+  document.getElementById("pqiAutoBar").style.width   = "100%";
+  document.getElementById("pqiAutoCount").textContent = `${total} / ${total}`;
+  await new Promise(r => setTimeout(r, 300));
+
+  // Ergebnis anzeigen
+  if(!failed.length){
+    list.innerHTML = `
+      <div style="text-align:center;padding:24px">
+        <div style="font-size:28px;margin-bottom:8px">&#10003;</div>
+        <div style="font-weight:600;color:var(--green);margin-bottom:4px">Alle ${total} Aktien importiert!</div>
+        <div style="font-size:12px;color:var(--muted)">Kurs-Daten werden beim nächsten Refresh geladen.</div>
+      </div>`;
+    setTimeout(() => closeModal("parqetImportModal"), 2000);
+    loadCurrentStocks();
+    return;
+  }
+
+  // Nur fehlgeschlagene anzeigen
+  const titleEl = document.getElementById("parqetImportTitle");
+  if(titleEl) titleEl.textContent = "\u{1F4AC} Parqet Import — Handelsplatz wählen";
+  list.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;padding:8px 4px">
+      ${total - failed.length} von ${total} automatisch importiert.
+      <b>${failed.length}</b> Aktie(n) konnten nicht automatisch zugeordnet werden — bitte manuell wählen:
+    </div>` +
+    failed.map(i => {
+      const item = _parqetImportItems[i];
+      return `
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px" id="pqi-${i}">
+        <div style="font-weight:600;font-size:13px;margin-bottom:2px">${item.name || item.isin}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+          ISIN: ${item.isin} &nbsp;·&nbsp; ${item.shares} Stk. &nbsp;·&nbsp; Einstand: ${fmtEUR(item.buy_price_eur)}
+        </div>
+        <div id="pqi-status-${i}" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
+        <input class="form-input" placeholder="Ticker suchen …" autocomplete="off" id="pqi-search-${i}"
+               style="margin-bottom:6px" oninput="pqiSearch(${i},this.value)" value="${item.name || ''}"/>
+        <div id="pqi-results-${i}"></div>
+        <div id="pqi-selected-${i}" style="display:none;font-size:12px;padding:6px 8px;background:rgba(78,124,246,.08);border:1px solid var(--accent);border-radius:6px;margin-top:6px">
+          <span id="pqi-sel-name-${i}"></span>
+          <button class="btn btn-primary btn-sm" style="margin-left:8px;float:right" onclick="pqiImport(${i})">Importieren</button>
+          <button class="btn btn-ghost btn-sm" style="margin-left:4px;float:right" onclick="pqiClear(${i})">&#215;</button>
+        </div>
+      </div>`;
+    }).join("");
+
+  // Suche für fehlgeschlagene vorausfüllen
+  for(const i of failed){
+    const item = _parqetImportItems[i];
+    if(item.name) pqiSearch(i, item.name);
   }
 }
 
-async function pqiAutoSearch(idx){
+async function pqiImportSilent(idx){
+  const item = _parqetImportItems[idx];
+  const co   = item.selectedCo;
+  if(!co) return false;
+  try {
+    const r = await fetch(`${API}/depots/${_parqetDepotId}/parqet/import`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        ticker: co.ticker, name: co.name, exchange: co.exchange,
+        isin: item.isin, buy_price_eur: item.buy_price_eur, shares: item.shares
+      })
+    });
+    return r.ok;
+  } catch(e){ return false; }
+}
+
+async function pqiAutoSearch(idx, autoImport=true){
   const item   = _parqetImportItems[idx];
+  // DOM-Elemente optional — existieren nur wenn Karten bereits gerendert sind
   const status = document.getElementById(`pqi-status-${idx}`);
   const nameEl = document.querySelector(`#pqi-${idx} div`);
   if(!item.isin) return;
@@ -1993,62 +2263,42 @@ async function pqiAutoSearch(idx){
     if((!item.name || item.name === item.isin) && nameEl)
       nameEl.textContent = xetraMatch.name;
     _parqetImportItems[idx].name = xetraMatch.name || item.name;
-    status.innerHTML = `<span style="color:var(--green)">&#127482; XETRA: ${xetraMatch.ticker}</span>`;
+    if(status) status.innerHTML = `<span style="color:var(--green)">&#127482; XETRA: ${xetraMatch.ticker}</span>`;
     pqiSelect(idx, 0, xetraMatch);
-    await pqiImport(idx);
+    if(autoImport) await pqiImport(idx);
     return;
   }
 
-  status.textContent = "Suche …";
+  if(status) status.textContent = "Suche …";
   try {
     const r = await fetch(`${API}/search?q=${encodeURIComponent(item.isin)}`);
     const results = await r.json();
     if(!results.length){
-      status.innerHTML = '<span style="color:var(--muted)">Kein Treffer — bitte manuell suchen.</span>';
+      if(status) status.innerHTML = '<span style="color:var(--muted)">Kein Treffer — bitte manuell suchen.</span>';
       return;
     }
-    // Namen aus Suchergebnis ins Card-Header übernehmen falls item.name leer
+    // Namen aus Suchergebnis übernehmen falls item.name leer
     if(!item.name || item.name === item.isin){
       const foundName = results[0].name.replace(/\s*\[WKN.*?\]/,"").trim();
       if(foundName && nameEl) nameEl.textContent = foundName;
       _parqetImportItems[idx].name = foundName;
     }
-    // Wenn nur no_ticker Ergebnisse: anzeigen aber nicht auto-importieren
+    // Wenn nur no_ticker Ergebnisse → manuell
     const tradeable = results.filter(r => !r.no_ticker);
     if(!tradeable.length){
-      // BFF kennt den Namen, aber kein Yahoo-Ticker → manuell suchen
-      status.innerHTML = `<span style="color:var(--muted)">Gefunden: ${results[0].name.replace(/\s*\[WKN.*?\]/,"").trim()} — bitte Handelsplatz manuell wählen.</span>`;
-      document.getElementById(`pqi-search-${idx}`).value = results[0].name.replace(/\s*\[WKN.*?\]/,"").trim();
+      if(status) status.innerHTML = `<span style="color:var(--muted)">Gefunden: ${results[0].name.replace(/\s*\[WKN.*?\]/,"").trim()} — bitte Handelsplatz manuell wählen.</span>`;
+      const searchEl = document.getElementById(`pqi-search-${idx}`);
+      if(searchEl) searchEl.value = results[0].name.replace(/\s*\[WKN.*?\]/,"").trim();
       return;
     }
-    // Ersten handelbaren Treffer vorauswählen
     pqiSelect(idx, 0, tradeable[0]);
-    status.textContent = "";
-    // Falls genau einer tradeable -> direkt importieren
-    if(tradeable.length === 1){
-      await pqiImport(idx);
-    }
+    if(status) status.textContent = "";
+    if(tradeable.length === 1 && autoImport) await pqiImport(idx);
   } catch(e){
-    status.textContent = "Suchfehler — bitte manuell suchen.";
+    if(status) status.textContent = "Suchfehler — bitte manuell suchen.";
   }
 }
 
-async function pqiAutoImportAll(){
-  const btn = document.getElementById("pqiAutoBtn");
-  btn.disabled = true; btn.innerHTML = '<span class="spinning">&#8635;</span> Importiere …';
-  for(let i=0; i<_parqetImportItems.length; i++){
-    const box = document.getElementById(`pqi-${i}`);
-    if(box && box.style.opacity === "0.5") continue; // bereits importiert
-    if(!_parqetImportItems[i].selectedCo){
-      await pqiAutoSearch(i);
-    }
-    if(_parqetImportItems[i].selectedCo){
-      await pqiImport(i);
-    }
-  }
-  btn.innerHTML = "&#10003; Fertig";
-  loadCurrentStocks();
-}
 
 async function pqiSearch(idx, q){
   clearTimeout(_parqetImportSearchTimers[idx]);
@@ -2072,10 +2322,15 @@ async function pqiSearch(idx, q){
 
 function pqiSelect(idx, j, co){
   _parqetImportItems[idx].selectedCo = co;
-  document.getElementById(`pqi-results-${idx}`).innerHTML = "";
-  document.getElementById(`pqi-search-${idx}`).value = co.name;
-  document.getElementById(`pqi-sel-name-${idx}`).textContent = `${co.name} · ${co.ticker} · ${co.exchange}`;
-  document.getElementById(`pqi-selected-${idx}`).style.display = "block";
+  // DOM-Elemente nur aktualisieren wenn sie existieren (nicht während Ladescreen)
+  const res  = document.getElementById(`pqi-results-${idx}`);
+  const srch = document.getElementById(`pqi-search-${idx}`);
+  const name = document.getElementById(`pqi-sel-name-${idx}`);
+  const sel  = document.getElementById(`pqi-selected-${idx}`);
+  if(res)  res.innerHTML = "";
+  if(srch) srch.value = co.name;
+  if(name) name.textContent = `${co.name} · ${co.ticker} · ${co.exchange}`;
+  if(sel)  sel.style.display = "block";
 }
 
 function pqiClear(idx){
@@ -2108,7 +2363,35 @@ async function pqiImport(idx){
     box.querySelector('.form-input').disabled = true;
     toast(`${co.name} importiert`);
     loadCurrentStocks();
-  } catch(e){ toast("Fehler: "+e.message, false); btn.disabled=false; btn.textContent="Importieren"; }
+  } catch(e){
+    const msg = e.message || "Unbekannter Fehler";
+    if(msg.includes("nicht gefunden")){
+      // Ticker bei Yahoo nicht verfügbar — Hinweis direkt unter dem Suchfeld anzeigen
+      const box = document.getElementById(`pqi-${idx}`);
+      const hint = box.querySelector('.pqi-ticker-hint') || (() => {
+        const h = document.createElement('div');
+        h.className = 'pqi-ticker-hint';
+        h.style.cssText = 'font-size:11px;color:var(--red);margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.08);border-radius:4px';
+        box.querySelector('[id^="pqi-selected-"]').after(h);
+        return h;
+      })();
+      hint.textContent = `⚠ Ticker "${co.ticker}" bei Yahoo Finance nicht verfügbar — bitte anderen Handelsplatz wählen`;
+      btn.disabled=false; btn.textContent="Importieren";
+      // Vorauswahl leeren damit der Nutzer neu wählen kann
+      _parqetImportItems[idx].selectedCo = null;
+      const selDiv = document.getElementById(`pqi-selected-${idx}`);
+      if(selDiv) selDiv.style.display = "none";
+      // Suchfeld mit Aktienname vorausfüllen und Suche starten
+      const searchEl = document.getElementById(`pqi-search-${idx}`);
+      if(searchEl){
+        searchEl.value = item.name || co.name || "";
+        pqiSearch(idx, searchEl.value);
+      }
+    } else {
+      toast("Fehler: "+msg, false);
+      btn.disabled=false; btn.textContent="Importieren";
+    }
+  }
 }
 
 // Prüfe URL-Parameter nach OAuth Redirect
@@ -2195,7 +2478,8 @@ const ISIN_TO_XETRA = {
   "US30303M1027": {ticker:"FB2A.DE", name:"Meta Platforms",       exchange:"XETRA"},
   "US88160R1014": {ticker:"TL0.DE",  name:"Tesla",                exchange:"XETRA"},
   "US11135F1012": {ticker:"1YD.DE",  name:"Broadcom",             exchange:"XETRA"},
-  "US6541061031": {ticker:"NFC.DE",  name:"Netflix",              exchange:"XETRA"},
+  "US6541061031": {ticker:"NKE.DE",  name:"Nike",                 exchange:"XETRA"},
+    "US64110L1061": {ticker:"NFC.DE",  name:"Netflix",              exchange:"XETRA"},
   "US6701002056": {ticker:"NOV.DE",  name:"Novo Nordisk",         exchange:"XETRA"},
   "US92826C8394": {ticker:"3V64.DE", name:"Visa",                 exchange:"XETRA"},
   "US57636Q1040": {ticker:"M4I.DE",  name:"Mastercard",           exchange:"XETRA"},
@@ -2244,7 +2528,7 @@ const XETRA_SUGGESTIONS = {
   "VUAA.L": {ticker:"VUAA.DE",  name:"Vanguard S&P 500 Acc",  exchange:"XETRA"},
 };
 
-// ── Ticker ändern ─────────────────────────────────────────────────
+// ── Handelsplatz wechseln ─────────────────────────────────────────
 let _ctStock = null;
 let _ctSelected = null;
 let _ctSearchTimer = null;
@@ -2273,10 +2557,34 @@ function openChangeTickerModal(ticker){
     document.getElementById("ctConfirmBtn").disabled = true;
   }
 
-  document.getElementById("ctSearchInput").value   = "";
+  // Suchfeld mit Aktienname vorausfüllen und Suche starten
+  const prefill = _ctStock.name || "";
+  document.getElementById("ctSearchInput").value = prefill;
   document.getElementById("ctSearchResults").innerHTML = "";
   openModal("changeTickerModal");
-  if(!xetra) setTimeout(()=>document.getElementById("ctSearchInput").focus(), 100);
+  // Suche direkt auslösen wenn kein XETRA-Vorschlag vorhanden
+  if(!xetra && prefill){
+    setTimeout(async () => {
+      document.getElementById("ctSearchInput").focus();
+      document.getElementById("ctSearchInput").select();
+      const r = await fetch(`${API}/search?q=${encodeURIComponent(prefill)}`);
+      const items = await r.json();
+      const res = document.getElementById("ctSearchResults");
+      if(!items.length){ res.innerHTML='<div class="no-results" style="padding:8px;font-size:12px;color:var(--muted)">Keine Treffer</div>'; return; }
+      items.sort((a,b) => (b.ticker.endsWith(".DE")?1:0) - (a.ticker.endsWith(".DE")?1:0));
+      res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
+        `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
+          <span style="font-size:13px;font-weight:500">${it.name}</span>
+          <div class="si-right">
+            ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
+            <span class="exch-tag">${it.exchange}</span>
+            <span class="ticker-tag">${it.ticker}</span>
+          </div>
+        </div>`).join("") + '</div>';
+    }, 150);
+  } else if(xetra) {
+    setTimeout(()=>document.getElementById("ctSearchInput").select(), 100);
+  }
 }
 
 function applyXetraSuggestion(){
@@ -2477,7 +2785,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v1.9.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.0.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
