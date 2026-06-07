@@ -4,7 +4,7 @@ services:
 # ⚠ Service-Name hier ändern? → Auch in nginx.conf: proxy_pass http://<name>:5000 anpassen!
   backend:
     build: ./backend
-    container_name: ath-tracker-backend
+    container_name: depotradar-backend
     restart: unless-stopped
     volumes:
       - ./data:/data
@@ -16,7 +16,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: ath-tracker-nginx
+    container_name: depotradar-nginx
     restart: unless-stopped
     ports:
       - "8080:80"
