@@ -10,7 +10,7 @@ services:
       - ./data:/data
     environment:
       - TZ=Europe/Berlin
-      - APP_URL=http://ath.apps.lan   # Anpassen auf eigene URL
+      - APP_URL=http://depotradar.lan   # Anpassen auf eigene URL
     networks:
       - ath-net
 
