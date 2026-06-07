@@ -2205,9 +2205,12 @@ async function createWatchlist(){
     headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
   const wl=await r.json(); if(!r.ok){toast("Fehler: "+wl.error,false);return;}
   closeModal("newWlModal"); toast(`Beobachtungsliste "${name}" erstellt`);
-  activeDepot.watchlists=(activeDepot.watchlists||[]); activeDepot.watchlists.push(wl);
-  switchView({type:"watchlist",id:wl.id,name:wl.name});
-  loadDepots();
+  activeDepot.watchlists = (activeDepot.watchlists||[]);
+  activeDepot.watchlists.push(wl);
+  // Lokale depotsCache aktualisieren damit renderViewTabs die neue WL findet
+  const cachedDepot = depotsCache.find(d => d.id === activeDepot.id);
+  if(cachedDepot){ cachedDepot.watchlists = activeDepot.watchlists; }
+  switchView({type:"watchlist", id:wl.id, name:wl.name});
 }
 function openWlSettings(wl){
   editingWl=wl; document.getElementById("editWlName").value=wl.name;
