@@ -1,8 +1,8 @@
-# ATH-Tracker
+# DepotRadar
 
-Ein selbst gehostetes Web-Tool zur Verfolgung von Aktien und ETFs relativ zu ihrem **All-Time-High (ATH)** in Euro.
+Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von Aktien und ETFs in Euro.
 
-Entwickelt für private Investoren die wissen wollen: *Wie weit ist meine Aktie gerade vom Hoch entfernt — und lohnt sich ein Nachkauf?*
+Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
 ![Version Backend](https://img.shields.io/badge/Backend-v2.0.2-blue)
 ![Version Frontend](https://img.shields.io/badge/Frontend-v2.0.2-blue)
