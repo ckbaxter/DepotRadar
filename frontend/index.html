@@ -508,7 +508,14 @@ select.form-input{cursor:pointer}
         <!-- Client ID Eingabe -->
         <div class="form-group" style="margin-bottom:10px">
           <label class="form-label">Parqet Client ID</label>
-          <div style="display:flex;gap:8px">
+          <!-- Status-Zeile (eingeklappt wenn ID vorhanden) -->
+          <div id="clientIdStatus" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+            <span id="clientIdStatusText" style="font-size:13px"></span>
+            <button class="btn btn-ghost btn-sm" onclick="showClientIdInput()"
+                    id="clientIdEditBtn" style="font-size:12px"></button>
+          </div>
+          <!-- Eingabefeld (sichtbar wenn keine ID oder beim Bearbeiten) -->
+          <div id="clientIdInputWrap" style="display:flex;gap:8px">
             <input type="password" class="form-input" id="parqetClientIdInput"
                    placeholder="z.B. abc123..." style="flex:1;font-family:monospace;font-size:12px"
                    oninput="onClientIdChange()"/>
@@ -520,7 +527,7 @@ select.form-input{cursor:pointer}
         </div>
 
         <!-- Anleitung -->
-        <details style="margin-bottom:12px">
+        <details id="parqetSetupGuide" style="margin-bottom:12px">
           <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none">
             ℹ️ Wie erstelle ich eine Parqet Integration?
           </summary>
@@ -1382,6 +1389,13 @@ async function saveParqetClientId(){
   });
   if(r.ok){
     const d = await r.json();
+    // Status auf Konfiguriert setzen
+    const statusDiv2 = document.getElementById('clientIdStatus');
+    const inputWrap2 = document.getElementById('clientIdInputWrap');
+    const statusTxt2 = document.getElementById('clientIdStatusText');
+    if(statusDiv2){ statusTxt2.innerHTML='<span style="color:var(--green)">✓ Konfiguriert</span>'; document.getElementById('clientIdEditBtn').textContent='✎ Ändern'; document.getElementById('clientIdEditBtn').style.display=''; statusDiv2.style.display='flex'; inputWrap2.style.display='none'; }
+    const guide3 = document.getElementById('parqetSetupGuide');
+    if(guide3) guide3.style.display='none';
     // Cache aktualisieren
     const idx = depotsCache.findIndex(x => x.id === editingDepot.id);
     if(idx >= 0) depotsCache[idx] = d;
@@ -1450,6 +1464,15 @@ function initTheme(){
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if((localStorage.getItem("themeMode") || "auto") === "auto") _applyTheme("auto");
   });
+}
+
+// ── Client ID Toggle ─────────────────────────────────────────────
+function showClientIdInput(){
+  document.getElementById("clientIdInputWrap").style.display = "flex";
+  document.getElementById("clientIdStatus").style.display    = "none";
+  const guide = document.getElementById("parqetSetupGuide");
+  if(guide) guide.style.display = "";
+  setTimeout(()=>document.getElementById("parqetClientIdInput").focus(), 50);
 }
 
 // ── Depot Modal Scroll ───────────────────────────────────────────
@@ -2029,7 +2052,31 @@ async function createDepot(){
 function openDepotSettings(depot){
   editingDepot=depot; depotUrls=[...(depot.apprise_urls||[])];
   document.getElementById("editDepotName").value = depot.name;
+  const hasClientId = !!(depot.parqet_client_id);
   document.getElementById("parqetClientIdInput").value = depot.parqet_client_id || "";
+  // Status-Anzeige aktualisieren
+  const statusDiv  = document.getElementById("clientIdStatus");
+  const inputWrap  = document.getElementById("clientIdInputWrap");
+  const statusText = document.getElementById("clientIdStatusText");
+  const editBtn    = document.getElementById("clientIdEditBtn");
+  if(hasClientId){
+    statusText.innerHTML = '<span style="color:var(--green)">✓ Konfiguriert</span>';
+    editBtn.textContent      = "✎ Ändern";
+    editBtn.style.display    = "";
+    statusDiv.style.display  = "flex";
+    inputWrap.style.display  = "none";
+    // Anleitung ausblenden wenn konfiguriert
+    const guide = document.getElementById("parqetSetupGuide");
+    if(guide) guide.style.display = "none";
+  } else {
+    statusText.innerHTML = '<span style="color:var(--muted)">✗ Nicht konfiguriert</span>';
+    editBtn.style.display    = "none";
+    statusDiv.style.display  = "flex";
+    inputWrap.style.display  = "flex";
+    // Anleitung anzeigen wenn nicht konfiguriert
+    const guide2 = document.getElementById("parqetSetupGuide");
+    if(guide2){ guide2.style.display = ""; }
+  }
   document.getElementById("depotBuyBudget").value = depot.buy_budget || "";
   document.getElementById("parqetStatusBox").textContent = "Lade …";
   document.getElementById("parqetActions").innerHTML = "";
@@ -3165,7 +3212,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.0.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.0.9 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
