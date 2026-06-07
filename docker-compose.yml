@@ -26,8 +26,8 @@ services:
     depends_on:
       - backend
     networks:
-      - ath-net
+      - depotradar-net
 
 networks:
-  ath-net:
+  depotradar-net:
     driver: bridge
