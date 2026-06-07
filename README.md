@@ -49,8 +49,8 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 ## Installation
 
 ```bash
-git clone https://github.com/ckbaxter/ath-tracker.git
-cd ath-tracker
+git clone https://github.com/ckbaxter/DepotRadar.git
+cd DepotRadar
 docker compose up -d --build
 ```
 
