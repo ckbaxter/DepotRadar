@@ -14,7 +14,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 
 ## Vorschau
 
-![ATH-Tracker Vorschau](docs/preview.svg)
+![ATH-Tracker Vorschau](docs/Preview.jpeg)
 
 *Alle dargestellten Aktien, Kurse, Einstandswerte und Kennzahlen sind frei erfunden und dienen ausschließlich zur Veranschaulichung der Benutzeroberfläche.*
 
