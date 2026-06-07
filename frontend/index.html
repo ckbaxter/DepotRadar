@@ -494,9 +494,18 @@ select.form-input{cursor:pointer}
         <label class="form-label">Apprise-URLs (für dieses Depot)</label>
         <div class="form-hint" style="margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
         <div class="url-list" id="depotUrlList"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <input class="form-input" id="newDepotUrlInput" placeholder="Neue Apprise-URL …" style="flex:1"/>
-          <button class="btn btn-ghost" onclick="addDepotUrl()">+ Add</button>
+        <!-- Neue URL Eingabe mit inline Speichern -->
+        <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+          <input class="form-input" id="newDepotUrlInput" placeholder="Neue Apprise-URL …"
+                 style="flex:1" oninput="toggleAddUrlBtn(this)"/>
+          <button class="btn btn-ghost btn-sm" id="addUrlBtn" onclick="addDepotUrl()"
+                  style="display:none;white-space:nowrap">💾 Speichern</button>
+        </div>
+        <!-- Test Button — nur aktiv wenn URLs vorhanden -->
+        <div style="margin-top:10px">
+          <button class="btn btn-ghost btn-sm" id="depotTestBtn"
+                  onclick="testDepotNotification()" disabled
+                  style="opacity:0.4">🔔 Benachrichtigung testen</button>
         </div>
       </div>
       <!-- Parqet Integration -->
@@ -588,7 +597,6 @@ select.form-input{cursor:pointer}
                    z-index:10;transition:opacity .2s">↓</button>
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" onclick="deleteCurrentDepot()">&#128465; Depot löschen</button>
-      <button class="btn btn-ghost btn-sm" onclick="testDepotNotification()">&#128276; Test</button>
       <button class="btn btn-ghost" onclick="closeModal('depotSettingsModal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="saveDepotSettings()">Speichern</button>
     </div>
@@ -2092,8 +2100,16 @@ function renderDepotUrlList(){
   document.getElementById("depotUrlList").innerHTML=depotUrls.length===0
     ?'<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
     :depotUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeDepotUrl(${i})">&#215;</button></div>`).join("");
+  // Test-Button aktivieren wenn URLs vorhanden
+  const testBtn = document.getElementById("depotTestBtn");
+  if(testBtn){ testBtn.disabled = depotUrls.length === 0; testBtn.style.opacity = depotUrls.length ? "1" : "0.4"; }
 }
-function addDepotUrl(){const v=document.getElementById("newDepotUrlInput").value.trim();if(!v)return;depotUrls.push(v);document.getElementById("newDepotUrlInput").value="";renderDepotUrlList();}
+
+function toggleAddUrlBtn(input){
+  const btn = document.getElementById("addUrlBtn");
+  if(btn) btn.style.display = input.value.trim() ? "block" : "none";
+}
+function addDepotUrl(){const v=document.getElementById("newDepotUrlInput").value.trim();if(!v)return;depotUrls.push(v);document.getElementById("newDepotUrlInput").value="";const btn=document.getElementById("addUrlBtn");if(btn)btn.style.display="none";renderDepotUrlList();}
 function removeDepotUrl(i){depotUrls.splice(i,1);renderDepotUrlList();}
 async function saveDepotSettings(){
   if(!editingDepot) return;
@@ -3212,7 +3228,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.0.9 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.1.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
