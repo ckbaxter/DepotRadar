@@ -791,12 +791,21 @@ select.form-input{cursor:pointer}
           Benachrichtigungen werden pro Depot konfiguriert — Tippen auf das ⚙-Icon im Depot-Tab.
           Eine Benachrichtigung kommt wenn eine Aktie die eingestellte ATH-Schwelle unterschreitet.
           Nachkauf-Kandidaten werden mit einem 🛒-Symbol hervorgehoben.<br><br>
-          <b>Beispiel:</b>
-          <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;
-                      font-family:monospace;font-size:12px;margin-top:6px;line-height:1.8">
-            🛒 Nike −46% vom ATH (76,48 €)<br>
-            &nbsp;&nbsp;&nbsp;Mastercard −8% vom ATH (512,30 €)<br>
-            &nbsp;&nbsp;&nbsp;Apple −22% vom ATH (198,45 €)
+          <b>Beispiel einer Benachrichtigung:</b>
+          <div style="background:var(--bg3);border-radius:6px;padding:10px 14px;
+                      font-family:monospace;font-size:11px;margin-top:6px;line-height:1.9;
+                      white-space:pre-wrap;word-break:break-word">ATH-Alarm [Bestand: Mein Depot]: Apple -22%-Block
+🛒 Apple Inc. (APC.DE) — Bestand: Mein Depot
+
+Aktueller Kurs:  156,00 EUR
+ATH:             199,62 EUR
+Abstand:         -21,9%
+Kaufempfehlung:  2 Stk. (~312,00 EUR / Budget 1×350=350 EUR)
+-20%-Level:    159,70 EUR
+
+http://ath.example.lan</div>
+          <div style="margin-top:8px;font-size:11px;color:var(--muted)">
+            🛒 = Nachkauf-Kandidat (untergewichtet im Depot + weit unter ATH)
           </div>
           <br>
           Weitere Informationen zur Konfiguration mit Beispielen für Discord, Telegram, E-Mail und mehr:<br>
