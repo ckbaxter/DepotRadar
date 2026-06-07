@@ -78,6 +78,42 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 /* iOS-style Toggle Switch */
 .spinning{display:inline-block;animation:spin 1s linear infinite}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+/* Hilfe-Modal */
+/* Pulsing sync button */
+
+@keyframes pulse-arrow{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
+#depotScrollBtn{animation:pulse-arrow 1.5s ease-in-out infinite}
+@keyframes sync-pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(78,124,246,.5)}
+  50%{box-shadow:0 0 0 4px rgba(78,124,246,.15)}
+}
+.btn-sync-pulse{
+  border-color:var(--accent)!important;
+  color:var(--accent)!important;
+  animation:sync-pulse 2s ease-in-out infinite
+}
+.help-btn-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;
+  border-bottom:1px solid var(--border);font-size:13px;color:var(--muted);line-height:1.5}
+.help-btn-row:last-child{border-bottom:none}
+.help-btn-icon{flex-shrink:0;width:36px;height:36px;display:flex;align-items:center;
+  justify-content:center;background:var(--bg2);border:1px solid var(--border);
+  border-radius:6px;font-size:16px}
+.help-section{border-bottom:1px solid var(--border)}
+.help-section:last-child{border-bottom:none}
+.help-summary{
+  padding:14px 16px;cursor:pointer;font-weight:600;font-size:14px;
+  list-style:none;display:flex;align-items:center;gap:8px;
+  user-select:none;-webkit-tap-highlight-color:transparent}
+.help-summary::-webkit-details-marker{display:none}
+.help-summary::after{content:"›";margin-left:auto;font-size:18px;
+  color:var(--muted);transition:transform .2s}
+details[open] .help-summary::after{transform:rotate(90deg)}
+.help-body{padding:0 16px 14px;font-size:13px;color:var(--muted);
+  line-height:1.7;border-top:1px solid var(--border)}
+@media(max-width:480px){
+  .help-summary{font-size:13px;padding:12px 14px}
+  .help-body{font-size:12px;padding:0 14px 12px}
+}
 .toggle-switch{position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0}
 .toggle-switch input{opacity:0;width:0;height:0;position:absolute}
 .toggle-track{position:absolute;inset:0;background:var(--border);border-radius:13px;
@@ -250,6 +286,7 @@ select.form-input{cursor:pointer}
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Farbschema: Auto / Hell / Dunkel">A</button>
     <button class="btn btn-ghost btn-sm" onclick="openNotifModal()">&#128236;<span class="btn-label"> Verlauf</span></button>
     <button class="btn btn-ghost btn-sm" onclick="openSettingsModal()">&#9881;<span class="btn-label"> Einstellungen</span></button>
+    <button class="btn btn-ghost btn-sm" onclick="openHelpModal()" title="Hilfe" style="font-weight:700;font-size:15px;min-width:32px;margin-left:4px">?</button>
     <button class="btn btn-primary btn-sm" id="addStockBtn" onclick="openAddModal()">+<span class="btn-label"> Hinzufügen</span></button>
   </div>
 </div>
@@ -313,10 +350,10 @@ select.form-input{cursor:pointer}
     <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
     <!-- Einheitliche Aktionsleiste -->
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
-      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn">&#8635; Alle aktualisieren</button>
-      <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn"
+      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn" title="Kurse jetzt abrufen">&#8635; Alle aktualisieren</button>
+      <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn" title="ATH-Werte mit Yahoo vergleichen"
               style="display:none">&#128269; ATH prüfen</button>
-      <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()">🛒 Nachkauf</button>
+      <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()" title="Nachkauf-Kandidaten anzeigen">🛒 Nachkauf</button>
       <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center;margin-left:auto">
         <span style="position:absolute;left:8px;font-size:13px;color:var(--muted);pointer-events:none">🔍</span>
         <input id="stockSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
@@ -419,7 +456,7 @@ select.form-input{cursor:pointer}
 
 <!-- Modal: Depot-Einstellungen -->
 <div class="overlay" id="depotSettingsModal" style="display:none" onclick="closeIfOverlay(event,'depotSettingsModal')">
-  <div class="modal" onclick="event.stopPropagation()" style="max-width:500px">
+  <div class="modal" onclick="event.stopPropagation()"  style="max-width:500px" style="position:relative">
     <div class="modal-header">
       <span class="modal-title">&#9881; Depot-Einstellungen</span>
       <button class="close-btn" onclick="closeModal('depotSettingsModal')">&#215;</button>
@@ -534,6 +571,14 @@ select.form-input{cursor:pointer}
         </div>
       </div>
     </div>
+        <!-- Scroll-Down Pfeil -->
+    <button id="depotScrollBtn" onclick="scrollDepotModal()"
+            style="display:none;position:absolute;right:12px;bottom:70px;
+                   width:36px;height:36px;border-radius:50%;
+                   background:var(--accent);color:#fff;border:none;
+                   cursor:pointer;font-size:18px;line-height:1;
+                   box-shadow:0 2px 8px rgba(78,124,246,.4);
+                   z-index:10;transition:opacity .2s">↓</button>
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" onclick="deleteCurrentDepot()">&#128465; Depot löschen</button>
       <button class="btn btn-ghost btn-sm" onclick="testDepotNotification()">&#128276; Test</button>
@@ -597,6 +642,169 @@ select.form-input{cursor:pointer}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('newWlModal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="createWatchlist()">Erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Hilfe -->
+<div class="overlay" id="helpModal" style="display:none" onclick="closeIfOverlay(event,'helpModal')">
+  <div class="modal" onclick="event.stopPropagation()"
+       style="max-width:600px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header" style="position:sticky;top:0;background:var(--bg);z-index:1">
+      <span class="modal-title">? Hilfe &amp; Erklärungen</span>
+      <button class="close-btn" onclick="closeModal('helpModal')">&#215;</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+
+      <details class="help-section" open>
+        <summary class="help-summary">📊 Summary-Karten</summary>
+        <div class="help-body">
+          Zeigen wie viele Aktien wie weit von ihrem Allzeithoch entfernt sind.
+          Antippen filtert die Liste auf genau diese Aktien — nochmal antippen hebt den Filter auf.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary"><span class="parqet-badge" style="font-size:11px;margin-right:2px">P</span> Badge</summary>
+        <div class="help-body">
+          Aktien mit einem <span class="parqet-badge">P</span> wurden über Parqet importiert.
+          Einstandskurs und Stückzahl stammen aus deinem Parqet-Portfolio und werden bei jedem
+          Sync aktualisiert.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">↺ Alle aktualisieren</summary>
+        <div class="help-body">
+          Ruft sofort aktuelle Kurse von Yahoo Finance ab — für alle Aktien im aktiven Depot
+          einschließlich aller zugehörigen Watchlists. Unabhängig vom automatischen Intervall.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">🔍 ATH prüfen</summary>
+        <div class="help-body">
+          Vergleicht den gespeicherten Allzeithoch-Wert jeder Aktie mit den aktuellen Yahoo-Daten.
+          Abweichungen über 5% werden angezeigt — du kannst den Wert dann korrigieren oder behalten.
+          Sinnvoll nach längerer Pause oder wenn ein ATH-Wert verdächtig wirkt.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">🛒 Nachkauf</summary>
+        <div class="help-body">
+          Hebt Aktien hervor die gleichzeitig zwei Bedingungen erfüllen:
+          <ol style="margin:8px 0 8px 16px;padding:0;line-height:1.8">
+            <li><b>≥20% unter ATH</b> — die Aktie ist mindestens 20% günstiger als ihr Allzeithoch</li>
+            <li><b>Untergewichtet im Depot</b> — der Schieberegler bestimmt die Schwelle</li>
+          </ol>
+          Der Positionswert errechnet sich aus <b>aktueller Kurs × Anzahl Stück</b>.
+          Dieser Wert bestimmt wie stark eine Aktie im Depot gewichtet ist.<br><br>
+          Der Schieberegler bei 30% bedeutet: nur Aktien deren Positionswert zu den unteren 30%
+          aller Positionen gehört werden berücksichtigt.<br><br>
+          <b>Beispiel:</b> Du hast 10 Aktien. Apple hat einen Positionswert von 800€
+          (10 Stück × 80€, Platz 2), Nike hat einen Positionswert von 150€ (5 Stück × 30€, Platz 9).
+          Bei 30%-Schwelle kommen nur die 3 kleinsten Positionen in Frage. Nike erfüllt Bedingung 2 ✓
+          — ist Nike auch ≥20% unter ATH, wird es als Nachkauf-Kandidat markiert.
+          Apple nicht, weil es bereits gut gewichtet ist.<br><br>
+          0% deaktiviert den Filter vollständig.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">🔍 Suchfeld</summary>
+        <div class="help-body">
+          Filtert die Tabelle live nach Name oder Ticker. Kombinierbar mit allen anderen Filtern.
+          Escape oder ✕ löscht den Filter.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">💰 Kaufbudget</summary>
+        <div class="help-body">
+          Pro Depot kannst du ein monatliches Kaufbudget hinterlegen — Tippen auf das ⚙-Icon im
+          Depot-Tab. Bei Nachkauf-Kandidaten wird direkt angezeigt wie viele Stück du dir für
+          dieses Budget leisten kannst — als schnelle Orientierungshilfe ohne extra Rechnen.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">📋 Watchlists</summary>
+        <div class="help-body">
+          Pro Depot kannst du beliebig viele Watchlists anlegen — z.B. „Wunschliste" oder
+          „Beobachtung". Aktien in der Watchlist werden genauso aktualisiert wie der Bestand,
+          aber nicht in der Portfolio-Übersicht oder Nachkauf-Auswertung berücksichtigt.<br><br>
+          Aktien lassen sich jederzeit verschieben — der Button erscheint nur wenn mindestens
+          eine Watchlist vorhanden ist.
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">Buttons an jeder Aktie</summary>
+        <div class="help-body">
+          <div style="display:flex;flex-direction:column;gap:0">
+            <div class="help-btn-row">
+              <span class="help-btn-icon">↺</span>
+              <span>Aktualisiert nur diese eine Aktie sofort</span>
+            </div>
+            <div class="help-btn-row">
+              <span class="help-btn-icon">✎</span>
+              <span>Handelsplatz wechseln — tauscht den Ticker z.B. von NASDAQ auf XETRA. Nützlich wenn der Kurs in EUR gewünscht ist</span>
+            </div>
+            <div class="help-btn-row">
+              <span class="help-btn-icon" style="font-size:12px">→🔍</span>
+              <span>Im Bestand: verschiebt die Aktie in eine Watchlist. Erscheint nur wenn mindestens eine Watchlist existiert</span>
+            </div>
+            <div class="help-btn-row">
+              <span class="help-btn-icon" style="font-size:11px">→Depot</span>
+              <span>In der Watchlist: verschiebt die Aktie zurück in den Bestand</span>
+            </div>
+            <div class="help-btn-row">
+              <span class="help-btn-icon">🗑</span>
+              <span>Entfernt die Aktie dauerhaft aus Depot oder Watchlist</span>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">🔗 Parqet — nach der Ersteinrichtung</summary>
+        <div class="help-body">
+          Nach der einmaligen OAuth-Verbindung genügt ein Tippen auf „↺ Sync starten" im Depot-Tab.<br><br>
+          <div style="background:rgba(78,124,246,.08);border-left:3px solid var(--accent);
+                      padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:10px;font-size:12px">
+            ⚠️ Der Sync läuft <b>nicht automatisch</b>. Bitte nach jeder Änderung im
+            Parqet-Portfolio manuell ausführen — z.B. nach einem Kauf, Verkauf oder Split.
+          </div>
+          Der Sync:
+          <ul style="margin:8px 0 0 16px;padding:0;line-height:1.8">
+            <li>Aktualisiert Einstandskurse und Stückzahlen aller bekannten Aktien</li>
+            <li>Importiert neue Positionen automatisch — bei unbekannten Handelsplätzen wirst du kurz gefragt</li>
+            <li>Legt vor jeder Änderung ein Backup an — „Rückgängig" stellt den vorherigen Stand wieder her</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">🔔 Apprise Benachrichtigungen</summary>
+        <div class="help-body">
+          Benachrichtigungen werden pro Depot konfiguriert — Tippen auf das ⚙-Icon im Depot-Tab.
+          Eine Benachrichtigung kommt wenn eine Aktie die eingestellte ATH-Schwelle unterschreitet.
+          Nachkauf-Kandidaten werden mit einem 🛒-Symbol hervorgehoben.<br><br>
+          <b>Beispiel:</b>
+          <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;
+                      font-family:monospace;font-size:12px;margin-top:6px;line-height:1.8">
+            🛒 Nike −46% vom ATH (76,48 €)<br>
+            &nbsp;&nbsp;&nbsp;Mastercard −8% vom ATH (512,30 €)<br>
+            &nbsp;&nbsp;&nbsp;Apple −22% vom ATH (198,45 €)
+          </div>
+          <br>
+          Weitere Informationen zur Konfiguration mit Beispielen für Discord, Telegram, E-Mail und mehr:<br>
+          <a href="https://appriseit.com/services/" target="_blank"
+             style="color:var(--accent)">appriseit.com/services</a>
+        </div>
+      </details>
+
     </div>
   </div>
 </div>
@@ -1235,6 +1443,29 @@ function initTheme(){
   });
 }
 
+// ── Depot Modal Scroll ───────────────────────────────────────────
+function initDepotScrollBtn(){
+  const modal = document.querySelector('#depotSettingsModal .modal');
+  const btn   = document.getElementById("depotScrollBtn");
+  if(!modal || !btn) return;
+  const check = () => {
+    const remaining = modal.scrollHeight - modal.scrollTop - modal.clientHeight;
+    btn.style.display = remaining > 40 ? "block" : "none";
+  };
+  modal.addEventListener("scroll", check);
+  setTimeout(check, 100);
+}
+
+function scrollDepotModal(){
+  const modal = document.querySelector('#depotSettingsModal .modal');
+  if(modal) modal.scrollBy({top: 200, behavior:"smooth"});
+}
+
+// ── Hilfe-Modal ───────────────────────────────────────────────────
+function openHelpModal(){
+  openModal("helpModal");
+}
+
 // ── Client ID Highlight ──────────────────────────────────────────
 function highlightClientIdField(){
   // Anleitung schließen
@@ -1798,7 +2029,7 @@ function openDepotSettings(depot){
   const cbEl = document.getElementById("callbackUrlDisplay");
   if(cbEl) cbEl.value = window.location.origin + "/api/parqet/callback";
   renderDepotUrlList(); openModal("depotSettingsModal");
-  setTimeout(()=>document.getElementById("editDepotName").focus(), 100);
+  setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
 }
 function renderDepotUrlList(){
@@ -2074,7 +2305,23 @@ async function loadParqetStatus(depotId){
         <button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
     } else {
       box.innerHTML = `<span style="color:var(--green)">&#10003; Verbunden</span> &nbsp; <span style="color:var(--muted)">${lastSync}${portInfo}</span>`;
-      let btns = `<button class="btn btn-ghost btn-sm" onclick="doParqetSync()">&#8635; Sync starten</button>`;
+      let btns = `<details style="margin-bottom:8px;flex-basis:100%">
+        <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
+          <span style="font-size:10px">▶</span> ℹ️ Wann muss ich den Sync ausführen?
+        </summary>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.8;
+                    background:var(--bg3);border-radius:6px;padding:10px 12px">
+          Der Sync läuft <b style="color:var(--text)">nicht automatisch</b>.
+          Nach dem ersten Verbinden einmalig ausführen um alle Positionen zu importieren.
+          Danach nach jeder Änderung in deinem Parqet-Portfolio — z.B. nach einem Kauf,
+          Verkauf oder Split.<br><br>
+          <span onclick="closeModal(document.querySelector('.overlay[style*=flex]')?.id);openHelpModal();setTimeout(()=>{document.querySelectorAll('#helpModal details').forEach((d,i)=>d.open=i===9)},100)"
+                style="color:var(--accent);cursor:pointer;text-decoration:underline">
+            Weitere Infos in der Hilfe →
+          </span>
+        </div>
+      </details>
+      <button class="btn btn-ghost btn-sm btn-sync-pulse" onclick="doParqetSync()">&#8635; Sync starten</button>`;
       if(!s.portfolio_id){
         btns += `<button class="btn btn-ghost btn-sm" onclick="loadParqetPortfolios()">Portfolio wählen</button>`;
       }
@@ -2909,7 +3156,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.0.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.0.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
