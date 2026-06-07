@@ -61,7 +61,7 @@ Erreichbar unter: **<http://localhost:8080>**
 ## Verzeichnisstruktur
 
 ```
-ath-tracker/
+DepotRadar/
 ├── backend/
 │   ├── app.py
 │   ├── Dockerfile
