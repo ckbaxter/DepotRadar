@@ -1,6 +1,7 @@
 version: "3.8"
 
 services:
+# ⚠ Service-Name hier ändern? → Auch in nginx.conf: proxy_pass http://<name>:5000 anpassen!
   backend:
     build: ./backend
     container_name: ath-tracker-backend
