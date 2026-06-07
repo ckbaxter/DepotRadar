@@ -772,7 +772,8 @@ def parqet_select_portfolio(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/sync", methods=["POST"])
 def parqet_sync(depot_id):
-    depots = load_depots(); depot = get_depot(depot_id)
+    depots = load_depots()
+    depot = next((d for d in depots if d["id"] == depot_id), None)
     if not depot or not depot.get("parqet", {}).get("connected"):
         return jsonify({"error": "Nicht verbunden"}), 400
     pq = depot["parqet"]; pid = pq.get("portfolio_id")
@@ -1180,7 +1181,8 @@ def delete_depot(depot_id):
 def create_watchlist(depot_id):
     body = request.get_json(); name = body.get("name", "").strip()
     if not name: return jsonify({"error": "Name erforderlich"}), 400
-    depots = load_depots(); depot = get_depot(depot_id)
+    depots = load_depots()
+    depot = next((d for d in depots if d["id"] == depot_id), None)  # aus GLEICHER Liste!
     if not depot: return jsonify({"error": "Depot nicht gefunden"}), 404
     if any(w["name"].lower() == name.lower() for w in depot.get("watchlists", [])):
         return jsonify({"error": "Name existiert bereits"}), 409
@@ -1201,7 +1203,8 @@ def update_watchlist(depot_id, wl_id):
 
 @app.route("/api/depots/<depot_id>/watchlists/<wl_id>", methods=["DELETE"])
 def delete_watchlist(depot_id, wl_id):
-    depots = load_depots(); depot = get_depot(depot_id)
+    depots = load_depots()
+    depot = next((d for d in depots if d["id"] == depot_id), None)
     if not depot: return jsonify({"error": "Nicht gefunden"}), 404
     f = watchlist_file(depot_id, wl_id)
     if os.path.exists(f): os.remove(f)
@@ -1287,7 +1290,9 @@ def change_ticker(ticker):
     stocks[idx] = {**_make_stock(data, old), "name": new_name or old["name"], "ticker": new_tick,
                    "exchange": new_exch or old.get("exchange", ""), "last_notified_block": old.get("last_notified_block", 0)}
     save_stocks(did, stocks)
-    add_log("manual_refresh", f"Ticker geändert: {old['name']}", f"{ticker} → {new_tick}", True)
+    depots = load_depots()
+    depot  = next((d for d in depots if d["id"] == did), {})
+    add_log("manual_refresh", f"Ticker geändert: {old['name']} ({depot.get('name', did)})", f"{ticker} → {new_tick}", True)
     return jsonify(stocks[idx])
 
 @app.route("/api/stocks/<ticker>/move-to-watchlist", methods=["POST"])
