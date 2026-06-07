@@ -89,7 +89,7 @@ DepotRadar/
 ```yaml
 environment:
   - TZ=Europe/Berlin
-  - APP_URL=http://ath.apps.lan   # Eigene URL — wichtig für Parqet OAuth
+  - APP_URL=http://depotradar.lan   # Eigene URL/IP — wichtig für Parqet OAuth
 ```
 
 `APP_URL` muss auf die tatsächlich erreichbare Adresse zeigen.
