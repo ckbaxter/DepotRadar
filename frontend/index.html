@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>ATH-Tracker</title>
+<title>DepotRadar</title>
 <style>
 :root{
   --bg:#0f1117;--bg2:#181c27;--bg3:#1e2333;--border:#2a2f42;
@@ -25,7 +25,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
 /* Topbar */
 .topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:8px}
-.logo{font-size:17px;font-weight:700;color:var(--accent);white-space:nowrap}
+.logo{font-size:17px;font-weight:700;color:var(--accent);white-space:nowrap;line-height:1.2}
 .logo span{color:var(--text)}
 .topbar-right{display:flex;gap:6px;flex-shrink:0}
 
@@ -280,7 +280,13 @@ select.form-input{cursor:pointer}
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:10px">
-    <div class="logo">ATH<span>-Tracker</span></div>
+    <div style="display:flex;flex-direction:column;line-height:1.2">
+      <div class="logo">Depot<span>Radar</span></div>
+      <div style="font-size:9px;color:var(--muted);font-weight:400;
+                  letter-spacing:0.02em;white-space:nowrap;margin-top:1px">
+        Portfolio &amp; ATH-Überwachung
+      </div>
+    </div>
   </div>
   <div class="topbar-right">
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Farbschema: Auto / Hell / Dunkel">A</button>
@@ -499,7 +505,7 @@ select.form-input{cursor:pointer}
           <input class="form-input" id="newDepotUrlInput" placeholder="Neue Apprise-URL …"
                  style="flex:1" oninput="toggleAddUrlBtn(this)"/>
           <button class="btn btn-ghost btn-sm" id="addUrlBtn" onclick="addDepotUrl()"
-                  style="display:none;white-space:nowrap">💾 Speichern</button>
+                  style="display:none;white-space:nowrap">+ Hinzufügen</button>
         </div>
         <!-- Test Button — nur aktiv wenn URLs vorhanden -->
         <div style="margin-top:10px">
@@ -835,7 +841,7 @@ http://ath.example.lan</div>
 
 <!-- Modal: Einstellungen -->
 <div class="overlay" id="settingsModal" style="display:none" onclick="closeIfOverlay(event,'settingsModal')">
-  <div class="modal" onclick="event.stopPropagation()">
+  <div class="modal" onclick="event.stopPropagation()" style="position:relative">
     <div class="modal-header">
       <span class="modal-title">&#9881; Einstellungen</span>
       <button class="close-btn" onclick="closeModal('settingsModal')">&#215;</button>
@@ -983,6 +989,13 @@ http://ath.example.lan</div>
         </div>
       </div>
     </div>
+        <button id="settingsScrollBtn" onclick="scrollSettingsModal()"
+            style="display:none;position:absolute;right:12px;bottom:70px;
+                   width:36px;height:36px;border-radius:50%;
+                   background:var(--accent);color:#fff;border:none;
+                   cursor:pointer;font-size:18px;line-height:1;
+                   box-shadow:0 2px 8px rgba(78,124,246,.4);
+                   z-index:10;animation:pulse-arrow 1.5s ease-in-out infinite">↓</button>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('settingsModal')">Schließen</button>
       <button class="btn btn-primary" onclick="saveSettings()">Speichern</button>
@@ -1481,6 +1494,24 @@ function showClientIdInput(){
   const guide = document.getElementById("parqetSetupGuide");
   if(guide) guide.style.display = "";
   setTimeout(()=>document.getElementById("parqetClientIdInput").focus(), 50);
+}
+
+// ── Settings Modal Scroll ────────────────────────────────────────
+function initSettingsScrollBtn(){
+  const modal = document.querySelector('#settingsModal .modal');
+  const btn   = document.getElementById("settingsScrollBtn");
+  if(!modal || !btn) return;
+  const check = () => {
+    const remaining = modal.scrollHeight - modal.scrollTop - modal.clientHeight;
+    btn.style.display = remaining > 40 ? "block" : "none";
+  };
+  modal.addEventListener("scroll", check);
+  setTimeout(check, 100);
+}
+
+function scrollSettingsModal(){
+  const modal = document.querySelector('#settingsModal .modal');
+  if(modal) modal.scrollBy({top: 200, behavior:"smooth"});
 }
 
 // ── Depot Modal Scroll ───────────────────────────────────────────
@@ -2247,6 +2278,10 @@ async function openSettingsModal(){
 
   openModal("settingsModal");
   loadSplitsTable();
+  setTimeout(initSettingsScrollBtn, 150);
+  setTimeout(initSettingsScrollBtn, 150);
+
+  setTimeout(initSettingsScrollBtn, 150);
 }
 
 async function saveSettings(){
@@ -3228,7 +3263,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.1.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.1.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/ATH-Tracker" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
