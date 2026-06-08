@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.2"
+VERSION           = "2.0.3"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -150,7 +150,7 @@ def migrate_if_needed():
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
-def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False):
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention=""):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
@@ -176,6 +176,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"ATH:             {new_ath:.2f} EUR\n"
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR{link}")
+        if mention: body = f"{mention}\n{body}"
         send_apprise(title, body, urls or [])
         return cb
     elif cb < lb:
@@ -337,14 +338,14 @@ def _fetch_prices(stocks):
             err_list.append(f"{s['name']}: {e}")
     return stocks, ok_list, err_list
 
-def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set):
+def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention=""):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
     for i, s in enumerate(stocks):
         try:
             is_nk   = s["ticker"] in nachkauf_set
             new_blk = check_and_notify(
                 s, s["current_eur"], s["ath_eur"],
-                label, urls, buy_budget, is_nk
+                label, urls, buy_budget, is_nk, mention
             )
             stocks[i]["last_notified_block"] = new_blk
         except Exception as e:
@@ -373,12 +374,12 @@ def _refresh_depot(depot, trigger="auto"):
                        for wl_id, (_, wls, _, _) in wl_data.items()}
 
     # ── Phase 3: Benachrichtigungen + Speichern ───────────────────
-    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set)
+    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, depot.get("notification_mention",""))
     save_stocks(did, stocks)
 
     for wl_id, (wl, wls, _, _) in wl_data.items():
         wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
-                                  urls, budget, wl_nachkauf[wl_id])
+                                  urls, budget, wl_nachkauf[wl_id], depot.get("notification_mention",""))
         save_wl_stocks(did, wl_id, wls)
 
     return ok, err
@@ -1170,6 +1171,8 @@ def update_depot(depot_id):
             if "buy_budget" in body:
                 raw = body["buy_budget"]
                 d["buy_budget"] = float(raw) if raw else None
+            if "notification_mention" in body:
+                d["notification_mention"] = body["notification_mention"].strip()
             if "nachkauf_threshold" in body:
                 raw = body["nachkauf_threshold"]
                 d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
@@ -1266,7 +1269,7 @@ def api_refresh_stock(ticker):
         data    = fetch_stock_data(ticker); s = stocks[idx]
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Bestand: {depot['name']}", depot.get("apprise_urls", []))
+                                   f"Bestand: {depot['name']}", depot.get("apprise_urls", []), mention=depot.get("notification_mention",""))
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
         save_stocks(did, stocks)
         add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True)
@@ -1356,7 +1359,7 @@ def wl_refresh_stock(depot_id, wl_id, ticker):
         data    = fetch_stock_data(ticker); s = stocks[idx]
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Beobachtung: {wl_name}", depot.get("apprise_urls", []))
+                                   f"Beobachtung: {wl_name}", depot.get("apprise_urls", []), mention=depot.get("notification_mention",""))
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
         save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stocks[idx])
     except Exception as e: return jsonify({"error": str(e)}), 502
@@ -1474,9 +1477,13 @@ def get_notifications(): return jsonify(list(reversed(load_notifications())))
 
 @app.route("/api/notifications/test", methods=["POST"])
 def test_notification():
-    body  = request.get_json(silent=True) or {}; urls = body.get("urls", [])
-    link  = f"\n\n{APP_URL}" if APP_URL else ""
-    ok    = send_apprise("ATH-Tracker Testbenachrichtigung", f"Verbindung funktioniert!{link}", urls)
+    body    = request.get_json(silent=True) or {}; urls = body.get("urls", [])
+    mention = body.get("mention", "").strip()
+    link    = f"\n\n{APP_URL}" if APP_URL else ""
+    msg     = f"DepotRadar Testbenachrichtigung"
+    txt     = f"Verbindung funktioniert!{link}"
+    if mention: txt = f"{mention}\n{txt}"
+    ok      = send_apprise(msg, txt, urls)
     return jsonify({"ok": ok})
 
 @app.route("/api/health", methods=["GET"])
