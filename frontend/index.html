@@ -197,6 +197,10 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .card-level-price{font-size:11px;font-weight:500}
 .card-level.hit .card-level-price{color:var(--green);font-weight:700}
 .card-level.hit .card-level-pct{color:var(--green)}
+.card-level{cursor:pointer;transition:background .15s}
+.card-level:hover{background:var(--bg2)}
+.card-level.bought{border:1px solid rgba(78,124,246,.4);background:rgba(78,124,246,.07)}
+.card-level-bought{font-size:11px;line-height:1;margin-top:2px}
 .card-actions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap}
 @media(max-width:640px){.tbl-scroll{display:none}.cards-view{display:block}.topbar-right .btn-ghost{padding:6px 8px}.btn-label{display:none}}
 
@@ -1816,9 +1820,18 @@ function sortedStocks(stocks){
   });
 }
 
-function levelTd(ath,cur,pct){
+function levelTd(ath,cur,pct,s,depotId){
   const p=ath*(1-pct/100),hit=cur<=p;
-  return `<td class="${hit?"lvl-hit":"lvl-miss"}" style="font-size:12px">${fmtEUR(p)}${hit?" ✓":""}</td>`;
+  const bought=(s&&s.bought_levels||[]).includes(pct);
+  const boughtMark=bought?'<span style="font-size:11px;margin-left:3px">🛍</span>':'';
+  const cls=hit?"lvl-hit":"lvl-miss";
+  const boughtStyle=bought?"background:rgba(78,124,246,.08);outline:1px solid rgba(78,124,246,.3)":"";
+  const ticker=s?s.ticker:"";
+  return `<td class="${cls}" style="font-size:12px;cursor:pointer;${boughtStyle}"
+              onclick="toggleBoughtLevel('${ticker}','${depotId}',${pct},false)"
+              title="${bought?"Kaufmarkierung entfernen":"Als gekauft markieren"}">
+    ${fmtEUR(p)}${hit?" ✓":""}${boughtMark}
+  </td>`;
 }
 
 function moveBtn(ticker){
@@ -1885,9 +1898,9 @@ function renderTable(stocks){
       <td style="color:var(--muted)">${fmtEUR(s.ath_eur)}</td>
       <td><span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span></td>
       <td style="white-space:nowrap">${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return '<span style="opacity:.3;font-size:12px">—</span>';return `<span style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</span>`+`<br><span style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</span>`;})()}</td>
-      ${levelTd(s.ath_eur,s.current_eur,20)}${levelTd(s.ath_eur,s.current_eur,30)}
-      ${levelTd(s.ath_eur,s.current_eur,40)}${levelTd(s.ath_eur,s.current_eur,50)}
-      ${levelTd(s.ath_eur,s.current_eur,60)}
+      ${levelTd(s.ath_eur,s.current_eur,20,s,did)}${levelTd(s.ath_eur,s.current_eur,30,s,did)}
+      ${levelTd(s.ath_eur,s.current_eur,40,s,did)}${levelTd(s.ath_eur,s.current_eur,50,s,did)}
+      ${levelTd(s.ath_eur,s.current_eur,60,s,did)}
       <td><div class="cell-actions">${actions}</div></td>
     </tr>`;
   }).join("");
@@ -1895,9 +1908,17 @@ function renderTable(stocks){
   // Mobile cards
   cards.innerHTML=sorted.map(s=>{
     const d=disc(s),c=dcls(d);
+    const boughtLvls = s.bought_levels || [];
     const lvls=[20,30,40,50,60].map(l=>{
       const p=s.ath_eur*(1-l/100),hit=s.current_eur<=p;
-      return `<div class="card-level ${hit?"hit":""}"><div class="card-level-pct">&#8722;${l}%</div><div class="card-level-price">${fmtEUR(p).replace(" EUR","")}</div></div>`;
+      const bought=boughtLvls.includes(l);
+      return `<div class="card-level ${hit?"hit":""} ${bought?"bought":""}"
+                   onclick="toggleBoughtLevel('${s.ticker}','${did||wlId}',${l},${!!wlId})"
+                   title="${bought?"Kaufmarkierung entfernen":"Als gekauft markieren"}">
+        <div class="card-level-pct">&#8722;${l}%</div>
+        <div class="card-level-price">${fmtEUR(p).replace(" EUR","")}</div>
+        ${bought?'<div class="card-level-bought">🛍</div>':''}
+      </div>`;
     }).join("");
     const wls2=(activeDepot&&activeDepot.watchlists)||[];
     const moveToWlBtn2=wls2.length>0?`<button class="icon-btn move btn-sm" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" >&#8594;&#128269;</button>`:"";
@@ -1933,6 +1954,33 @@ function renderTable(stocks){
       <div class="card-actions">${cardActions}</div>
     </div>`;
   }).join("");
+}
+
+// ── Bought Level Toggle ──────────────────────────────────────────
+async function toggleBoughtLevel(ticker, depotId, level, isWl){
+  if(isWl) return; // Watchlist: keine Kaufmarkierung
+  // Find stock in cache and toggle level
+  const stock = stocksCache.find(s => s.ticker === ticker);
+  if(!stock) return;
+  const levels = stock.bought_levels ? [...stock.bought_levels] : [];
+  const idx    = levels.indexOf(level);
+  if(idx >= 0) levels.splice(idx, 1);
+  else levels.push(level);
+  levels.sort((a,b) => a-b);
+  // Sofort in depot_X.json speichern via PATCH
+  try {
+    const r = await fetch(`${API}/depots/${depotId}/stocks/${encodeURIComponent(ticker)}`, {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({bought_levels: levels})
+    });
+    if(r.ok){
+      stock.bought_levels = levels;
+      renderTable(stocksCache); // Re-render mit aktualisierten Daten
+    } else {
+      toast("Fehler beim Speichern", false);
+    }
+  } catch(e){ toast("Fehler: " + e.message, false); }
 }
 
 // ── Stock actions: Bestand ────────────────────────────────────────
@@ -3246,7 +3294,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.1.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.1.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
