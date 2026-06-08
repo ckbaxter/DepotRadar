@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.3"
+VERSION           = "2.0.4"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -176,8 +176,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"ATH:             {new_ath:.2f} EUR\n"
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR{link}")
-        if mention: body = f"{mention}\n{body}"
-        send_apprise(title, body, urls or [])
+        send_apprise(title, body, urls or [], mention=mention)
         return cb
     elif cb < lb:
         return cb
@@ -287,13 +286,19 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
         return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
-def send_apprise(title, body, urls):
+def send_apprise(title, body, urls, mention=""):
     if not load_settings().get("notifications_enabled", True): return True
     if not urls: return False
     try:
-        ap = apprise_lib.Apprise()
-        for u in urls: ap.add(u)
-        ok = ap.notify(title=title, body=body)
+        ok = True
+        for u in urls:
+            ap = apprise_lib.Apprise()
+            ap.add(u)
+            # Mention nur bei Discord-URLs voranstellen
+            is_discord = u.lower().startswith("discord")
+            msg = f"{mention}\n{body}" if (mention and is_discord) else body
+            if not ap.notify(title=title, body=msg):
+                ok = False
         add_log("alert", title, body, ok)
         return ok
     except Exception as e:
@@ -1482,8 +1487,7 @@ def test_notification():
     link    = f"\n\n{APP_URL}" if APP_URL else ""
     msg     = f"DepotRadar Testbenachrichtigung"
     txt     = f"Verbindung funktioniert!{link}"
-    if mention: txt = f"{mention}\n{txt}"
-    ok      = send_apprise(msg, txt, urls)
+    ok = send_apprise(msg, txt, urls, mention=mention)
     return jsonify({"ok": ok})
 
 @app.route("/api/health", methods=["GET"])
