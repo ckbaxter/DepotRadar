@@ -431,12 +431,22 @@ def cleanup_old_logs():
     try:
         s        = load_settings()
         days     = s.get("verlauf_retention_days", 60)
-        cutoff   = (datetime.now(pytz.timezone(s.get("timezone","Europe/Berlin")))
-                    - timedelta(days=days)).isoformat()
+        tz       = pytz.timezone(s.get("timezone", "Europe/Berlin"))
+        cutoff   = datetime.now(tz) - timedelta(days=days)
         notifs   = load_notifications()
         before   = len(notifs)
-        notifs   = [n for n in notifs if n.get("timestamp","") >= cutoff]
-        removed  = before - len(notifs)
+
+        def is_fresh(n):
+            t = n.get("time", "")  # Feld heißt "time" nicht "timestamp"
+            if not t: return True
+            try:
+                entry_dt = tz.localize(datetime.strptime(t, "%d.%m.%Y %H:%M:%S"))
+                return entry_dt >= cutoff
+            except Exception:
+                return True  # bei Parse-Fehler behalten
+
+        notifs  = [n for n in notifs if is_fresh(n)]
+        removed = before - len(notifs)
         if removed > 0:
             save_notifications(notifs)
             log.info(f"Verlauf bereinigt: {removed} Einträge älter als {days} Tage entfernt")
