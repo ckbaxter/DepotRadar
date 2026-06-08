@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.4"
+VERSION           = "2.0.5"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -1312,6 +1312,21 @@ def change_ticker(ticker):
     depot  = next((d for d in depots if d["id"] == did), {})
     add_log("manual_refresh", f"Ticker geändert: {old['name']} ({depot.get('name', did)})", f"{ticker} → {new_tick}", True)
     return jsonify(stocks[idx])
+
+@app.route("/api/depots/<depot_id>/stocks/<ticker>", methods=["PATCH"])
+def patch_stock(depot_id, ticker):
+    """Aktualisiert einzelne Felder eines Stocks direkt in der Depot-Datei."""
+    body   = request.get_json() or {}
+    stocks = load_stocks(depot_id)
+    stock  = next((s for s in stocks if s["ticker"] == ticker), None)
+    if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
+    # Erlaubte Felder die per PATCH gesetzt werden dürfen
+    ALLOWED = {"bought_levels", "notes"}
+    for key, val in body.items():
+        if key in ALLOWED:
+            stock[key] = val
+    save_stocks(depot_id, stocks)
+    return jsonify(stock)
 
 @app.route("/api/stocks/<ticker>/move-to-watchlist", methods=["POST"])
 def move_to_watchlist(ticker):
