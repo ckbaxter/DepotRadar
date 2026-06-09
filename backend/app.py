@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.5"
+VERSION           = "2.0.7"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -224,11 +224,28 @@ def fetch_stock_data(ticker):
     current  = meta.get("regularMarketPrice") or meta.get("chartPreviousClose")
     if not current: raise ValueError("Kein aktueller Kurs")
 
-    q0     = (result.get("indicators", {}).get("quote") or [{}])[0]
-    highs  = [h for h in (q0.get("high")  or []) if h and h > 0]
-    closes = [c for c in (q0.get("close") or []) if c and c > 0]
+    q0         = (result.get("indicators", {}).get("quote") or [{}])[0]
+    timestamps = result.get("timestamp") or []
+    highs      = [h for h in (q0.get("high")  or []) if h and h > 0]
+    closes     = [c for c in (q0.get("close") or []) if c and c > 0]
     if not highs and not closes: raise ValueError("Keine historischen Kurse")
-    ath = max(highs + closes)
+    all_prices = highs + closes
+    ath        = max(all_prices)
+    # ATH-Datum ermitteln — Index des Maximalwerts in rohen Daten suchen
+    ath_date  = None
+    raw_high  = q0.get("high")  or []
+    raw_close = q0.get("close") or []
+    try:
+        for raw_arr in [raw_high, raw_close]:
+            if not raw_arr or not timestamps: continue
+            valid = [(i, v) for i, v in enumerate(raw_arr) if v and v > 0]
+            if not valid: continue
+            best_i, best_v = max(valid, key=lambda x: x[1])
+            if abs(best_v - ath) < 0.01 and best_i < len(timestamps):
+                ath_date = datetime.utcfromtimestamp(timestamps[best_i]).strftime("%d.%m.%Y")
+                break
+    except Exception as _e:
+        log.debug(f"ATH-Datum nicht ermittelbar: {_e}")
 
     # GBp (Pence) → GBP normalisieren
     if currency == "GBp":
@@ -248,7 +265,7 @@ def fetch_stock_data(ticker):
         except: pass
 
     perfs = fetch_performance(ticker, cur_eur, eur, currency)
-    return {"current_eur": cur_eur, "ath_eur": ath_eur, "currency": currency,
+    return {"current_eur": cur_eur, "ath_eur": ath_eur, "ath_date": ath_date, "currency": currency,
             "market_time": mt_str, **perfs}
 
 def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
@@ -328,6 +345,7 @@ def _make_stock(data, old=None):
         "buy_price_eur": base.get("buy_price_eur"),
         "shares":        base.get("shares"),
         "updated":       datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "ath_date":      data.get("ath_date") if data.get("ath_eur",0) >= base.get("ath_eur",0) else (base.get("ath_date") or data.get("ath_date")),
     }
 
 def _fetch_prices(stocks):
