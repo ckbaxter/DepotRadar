@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.9"
+VERSION           = "2.0.11"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -163,7 +163,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
             stock[pending_key] = True
             pct_dist = round((new_ath - new_cur) / new_ath * 100, 1)
             add_log("pending_notify",
-                    f"\u23f3 Ausstehend [{label}]: {stock['name']} (-{cb}%-Level)",
+                    f"[{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\nBest\u00e4tigung beim n\u00e4chsten Refresh erwartet.",
                     success=True)
             return lb  # last_notified_block noch nicht erhöhen
@@ -188,6 +188,14 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR{link}")
         send_apprise(title, body, urls or [], mention=mention)
+        # Bestätigung abgeschlossen — Flag löschen + Verlauf-Eintrag
+        if stock.pop(pending_key, None):
+            pct_dist = round(d, 1)
+            add_log("pending_notify",
+                    f"✅ Bestätigt [{label}]: {stock['name']} (-{cb}%-Level)",
+                    f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\n"
+                    f"Benachrichtigung wurde gesendet.",
+                    success=True)
         return cb
     elif cb < lb:
         # Kurs hat sich erholt — alle pending flags löschen
