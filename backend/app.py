@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.8"
+VERSION           = "2.0.9"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -191,8 +191,14 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         return cb
     elif cb < lb:
         # Kurs hat sich erholt — alle pending flags löschen
-        for lvl in [20, 30, 40, 50, 60]:
-            stock.pop(f"pending_notify_{lvl}", None)
+        cancelled = [lvl for lvl in [20, 30, 40, 50, 60] if stock.pop(f"pending_notify_{lvl}", None)]
+        if cancelled:
+            lvl_str = ", ".join(f"-{lvl}%" for lvl in cancelled)
+            add_log("pending_notify",
+                    f"↩ Bestätigung abgebrochen [{label}]: {stock['name']}",
+                    f"Kurs hat sich erholt — ausstehende Level ({lvl_str}) wurden nicht bestätigt.\n"
+                    f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR",
+                    success=True)
         return cb
     # Kein neues Level — pending flag für aktuelles cb löschen (Bestätigung abgeschlossen)
     if stock.get(f"pending_notify_{cb}"):
