@@ -163,7 +163,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
             stock[pending_key] = True
             pct_dist = round((new_ath - new_cur) / new_ath * 100, 1)
             add_log("pending_notify",
-                    f"\u23f3 Ausstehend — {stock['name']} (-{cb}%-Level)",
+                    f"\u23f3 Ausstehend [{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\nBest\u00e4tigung beim n\u00e4chsten Refresh erwartet.",
                     success=True)
             return lb  # last_notified_block noch nicht erhöhen
