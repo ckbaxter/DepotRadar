@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.11"
+VERSION           = "2.0.12"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -208,9 +208,10 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR",
                     success=True)
         return cb
-    # Kein neues Level — pending flag für aktuelles cb löschen (Bestätigung abgeschlossen)
-    if stock.get(f"pending_notify_{cb}"):
-        stock.pop(f"pending_notify_{cb}", None)
+    # Ausstehende Flags für Level oberhalb des aktuellen cb bereinigen
+    for lvl in [20, 30, 40, 50, 60]:
+        if lvl > cb:
+            stock.pop(f"pending_notify_{lvl}", None)
     return lb
 
 # ── Yahoo Finance ─────────────────────────────────────────────────
