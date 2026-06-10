@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.7"
+VERSION           = "2.0.8"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -155,7 +155,18 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
     lb = stock.get("last_notified_block", cb)
+    confirm_mode = stock.get("notification_confirm", False)
+    pending_key  = f"pending_notify_{cb}"
     if cb > lb and cb >= 20:
+        if confirm_mode and not stock.get(pending_key):
+            # Erst-Unterschreitung: Flag setzen, Verlauf-Eintrag, noch nicht senden
+            stock[pending_key] = True
+            pct_dist = round((new_ath - new_cur) / new_ath * 100, 1)
+            add_log("pending_notify",
+                    f"\u23f3 Ausstehend — {stock['name']} (-{cb}%-Level)",
+                    f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\nBest\u00e4tigung beim n\u00e4chsten Refresh erwartet.",
+                    success=True)
+            return lb  # last_notified_block noch nicht erhöhen
         lp         = round(new_ath * (1 - cb / 100), 2)
         link       = f"\n\n{APP_URL}" if APP_URL else ""
         multiplier = 3 if cb >= 60 else (2 if cb >= 40 else 1)
@@ -179,7 +190,13 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         send_apprise(title, body, urls or [], mention=mention)
         return cb
     elif cb < lb:
+        # Kurs hat sich erholt — alle pending flags löschen
+        for lvl in [20, 30, 40, 50, 60]:
+            stock.pop(f"pending_notify_{lvl}", None)
         return cb
+    # Kein neues Level — pending flag für aktuelles cb löschen (Bestätigung abgeschlossen)
+    if stock.get(f"pending_notify_{cb}"):
+        stock.pop(f"pending_notify_{cb}", None)
     return lb
 
 # ── Yahoo Finance ─────────────────────────────────────────────────
@@ -361,11 +378,12 @@ def _fetch_prices(stocks):
             err_list.append(f"{s['name']}: {e}")
     return stocks, ok_list, err_list
 
-def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention=""):
+def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="", confirm=False):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
     for i, s in enumerate(stocks):
         try:
             is_nk   = s["ticker"] in nachkauf_set
+            s["notification_confirm"] = confirm
             new_blk = check_and_notify(
                 s, s["current_eur"], s["ath_eur"],
                 label, urls, buy_budget, is_nk, mention
@@ -397,12 +415,12 @@ def _refresh_depot(depot, trigger="auto"):
                        for wl_id, (_, wls, _, _) in wl_data.items()}
 
     # ── Phase 3: Benachrichtigungen + Speichern ───────────────────
-    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, depot.get("notification_mention",""))
+    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, depot.get("notification_mention",""), depot.get("notification_confirm", False))
     save_stocks(did, stocks)
 
     for wl_id, (wl, wls, _, _) in wl_data.items():
         wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
-                                  urls, budget, wl_nachkauf[wl_id], depot.get("notification_mention",""))
+                                  urls, budget, wl_nachkauf[wl_id], depot.get("notification_mention",""), depot.get("notification_confirm", False))
         save_wl_stocks(did, wl_id, wls)
 
     return ok, err
@@ -1196,6 +1214,8 @@ def update_depot(depot_id):
                 d["buy_budget"] = float(raw) if raw else None
             if "notification_mention" in body:
                 d["notification_mention"] = body["notification_mention"].strip()
+            if "notification_confirm" in body:
+                d["notification_confirm"] = bool(body["notification_confirm"])
             if "nachkauf_threshold" in body:
                 raw = body["nachkauf_threshold"]
                 d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30

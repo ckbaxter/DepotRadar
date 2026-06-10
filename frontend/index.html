@@ -516,8 +516,28 @@ select</style>
                  title="Discord Mention — wird vor jede Benachrichtigung gestellt"/>
           <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
         </div>
+        <!-- Bestätigungs-Toggle -->
+        <div style="margin-top:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle-switch">
+              <input type="checkbox" id="depotConfirmToggle" onchange="onDepotConfirmChange()"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">Bestätigung beim nächsten Refresh</span>
+          </div>
+          <details style="margin-top:8px">
+            <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
+              <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
+            </summary>
+            <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
+              Eine Aktie muss <b style="color:var(--text)">zwei aufeinanderfolgende Refreshes</b>
+              unter dem ATH-Level liegen bevor eine Benachrichtigung gesendet wird.
+              Vermeidet Fehlalarme bei kurzen Kursausreißern.
+            </div>
+          </details>
+        </div>
         <!-- Test Button — nur aktiv wenn URLs vorhanden -->
-        <div style="margin-top:8px">
+        <div style="margin-top:10px">
           <button class="btn btn-ghost btn-sm" id="depotTestBtn"
                   onclick="testDepotNotification()" disabled
                   style="opacity:0.4">🔔 Benachrichtigung testen</button>
@@ -1505,6 +1525,20 @@ function initTheme(){
   });
 }
 
+// ── Depot Confirm Toggle ─────────────────────────────────────────
+function onDepotConfirmChange(){
+  const val = document.getElementById("depotConfirmToggle")?.checked || false;
+  if(!editingDepot) return;
+  fetch(`${API}/depots/${editingDepot.id}`, {
+    method:"PUT", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      name: editingDepot.name,
+      apprise_urls: depotUrls,
+      notification_confirm: val
+    })
+  });
+}
+
 // ── Client ID Toggle ─────────────────────────────────────────────
 function showClientIdInput(){
   document.getElementById("clientIdInputWrap").style.display = "flex";
@@ -2187,6 +2221,7 @@ function openDepotSettings(depot){
   const cbEl = document.getElementById("callbackUrlDisplay");
   if(cbEl) cbEl.value = window.location.origin + "/api/parqet/callback";
   document.getElementById("depotMentionInput").value = depot.notification_mention || "";
+  document.getElementById("depotConfirmToggle").checked = !!depot.notification_confirm;
   renderDepotUrlList(); openModal("depotSettingsModal");
   setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
@@ -2212,7 +2247,7 @@ async function saveDepotSettings(){
   const budgetVal  = document.getElementById("depotBuyBudget").value;
   const buy_budget = budgetVal ? parseFloat(budgetVal) : null;
   const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget, notification_mention:(document.getElementById("depotMentionInput")?.value||"").trim()})});
+    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget, notification_mention:(document.getElementById("depotMentionInput")?.value||"").trim(), notification_confirm:document.getElementById("depotConfirmToggle")?.checked||false})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
   if(activeDepot&&activeDepot.id===editingDepot.id){
@@ -2366,8 +2401,8 @@ async function saveSettings(){
 }
 
 // ── Verlauf ───────────────────────────────────────────────────────
-const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test"};
-const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",test:"test"};
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend"};
+const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",test:"test"};
 let _notifItems = []; let _notifTypeFilter = "all"; let _notifDepotFilter = "all"; let _notifDepotFilterName = "all";
 
 async function openNotifModal(){
@@ -3309,7 +3344,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.1.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.1.7 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
