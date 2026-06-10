@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.12"
+VERSION           = "2.0.13"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -191,8 +191,8 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         # Bestätigung abgeschlossen — Flag löschen + Verlauf-Eintrag
         if stock.pop(pending_key, None):
             pct_dist = round(d, 1)
-            add_log("pending_notify",
-                    f"✅ Bestätigt [{label}]: {stock['name']} (-{cb}%-Level)",
+            add_log("pending_confirmed",
+                    f"[{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\n"
                     f"Benachrichtigung wurde gesendet.",
                     success=True)
