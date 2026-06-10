@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.13"
+VERSION           = "2.0.14"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -157,8 +157,10 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
     lb = stock.get("last_notified_block", cb)
     confirm_mode = stock.get("notification_confirm", False)
     pending_key  = f"pending_notify_{cb}"
+    # Existiert ein ausstehendes Flag für ein Level <= cb? (z.B. -20% pending, jetzt -33%)
+    has_pending  = any(stock.get(f"pending_notify_{lvl}") for lvl in [20, 30, 40, 50, 60] if lvl <= cb)
     if cb > lb and cb >= 20:
-        if confirm_mode and not stock.get(pending_key):
+        if confirm_mode and not has_pending:
             # Erst-Unterschreitung: Flag setzen, Verlauf-Eintrag, noch nicht senden
             stock[pending_key] = True
             pct_dist = round((new_ath - new_cur) / new_ath * 100, 1)
@@ -188,13 +190,17 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR{link}")
         send_apprise(title, body, urls or [], mention=mention)
-        # Bestätigung abgeschlossen — Flag löschen + Verlauf-Eintrag
-        if stock.pop(pending_key, None):
+        # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
+        cleared = [lvl for lvl in [20, 30, 40, 50, 60] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
+        if cleared:
             pct_dist = round(d, 1)
+            skipped  = [lvl for lvl in cleared if lvl != cb]
+            skip_note = (f"\n(Übersprungene Level ohne separate Meldung: "
+                         f"{', '.join(f'-{l}%' for l in skipped)})") if skipped else ""
             add_log("pending_confirmed",
                     f"[{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\n"
-                    f"Benachrichtigung wurde gesendet.",
+                    f"Benachrichtigung wurde gesendet.{skip_note}",
                     success=True)
         return cb
     elif cb < lb:
