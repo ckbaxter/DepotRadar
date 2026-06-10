@@ -507,10 +507,10 @@ def trading_window_check():
     if now.weekday() not in days or now_mins < start_mins or now_mins > end_mins: return
     today = now.date()
     if now.hour == sh and now.minute == sm and _start_of_day_done != today:
-        _start_of_day_done = today; _last_refresh = now; s["next_refresh_ts"] = (now + timedelta(seconds=interval)).timestamp(); save_settings(s); cleanup_old_logs(); refresh_all_depots("auto"); return
+        _start_of_day_done = today; _last_refresh = now.replace(second=0, microsecond=0); s["next_refresh_ts"] = (_last_refresh + timedelta(seconds=interval)).timestamp(); save_settings(s); cleanup_old_logs(); refresh_all_depots("auto"); return
     if _last_refresh is None or (now - _last_refresh).total_seconds() >= interval:
-        _last_refresh = now
-        s["next_refresh_ts"] = (now + timedelta(seconds=interval)).timestamp(); save_settings(s)
+        _last_refresh = now.replace(second=0, microsecond=0)  # auf volle Minute abrunden → kein Drift
+        s["next_refresh_ts"] = (_last_refresh + timedelta(seconds=interval)).timestamp(); save_settings(s)
         refresh_all_depots("auto")
 
 def get_next_run_info():
