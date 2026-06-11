@@ -300,7 +300,6 @@ select</style>
     <button class="btn btn-ghost btn-sm" onclick="openSettingsModal()">&#9881;<span class="btn-label"> Einstellungen</span></button>
     <button class="btn btn-ghost btn-sm" onclick="openHelpModal()" title="Hilfe" style="font-weight:700;font-size:15px;min-width:32px;margin-left:4px">?</button>
     <span id="helpHint" class="help-hint" onclick="openHelpModal()" title="Hilfe öffnen" style="display:none"><span class="hint-arrow">←</span> Neu hier? Hilfe</span>
-    <button class="btn btn-primary btn-sm" id="addStockBtn" onclick="openAddModal()">+<span class="btn-label"> Hinzufügen</span></button>
   </div>
 </div>
 
@@ -417,7 +416,7 @@ select</style>
     <div id="emptyState" style="display:none" class="empty">
       <div class="empty-icon" id="emptyIcon">&#128202;</div>
       <h3 id="emptyTitle">Noch keine Aktien</h3>
-      <p id="emptyText">Tippe auf + Hinzufügen um zu starten.</p>
+      <p id="emptyText">Tippe auf „+ Aktie hinzufügen" um zu starten.</p>
     </div>
   </div>
 </div>
@@ -1284,10 +1283,24 @@ function renderViewTabs(){
     bar.appendChild(tab);
   });
 
-  // + Neue Beobachtungsliste
+  // + Neue Beobachtungsliste (direkt neben den Tabs)
   const addBtn=document.createElement("button");
   addBtn.className="bar-add-btn"; addBtn.title="Neue Beobachtungsliste"; addBtn.textContent="+";
-  addBtn.addEventListener("click",openNewWlModal); bar.appendChild(addBtn);
+  addBtn.addEventListener("click", openNewWlModal); bar.appendChild(addBtn);
+
+  // Spacer pushes Aktie-hinzufügen to the far right
+  const spacer=document.createElement("div");
+  spacer.style.cssText="flex:1 1 auto;min-width:8px";
+  bar.appendChild(spacer);
+
+  // + Aktie hinzufügen (blau, ganz rechts)
+  const addStockBtn=document.createElement("button");
+  addStockBtn.id="addStockBtn";
+  addStockBtn.className="btn btn-primary btn-sm";
+  addStockBtn.style.cssText="font-size:12px;padding:5px 10px;flex-shrink:0";
+  addStockBtn.innerHTML="+ Aktie hinzufügen";
+  addStockBtn.addEventListener("click", openAddModal);
+  bar.appendChild(addStockBtn);
 
   // Update add button label
   document.getElementById("addModalTitle").textContent=isWl()?`Zu "${activeView.name}" hinzufügen`:`Zu "${activeDepot.name}" hinzufügen`;
@@ -3360,7 +3373,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.1.11 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.1.14 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
