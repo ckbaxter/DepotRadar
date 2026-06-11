@@ -92,7 +92,11 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   color:var(--accent)!important;
   animation:sync-pulse 2s ease-in-out infinite
 }
-.help-btn-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;
+.help-hint{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;font-size:12px;font-weight:600;padding:5px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;animation:hint-pulse 2s ease-in-out infinite;user-select:none}
+.help-hint:hover{opacity:.9}
+.help-hint .hint-arrow{font-size:14px;display:inline-block;animation:hint-arrow 1s ease-in-out infinite}
+@keyframes hint-pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.5)}50%{box-shadow:0 0 0 6px rgba(245,158,11,0)}}
+@keyframes hint-arrow{0%,100%{transform:translateX(0)}50%{transform:translateX(-3px)}}
   border-bottom:1px solid var(--border);font-size:13px;color:var(--muted);line-height:1.5}
 .help-btn-row:last-child{border-bottom:none}
 .help-btn-icon{flex-shrink:0;width:36px;height:36px;display:flex;align-items:center;
@@ -295,6 +299,7 @@ select</style>
     <button class="btn btn-ghost btn-sm" onclick="openNotifModal()">&#128236;<span class="btn-label"> Verlauf</span></button>
     <button class="btn btn-ghost btn-sm" onclick="openSettingsModal()">&#9881;<span class="btn-label"> Einstellungen</span></button>
     <button class="btn btn-ghost btn-sm" onclick="openHelpModal()" title="Hilfe" style="font-weight:700;font-size:15px;min-width:32px;margin-left:4px">?</button>
+    <span id="helpHint" class="help-hint" onclick="openHelpModal()" title="Hilfe öffnen" style="display:none"><span class="hint-arrow">←</span> Neu hier? Hilfe</span>
     <button class="btn btn-primary btn-sm" id="addStockBtn" onclick="openAddModal()">+<span class="btn-label"> Hinzufügen</span></button>
   </div>
 </div>
@@ -1587,6 +1592,16 @@ function scrollDepotModal(){
 // ── Hilfe-Modal ───────────────────────────────────────────────────
 function openHelpModal(){
   openModal("helpModal");
+  localStorage.setItem("help_seen","1");
+  const h=document.getElementById("helpHint");
+  if(h) h.style.display="none";
+}
+
+function initHelpHint(){
+  if(!localStorage.getItem("help_seen")){
+    const h=document.getElementById("helpHint");
+    if(h) h.style.display="inline-flex";
+  }
 }
 
 // ── Client ID Highlight ──────────────────────────────────────────
@@ -3333,6 +3348,7 @@ async function deleteSplit(isin, date){
 
 setSortKey("discount");
 initTheme();
+initHelpHint();
 checkParqetCallback();
 fetch(`${API}/health`).then(r=>r.json()).then(d=>{
   const el=document.getElementById("backendVersion");
@@ -3344,7 +3360,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.1.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.1.11 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
