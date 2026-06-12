@@ -2975,13 +2975,22 @@ async function pqiImport(idx){
 
 // Prüfe URL-Parameter nach OAuth Redirect
 function checkParqetCallback(){
-  const params = new URLSearchParams(window.location.search);
+  const params    = new URLSearchParams(window.location.search);
   const connected = params.get("parqet_connected");
   const error     = params.get("parqet_error");
+  if(!connected && !error) return;
+
+  // Wenn wir im Popup sind → Ergebnis ans Eltern-Fenster schicken und Popup schließen
+  if(window.opener && !window.opener.closed){
+    window.opener.postMessage({type:"parqet_callback", connected, error}, window.location.origin);
+    window.close();
+    return;
+  }
+
+  // Fallback: direkt verarbeiten (falls kein Popup)
+  window.history.replaceState({}, "", window.location.pathname);
   if(connected){
     toast("Parqet erfolgreich verbunden!");
-    window.history.replaceState({}, "", window.location.pathname);
-    // Depot-Einstellungen öffnen und Portfolio wählen
     setTimeout(() => {
       const depot = depotsCache.find(d => d.id === connected);
       if(depot){ openDepotSettings(depot); loadParqetPortfolios(); }
@@ -2989,9 +2998,25 @@ function checkParqetCallback(){
   }
   if(error){
     toast("Parqet Verbindung fehlgeschlagen: "+error, false);
-    window.history.replaceState({}, "", window.location.pathname);
   }
 }
+
+// ── Parqet Popup Callback Listener ──────────────────────────────
+window.addEventListener("message", (e) => {
+  if(e.origin !== window.location.origin) return;
+  if(e.data?.type !== "parqet_callback") return;
+  const {connected, error} = e.data;
+  if(connected){
+    toast("Parqet erfolgreich verbunden!");
+    setTimeout(() => {
+      const depot = depotsCache.find(d => d.id === connected);
+      if(depot){ openDepotSettings(depot); loadParqetPortfolios(); }
+    }, 800);
+  }
+  if(error){
+    toast("Parqet Verbindung fehlgeschlagen: "+error, false);
+  }
+});
 
 // ── Parqet Mismatch Modal ────────────────────────────────────────
 function openMismatchModal(mismatches){
@@ -3373,7 +3398,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.1.14 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.1.15 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
