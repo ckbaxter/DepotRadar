@@ -161,6 +161,21 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .row-red{background:var(--red-bg)}
 .sn{font-weight:600}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
+.sector-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;padding:2px 6px;border-radius:4px;background:rgba(100,116,139,.12);border:1px solid rgba(100,116,139,.18);font-size:10px;color:var(--muted);font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.sector-badge:hover{background:rgba(100,116,139,.22);border-color:rgba(100,116,139,.35);color:var(--text)}
+.sector-ph{display:inline-flex;align-items:center;margin-top:4px;padding:2px 6px;border-radius:4px;border:1px dashed rgba(100,116,139,.2);font-size:10px;color:transparent;cursor:pointer;transition:all .15s}
+tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
+.sector-ph:hover{border-color:rgba(100,116,139,.5);color:var(--text)!important}
+#sectorPopover{position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;width:230px;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none}
+.sp-search{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--text);margin-bottom:8px;outline:none}
+.sp-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:180px;overflow-y:auto}
+.sp-chip{padding:5px 6px;border-radius:6px;font-size:11px;color:var(--muted);background:rgba(100,116,139,.1);border:1px solid rgba(100,116,139,.15);cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-chip:hover,.sp-chip.active{background:rgba(99,102,241,.18);border-color:rgba(99,102,241,.35);color:#a5b4fc}
+.sp-custom{display:flex;gap:4px;margin-top:8px;align-items:center}
+.sp-custom input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--text);outline:none}
+.sp-set{background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.4);color:#a5b4fc;border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;white-space:nowrap}
+.sp-remove{margin-top:6px;width:100%;font-size:11px;color:var(--muted);background:none;border:1px solid rgba(100,116,139,.2);border-radius:6px;padding:5px;cursor:pointer;transition:all .15s}
+.sp-remove:hover{color:#f87171;border-color:rgba(248,113,113,.3)}
 .badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600}
 .badge-green{background:rgba(34,197,94,.15);color:var(--green)}
 .badge-yellow{background:rgba(234,179,8,.15);color:var(--yellow)}
@@ -350,6 +365,20 @@ select</style>
   </div>
   </div>
 
+  <!-- Sektor-Übersicht -->
+  <div id="sectorOverviewWrap" style="display:none">
+    <button onclick="toggleSectorOverview()"
+            style="background:none;border:none;cursor:pointer;width:100%;text-align:left;
+                   padding:4px 16px;font-size:12px;color:var(--muted);display:flex;
+                   align-items:center;gap:6px;user-select:none">
+      <span id="sectorToggleIcon">▶</span>
+      <span>Sektor-Übersicht</span>
+    </button>
+    <div id="sectorOverview" style="display:none;padding:6px 16px 10px;display:none">
+      <div id="sectorChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+  </div>
+
   <div class="table-wrap">
     <div class="table-header">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -362,10 +391,11 @@ select</style>
     <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
     <!-- Einheitliche Aktionsleiste -->
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
-      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn" title="Kurse jetzt abrufen">&#8635; Alle aktualisieren</button>
+      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn" title="Kurse jetzt abrufen">&#8635; Kurse aktualisieren</button>
       <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn" title="ATH-Werte mit Yahoo vergleichen"
               style="display:none">&#128269; ATH prüfen</button>
       <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()" title="Nachkauf-Kandidaten anzeigen">🛒 Nachkauf</button>
+      <button class="btn btn-ghost btn-sm" id="sectorFilterBtn" onclick="openSectorFilterDropdown(event)" title="Nach Sektor filtern" style="display:none">🏷️ Sektor</button>
       <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center;margin-left:auto">
         <span style="position:absolute;left:8px;font-size:13px;color:var(--muted);pointer-events:none">🔍</span>
         <input id="stockSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
@@ -1985,10 +2015,13 @@ function renderTable(stocks){
   empty.style.display="none"; tscrl.style.display="";
 
   renderPortfolioStats(stocks);
+  renderSectorOverview(stocks);
   stocks = _applySummaryFilter(stocks);
   stocks = _applyStockSearch(stocks);
   markBuyCandidates(stocks);
   if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
+  if(_activeSectorFilter) stocks = stocks.filter(s => s.sector === _activeSectorFilter);
+  renderSectorFilterBtn();
   const sorted=sortedStocks(stocks);
   const did=activeDepot?activeDepot.id:"";
   const wlId=activeView.id||"";
@@ -2011,6 +2044,7 @@ function renderTable(stocks){
       <td>
         <div class="sn">${nm}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
         <div class="ss">${s.ticker} · ${s.exchange}${s.isin?` · <span class="isin-tag">${s.isin}</span>`:""}</div>
+        ${sectorBadgeHtml(s, did, wl, wlId)}
         ${pnlRow(s)}
       </td>
       <td>
@@ -2060,6 +2094,7 @@ function renderTable(stocks){
         <div>
           <div class="card-name">${s.name}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
           <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
+          ${sectorBadgeHtml(s, did, wl, wlId)}
           ${pnlRow(s)}
         </div>
         <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
@@ -2168,7 +2203,7 @@ async function refreshAll(){
     }
     toast("Alle aktualisiert"); loadCurrentStocks(); loadSchedulerStatus();
   } catch(e){ toast("Fehler",false); }
-  finally{btn.innerHTML="&#8635; Alle aktualisieren";btn.disabled=false;}
+  finally{btn.innerHTML="&#8635; Kurse aktualisieren";btn.disabled=false;}
 }
 
 // ── Aktie hinzufügen ──────────────────────────────────────────────
@@ -2504,6 +2539,182 @@ function onDigestEnabledChange(){
   const on = document.getElementById("digestEnabled").checked;
   document.getElementById("digestConfig").style.display = on ? "flex" : "none";
 }
+
+// ── Sektor-Übersicht ─────────────────────────────────────────────
+function renderSectorOverview(stocks){
+  const wrap  = document.getElementById("sectorOverviewWrap");
+  const chips = document.getElementById("sectorChips");
+  if(!wrap || !chips) return;
+
+  const counts = {};
+  stocks.forEach(s => { if(s.sector) counts[s.sector] = (counts[s.sector]||0) + 1; });
+  const sectors = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+
+  if(!sectors.length){ wrap.style.display="none"; return; }
+  wrap.style.display = "block";
+
+  chips.innerHTML = sectors.map(([sec, n]) => {
+    const active = _activeSectorFilter === sec;
+    return `<span onclick="setSectorFilter('${sec.replace(/'/g,"\\'")}')"
+      style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;
+             cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;
+             background:${active?'rgba(99,102,241,.2)':'var(--bg3)'};
+             border:1px solid ${active?'rgba(99,102,241,.5)':'var(--border)'};
+             color:${active?'#a5b4fc':'var(--text)'}">
+        ${sec}
+        <span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:4px;
+                     background:${active?'rgba(99,102,241,.3)':'rgba(100,116,139,.15)'};
+                     color:${active?'#c7d2fe':'var(--muted)'}">
+          ${n}
+        </span>
+      </span>`;
+  }).join("");
+
+  // Collapsed-State aus localStorage lesen
+  const collapsed = localStorage.getItem("sectorOverviewCollapsed") === "1";
+  document.getElementById("sectorOverview").style.display  = collapsed ? "none" : "block";
+  document.getElementById("sectorToggleIcon").textContent  = collapsed ? "▶" : "▼";
+}
+
+function toggleSectorOverview(){
+  const panel   = document.getElementById("sectorOverview");
+  const icon    = document.getElementById("sectorToggleIcon");
+  const visible = panel.style.display !== "none";
+  panel.style.display = visible ? "none" : "block";
+  icon.textContent    = visible ? "▶" : "▼";
+  localStorage.setItem("sectorOverviewCollapsed", visible ? "1" : "0");
+}
+
+
+const SECTORS = [
+  "💻 Technologie","🔬 Halbleiter","🏥 Gesundheit","🧬 Biotech",
+  "🏦 Finanzen","🛒 Konsum (zyklisch)","🧴 Konsum (defensiv)","⚡ Energie",
+  "📡 Kommunikation","🏭 Industrie","⛏️ Rohstoffe","🏠 Immobilien",
+  "💡 Versorger","🚗 Automobil","🛡️ Rüstung & Sicherheit","🌐 ETF / Fonds"
+];
+let _spTicker = null, _spDepotId = null, _spIsWl = false, _spWlId = null;
+let _activeSectorFilter = null;
+
+function sectorBadgeHtml(s, depotId, wl=false, wlId=null){
+  const wlAttr = wl ? `data-wl="1" data-wlid="${wlId||''}"` : "";
+  if(s.sector){
+    return `<span class="sector-badge" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>${s.sector}</span>`;
+  }
+  return `<span class="sector-ph" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>+ Sektor</span>`;
+}
+
+function openSectorPopover(e, ticker, depotId, wl=false, wlId=null){
+  e.stopPropagation();
+  _spTicker = ticker; _spDepotId = depotId; _spIsWl = wl; _spWlId = wlId||null;
+  const pop = document.getElementById("sectorPopover");
+  document.getElementById("spSearch").value = "";
+  document.getElementById("spCustom").value = "";
+  // Aktuellen Sektor ermitteln
+  const stocks = wl ? (stocksCache||[]) : (stocksCache||[]);
+  const stock  = stocks.find(s=>s.ticker===ticker);
+  const cur    = stock?.sector || null;
+  buildSectorChips(SECTORS, cur);
+  document.getElementById("spRemove").style.display = cur ? "block" : "none";
+  // Position berechnen
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pw = 230, ph = 320;
+  let left = rect.left, top = rect.bottom + 6;
+  if(left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  if(top + ph > window.innerHeight - 8) top = rect.top - ph - 6;
+  pop.style.left = left + "px";
+  pop.style.top  = top  + "px";
+  pop.style.display = "block";
+  setTimeout(()=>document.getElementById("spSearch").focus(), 50);
+}
+
+function buildSectorChips(list, active){
+  document.getElementById("spGrid").innerHTML = list.map(s=>
+    `<div class="sp-chip${s===active?' active':''}" onclick="setSector('${s.replace(/'/g,"\\'")}')">${s}</div>`
+  ).join("");
+}
+
+function filterSectorChips(q){
+  const filtered = q ? SECTORS.filter(s=>s.toLowerCase().includes(q.toLowerCase())) : SECTORS;
+  const stocks   = _spIsWl ? (stocksCache||[]) : (stocksCache||[]);
+  const cur      = stocks.find(s=>s.ticker===_spTicker)?.sector || null;
+  buildSectorChips(filtered, cur);
+}
+
+async function setSector(sector){
+  if(!_spTicker) return;
+  const url = _spIsWl
+    ? `${API}/watchlist/${_spDepotId}/${_spWlId}/stocks/${encodeURIComponent(_spTicker)}`
+    : `${API}/depots/${_spDepotId}/stocks/${encodeURIComponent(_spTicker)}`;
+  await fetch(url, {method:"PATCH", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({sector: sector || ""})});
+  closeSectorPopover();
+  loadCurrentStocks();
+}
+
+function setSectorCustom(){
+  const v = document.getElementById("spCustom").value.trim();
+  if(v) setSector(v);
+}
+
+function closeSectorPopover(){
+  document.getElementById("sectorPopover").style.display = "none";
+  _spTicker = null;
+}
+
+// Sektor-Filter
+function openSectorFilterDropdown(e){
+  e.stopPropagation();
+  // Bestehenden Dropdown entfernen
+  document.getElementById("sectorFilterDrop")?.remove();
+  const sectors = [...new Set((stocksCache||[]).map(s=>s.sector).filter(Boolean))].sort();
+  if(!sectors.length) return;
+  const btn  = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  const drop = document.createElement("div");
+  drop.id    = "sectorFilterDrop";
+  drop.style.cssText = `position:fixed;z-index:9998;background:var(--bg2);border:1px solid var(--border);
+    border-radius:8px;padding:6px;box-shadow:0 6px 20px rgba(0,0,0,.3);min-width:160px;
+    left:${rect.left}px;top:${rect.bottom+4}px`;
+  // "Alle" option
+  const allDiv = document.createElement("div");
+  allDiv.textContent = "Alle Sektoren";
+  allDiv.style.cssText = `padding:6px 10px;font-size:12px;cursor:pointer;border-radius:6px;color:${!_activeSectorFilter?"var(--accent)":"var(--muted)"}`;
+  allDiv.onclick = ()=>{ setSectorFilter(null); drop.remove(); };
+  drop.appendChild(allDiv);
+  sectors.forEach(sec=>{
+    const d = document.createElement("div");
+    d.textContent = sec;
+    d.style.cssText = `padding:6px 10px;font-size:12px;cursor:pointer;border-radius:6px;
+      color:${_activeSectorFilter===sec?"var(--accent)":"var(--text)"};
+      background:${_activeSectorFilter===sec?"rgba(99,102,241,.12)":""}`;
+    d.onclick = ()=>{ setSectorFilter(sec); drop.remove(); };
+    drop.appendChild(d);
+  });
+  document.body.appendChild(drop);
+  setTimeout(()=>document.addEventListener("click", ()=>drop.remove(), {once:true}), 10);
+}
+
+function setSectorFilter(sector){
+  _activeSectorFilter = _activeSectorFilter === sector ? null : sector;
+  renderSectorFilterBtn();
+  if(stocksCache) renderTable(stocksCache);
+}
+
+function renderSectorFilterBtn(){
+  const btn = document.getElementById("sectorFilterBtn");
+  if(!btn) return;
+  const sectors = [...new Set((stocksCache||[]).map(s=>s.sector).filter(Boolean))];
+  btn.style.display = sectors.length ? "inline-flex" : "none";
+  btn.style.color   = _activeSectorFilter ? "var(--accent)" : "";
+  btn.style.borderColor = _activeSectorFilter ? "var(--accent)" : "";
+  btn.textContent   = _activeSectorFilter ? `🏷️ ${_activeSectorFilter}` : "🏷️ Sektor";
+}
+
+// Close popover on outside click
+document.addEventListener("click", e=>{
+  const pop = document.getElementById("sectorPopover");
+  if(pop && pop.style.display!=="none" && !pop.contains(e.target)) closeSectorPopover();
+});
 
 // ── Verlauf ───────────────────────────────────────────────────────
 const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht"};
@@ -3475,7 +3686,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.2.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.3.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
@@ -3492,5 +3703,16 @@ setInterval(loadSchedulerStatus,30000);
     GitHub
   </a>
 </div>
+<!-- Sektor Popover -->
+<div id="sectorPopover">
+  <input class="sp-search" id="spSearch" placeholder="Suchen…" oninput="filterSectorChips(this.value)">
+  <div class="sp-grid" id="spGrid"></div>
+  <div class="sp-custom">
+    <input id="spCustom" placeholder="Eigener Sektor…" onkeydown="if(event.key==='Enter')setSectorCustom()">
+    <button class="sp-set" onclick="setSectorCustom()">✓</button>
+  </div>
+  <button class="sp-remove" id="spRemove" onclick="setSector(null)">✕ Sektor entfernen</button>
+</div>
+
 </body>
 </html>
