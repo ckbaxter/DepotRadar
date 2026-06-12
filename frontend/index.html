@@ -127,7 +127,8 @@ details[open] .help-summary::after{transform:rotate(90deg)}
 .toggle-switch input:checked + .toggle-track{background:var(--accent)}
 .toggle-switch input:checked + .toggle-track:before{transform:translateX(18px)}
 .selected-result{background:rgba(78,124,246,.06)!important;border-left:2px solid var(--accent)}
-.scard-clickable{cursor:pointer;transition:box-shadow .15s,transform .1s}
+.blurred-val{filter:blur(6px);transition:filter .2s;user-select:none}
+.blurred-val.revealed{filter:none}
 .scard-clickable:hover{box-shadow:0 0 0 2px var(--accent);transform:translateY(-1px)}
 .scard-clickable.active{box-shadow:0 0 0 2px var(--accent);background:var(--accent-dim,rgba(78,124,246,.12))}
 .scard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
@@ -345,14 +346,18 @@ select</style>
       <span>Portfolio-Übersicht</span>
     </button>
     <div class="summary" id="portfolioSummary" style="display:none">
-    <div class="scard">
-      <div class="scard-label">Gesamtwert</div>
-      <div class="scard-val" id="ps-total" style="color:var(--text)">—</div>
+    <div class="scard" onclick="toggleBlur('ps-total-wrap')" style="cursor:pointer" title="Tippen zum Anzeigen">
+      <div class="scard-label">Gesamtwert <span style="font-size:10px;opacity:.5">👁</span></div>
+      <div id="ps-total-wrap" class="blurred-val">
+        <div class="scard-val" id="ps-total" style="color:var(--text)">—</div>
+      </div>
     </div>
-    <div class="scard">
-      <div class="scard-label">Gewinn / Verlust</div>
-      <div class="scard-val" id="ps-pnl">—</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-pnl-pct"></div>
+    <div class="scard" onclick="toggleBlur('ps-pnl-wrap')" style="cursor:pointer" title="Tippen zum Anzeigen">
+      <div class="scard-label">Gewinn / Verlust <span style="font-size:10px;opacity:.5">👁</span></div>
+      <div id="ps-pnl-wrap" class="blurred-val">
+        <div class="scard-val" id="ps-pnl">—</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-pnl-pct"></div>
+      </div>
     </div>
     <div class="scard">
       <div class="scard-label">&#127881; Top 3</div>
@@ -570,14 +575,14 @@ select</style>
             </div>
           </details>
         </div>
-        <!-- Wöchentlicher Digest Toggle -->
+        <!-- Wöchentliche Zusammenfassung Toggle -->
         <div id="depotDigestRow" style="margin-top:12px;display:none">
           <div style="display:flex;align-items:center;gap:10px">
             <label class="toggle-switch">
               <input type="checkbox" id="depotDigestToggle"/>
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </label>
-            <span style="font-size:13px">Wöchentlichen Digest senden</span>
+            <span style="font-size:13px">Wöchentliche Zusammenfassung senden</span>
           </div>
           <details style="margin-top:8px">
             <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
@@ -586,7 +591,7 @@ select</style>
             <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
               Sendet einmal pro Woche eine Zusammenfassung dieses Depots per Apprise —
               ATH-Verteilung, Nachkauf-Kandidaten und Wochenperformance.<br>
-              Zeitpunkt global einstellbar unter <b style="color:var(--text)">⚙ Einstellungen → Wöchentlicher Digest</b>.
+              Zeitpunkt global einstellbar unter <b style="color:var(--text)">⚙ Einstellungen → Wöchentliche Zusammenfassung</b>.
             </div>
           </details>
         </div>
@@ -957,9 +962,9 @@ http://depotradar.example.lan</div>
         </div>
       </div>
 
-      <!-- Wöchentlicher Digest -->
+      <!-- Wöchentliche Zusammenfassung -->
       <div id="digestSection" style="display:none;margin-top:10px;padding-top:4px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📊 Wöchentlicher Digest</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📊 Wöchentliche Zusammenfassung</div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
           <span style="font-size:13px;color:var(--muted)">Digest aktivieren</span>
           <label class="toggle-switch">
@@ -2540,6 +2545,11 @@ function onDigestEnabledChange(){
   document.getElementById("digestConfig").style.display = on ? "flex" : "none";
 }
 
+function toggleBlur(id){
+  const el = document.getElementById(id);
+  if(el) el.classList.toggle("revealed");
+}
+
 // ── Sektor-Übersicht ─────────────────────────────────────────────
 function renderSectorOverview(stocks){
   const wrap  = document.getElementById("sectorOverviewWrap");
@@ -3686,7 +3696,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.3.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.3.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
