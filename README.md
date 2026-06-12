@@ -77,8 +77,7 @@ DepotRadar/
 │   ├── depot_*.json
 │   ├── depot_*_backup.json   # Backup vor Parqet-Sync (automatisch)
 │   ├── splits.json           # Aktiensplits (automatisch befüllt)
-│   ├── settings.json
-│   └── ath-tracker.yml       # Optional — siehe Konfiguration
+│   └── settings.json
 └── docker-compose.yml
 ```
 
@@ -111,20 +110,7 @@ Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
 |Verlaufsbereinigung         |Aufbewahrungszeitraum für Benachrichtigungshistorie|
 |Aktiensplits                |Splits hinzufügen und verwalten                    |
 
-### Optionale Konfigurationsdatei
-
-Wer Timezone und Handelszeiten per Datei statt per UI konfigurieren möchte, legt `data/ath-tracker.yml` an:
-
-```yaml
-timezone: Europe/Berlin
-trading:
-  days: [0, 1, 2, 3, 4]   # 0=Mo … 6=So
-  start_hour: 8
-  end_hour: 23
-refresh_interval_seconds: 3600
-```
-
-UI-Einstellungen haben immer Vorrang.
+UI-Einstellungen werden in `data/settings.json` gespeichert und haben beim Start immer Vorrang.
 
 -----
 
