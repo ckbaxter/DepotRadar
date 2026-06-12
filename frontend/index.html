@@ -540,6 +540,26 @@ select</style>
             </div>
           </details>
         </div>
+        <!-- Wöchentlicher Digest Toggle -->
+        <div id="depotDigestRow" style="margin-top:12px;display:none">
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle-switch">
+              <input type="checkbox" id="depotDigestToggle"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">Wöchentlichen Digest senden</span>
+          </div>
+          <details style="margin-top:8px">
+            <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
+              <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
+            </summary>
+            <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
+              Sendet einmal pro Woche eine Zusammenfassung dieses Depots per Apprise —
+              ATH-Verteilung, Nachkauf-Kandidaten und Wochenperformance.<br>
+              Zeitpunkt global einstellbar unter <b style="color:var(--text)">⚙ Einstellungen → Wöchentlicher Digest</b>.
+            </div>
+          </details>
+        </div>
         <!-- Test Button — nur aktiv wenn URLs vorhanden -->
         <div style="margin-top:10px">
           <button class="btn btn-ghost btn-sm" id="depotTestBtn"
@@ -898,12 +918,40 @@ http://depotradar.example.lan</div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
           <span style="font-weight:600;font-size:14px">&#128276; Benachrichtigungen</span>
           <label class="toggle-switch">
-            <input type="checkbox" id="notifsEnabled"/>
+            <input type="checkbox" id="notifsEnabled" onchange="onNotifsEnabledChange()"/>
             <span class="toggle-track"></span>
           </label>
         </div>
         <div style="font-size:12px;color:var(--muted);line-height:1.5">
           Apprise-URLs werden pro Depot konfiguriert — tippe auf das &#9881;-Icon im Depot-Tab.
+        </div>
+      </div>
+
+      <!-- Wöchentlicher Digest -->
+      <div id="digestSection" style="display:none;margin-top:10px;padding-top:4px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📊 Wöchentlicher Digest</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+          <span style="font-size:13px;color:var(--muted)">Digest aktivieren</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="digestEnabled" onchange="onDigestEnabledChange()"/>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div id="digestConfig" style="display:none;display:flex;gap:8px;align-items:center">
+          <select class="form-input" id="digestDay" style="flex:1;font-size:13px">
+            <option value="0">Montag</option>
+            <option value="1">Dienstag</option>
+            <option value="2">Mittwoch</option>
+            <option value="3">Donnerstag</option>
+            <option value="4">Freitag</option>
+            <option value="5">Samstag</option>
+            <option value="6" selected>Sonntag</option>
+          </select>
+          <input type="time" class="form-input" id="digestTime" value="18:00" style="width:100px;font-size:13px"/>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">
+          Pro Depot aktivierbar unter ⚙ → Apprise-Bereich.<br>
+          Der Digest enthält: ATH-Verteilung, Nachkauf-Kandidaten, beste/schlechteste Wochenperfomance und Aktien nahe am nächsten Level.
         </div>
       </div>
 
@@ -2250,6 +2298,12 @@ function openDepotSettings(depot){
   if(cbEl) cbEl.value = window.location.origin + "/api/parqet/callback";
   document.getElementById("depotMentionInput").value = depot.notification_mention || "";
   document.getElementById("depotConfirmToggle").checked = !!depot.notification_confirm;
+  document.getElementById("depotDigestToggle").checked  = !!depot.weekly_digest;
+  // Digest-Zeile nur zeigen wenn global aktiviert
+  fetch(`${API}/settings`).then(r=>r.json()).then(s=>{
+    const row = document.getElementById("depotDigestRow");
+    if(row) row.style.display = (s.notifications_enabled && s.digest_enabled) ? "block" : "none";
+  });
   renderDepotUrlList(); openModal("depotSettingsModal");
   setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
@@ -2275,7 +2329,10 @@ async function saveDepotSettings(){
   const budgetVal  = document.getElementById("depotBuyBudget").value;
   const buy_budget = budgetVal ? parseFloat(budgetVal) : null;
   const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget, notification_mention:(document.getElementById("depotMentionInput")?.value||"").trim(), notification_confirm:document.getElementById("depotConfirmToggle")?.checked||false})});
+    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget,
+      notification_mention:(document.getElementById("depotMentionInput")?.value||"").trim(),
+      notification_confirm:document.getElementById("depotConfirmToggle")?.checked||false,
+      weekly_digest:document.getElementById("depotDigestToggle")?.checked||false})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
   if(activeDepot&&activeDepot.id===editingDepot.id){
@@ -2391,6 +2448,13 @@ async function openSettingsModal(){
   const r=await fetch(`${API}/settings`); const s=await r.json();
   document.getElementById("refreshInterval").value = s.refresh_interval||3600;
   document.getElementById("notifsEnabled").checked = s.notifications_enabled!==false;
+  // Digest
+  const digestEnabled = s.digest_enabled===true;
+  document.getElementById("digestSection").style.display = s.notifications_enabled!==false ? "block" : "none";
+  document.getElementById("digestEnabled").checked = digestEnabled;
+  document.getElementById("digestConfig").style.display = digestEnabled ? "flex" : "none";
+  document.getElementById("digestDay").value  = s.digest_day  ?? 6;
+  document.getElementById("digestTime").value = s.digest_time || "18:00";
   document.getElementById("verlaufRetention").value = s.verlauf_retention_days ?? 60;
   // Timezone
   const tzEl = document.getElementById("settingsTimezone");
@@ -2424,13 +2488,26 @@ async function saveSettings(){
       notifications_enabled: document.getElementById("notifsEnabled").checked,
       timezone:              document.getElementById("settingsTimezone").value,
       trading:               {days: _tradingDays, start_hour: startH, start_minute: startM, end_hour: endH, end_minute: endM},
+      digest_enabled:        document.getElementById("digestEnabled").checked,
+      digest_day:            parseInt(document.getElementById("digestDay").value),
+      digest_time:           document.getElementById("digestTime").value,
     })});
   toast("Einstellungen gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
 }
 
+function onNotifsEnabledChange(){
+  const on = document.getElementById("notifsEnabled").checked;
+  document.getElementById("digestSection").style.display = on ? "block" : "none";
+}
+
+function onDigestEnabledChange(){
+  const on = document.getElementById("digestEnabled").checked;
+  document.getElementById("digestConfig").style.display = on ? "flex" : "none";
+}
+
 // ── Verlauf ───────────────────────────────────────────────────────
-const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt"};
-const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test"};
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht"};
+const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh"};
 let _notifItems = []; let _notifTypeFilter = "all"; let _notifDepotFilter = "all"; let _notifDepotFilterName = "all";
 
 async function openNotifModal(){
@@ -3398,7 +3475,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.1.15 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.2.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
