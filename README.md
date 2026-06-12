@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.0.14-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.1.8-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.2.7-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.3.6-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -14,7 +14,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 
 ## Vorschau
 
-![ATH-Tracker Vorschau](docs/Preview.jpeg)
+![DepotRadar Vorschau](docs/Preview.jpeg)
 
 *Alle dargestellten Aktien, Kurse, Einstandswerte und Kennzahlen sind frei erfunden und dienen ausschließlich zur Veranschaulichung der Benutzeroberfläche.*
 
@@ -27,13 +27,15 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **ATH-Discount** — farbcodierte Badges: grün (<20%), gelb (20–39%), orange (40–59%), rot (>60%) mit Multiplikator (1×/2×/3×)
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
+- **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
 - **Performance-Badges** — 1T / 1W / 1M / 3M direkt unter dem Kurs
 - **P&L** — Gewinn/Verlust in % und € wenn Einstandskurs bekannt
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion
 - **XETRA-Unterstützung** — automatischer Ticker-Vorschlag für deutsche Handelsplätze
-- **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung und Nachkauf-Kennzeichnung (🛒)
-- **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten und Benachrichtigungen direkt in der App konfigurierbar
+- **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; optionaler Bestätigungsmodus (2× Refresh vor Alarm)
+- **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand
+- **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten, Benachrichtigungen und Wochenbericht direkt in der App konfigurierbar
 - **Dark / Light Mode**
 - **Mobile-optimiert** — Touch-freundlich für iPad und Smartphone
 
@@ -98,14 +100,16 @@ environment:
 
 Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
 
-|Einstellung          |Beschreibung                                |
-|---------------------|--------------------------------------------|
-|Automatischer Refresh|Intervall der Kursabfragen                  |
-|Zeitzone             |Für korrekte Handelszeiten-Berechnung       |
-|Handelstage          |An welchen Tagen aktualisiert wird          |
-|Handelszeiten        |Zwischen welchen Uhrzeiten aktualisiert wird|
-|Benachrichtigungen   |Global ein/aus                              |
-|Aktiensplits         |Splits hinzufügen und verwalten             |
+|Einstellung                 |Beschreibung                                       |
+|----------------------------|---------------------------------------------------|
+|Automatischer Refresh       |Intervall der Kursabfragen                         |
+|Zeitzone                    |Für korrekte Handelszeiten-Berechnung              |
+|Handelstage                 |An welchen Tagen aktualisiert wird                 |
+|Handelszeiten               |Zwischen welchen Uhrzeiten aktualisiert wird       |
+|Benachrichtigungen          |Global ein/aus                                     |
+|Wöchentliche Zusammenfassung|Wochentag, Uhrzeit und globaler Ein/Aus-Schalter   |
+|Verlaufsbereinigung         |Aufbewahrungszeitraum für Benachrichtigungshistorie|
+|Aktiensplits                |Splits hinzufügen und verwalten                    |
 
 ### Optionale Konfigurationsdatei
 
@@ -156,6 +160,16 @@ Nachkauf-Kandidaten werden in Benachrichtigungen mit 🛒 gekennzeichnet.
 
 -----
 
+## Sektor-Tags
+
+Jede Aktie kann einem Sektor zugeordnet werden. 16 vordefinierte Sektoren stehen zur Auswahl (z.B. 💻 Technologie, 🏥 Gesundheit, ⚡ Energie); eigene Bezeichnungen sind per Freitext möglich.
+
+**Automatische Erkennung:** Beim ersten Kurs-Refresh wird der Sektor automatisch via Yahoo Finance abgefragt und gesetzt — sofern noch kein Sektor hinterlegt ist. Manuell gesetzte Sektoren werden nie überschrieben.
+
+**In der App:** Sektor-Badge unter dem Firmennamen; Tap/Klick öffnet den Auswahl-Popover. Über den 🏷️-Filter lässt sich die Tabelle auf einen Sektor einschränken. Die **Sektor-Übersicht** unter den Summary-Karten zeigt die Verteilung auf einen Blick und fungiert ebenfalls als Filter.
+
+-----
+
 ## Aktiensplits
 
 Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen → Aktiensplits** verwaltet. Beim ersten Start werden bekannte Splits automatisch angelegt (NVIDIA, Broadcom, Booking Holdings).
@@ -173,16 +187,16 @@ Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen �
 
 ## Parqet-Integration
 
-ATH-Tracker verbindet sich mit [Parqet](https://parqet.com) um Einstandskurse und Stückzahlen zu importieren. **Jedes Depot benötigt eine eigene Parqet-Integration.**
+DepotRadar verbindet sich mit [Parqet](https://parqet.com) um Einstandskurse und Stückzahlen zu importieren. **Jedes Depot benötigt eine eigene Parqet-Integration.**
 
 ### Einrichtung
 
 1. [developer.parqet.com/console/integrations](https://developer.parqet.com/console/integrations) → **+ New Integration**
-1. Name: beliebig (z.B. `ATH-Tracker`)
+1. Name: beliebig (z.B. `DepotRadar`)
 1. Scope: nur **read portfolio** ankreuzen
 1. Redirect URI: `http://DEINE-APP-URL/api/parqet/callback`
 1. **Create** → Client ID kopieren
-1. In ATH-Tracker: Depot-Einstellungen → Client ID eintragen → Verbinden
+1. In DepotRadar: Depot-Einstellungen → Client ID eintragen → Verbinden
 
 ### Backup & Rückgängig
 
@@ -194,15 +208,26 @@ Vor jedem Sync wird automatisch ein Backup der Depot-Datei angelegt. Falls ein S
 
 Konfigurierbar pro Depot (⚙-Icon im Depot-Tab). Unterstützte Dienste (Auswahl):
 
-|Dienst     |URL-Format                      |
-|-----------|--------------------------------|
-|Telegram   |`tgram://TOKEN/CHATID`          |
-|Gotify     |`gotify://host/token`           |
-|ntfy       |`ntfy://host/topic`             |
-|Discord    |`discord://WEBHOOK_ID/TOKEN`    |
-|Apprise API|`http://apprise.host/notify/tag`|
+|Dienst     |URL-Format                                  |
+|-----------|--------------------------------------------|
+|Telegram   |`tgram://TOKEN/CHATID`                      |
+|Gotify     |`gotify://host/token`                       |
+|ntfy       |`ntfy://host/topic`                         |
+|Discord    |`discord://WEBHOOK_ID/TOKEN`                |
+|E-Mail     |`mailto://user:pass@gmail.com` (HTML-Format)|
+|Apprise API|`http://apprise.host/notify/tag`            |
 
-Benachrichtigungen enthalten Kurs, ATH, Abstand, Kaufempfehlung und — falls zutreffend — die Kennzeichnung als Nachkauf-Kandidat (🛒).
+Benachrichtigungen enthalten Kurs, ATH, Abstand, Kaufempfehlung, Kursstand-Timestamp und — falls zutreffend — die Kennzeichnung als Nachkauf-Kandidat (🛒).
+
+**Bestätigungsmodus** (pro Depot aktivierbar): Eine Aktie muss zwei aufeinanderfolgende Refreshes unter dem ATH-Level liegen bevor ein Alarm ausgelöst wird. Vermeidet Fehlalarme bei kurzen Kursausreißern.
+
+### Wöchentliche Zusammenfassung
+
+Einmal pro Woche wird ein Überblick pro Depot versendet. Inhalt: ATH-Verteilung, Nachkauf-Kandidaten mit Kaufempfehlung, beste/schlechteste Wochenperformance, Aktien nah am nächsten Level und Sektor-Verteilung.
+
+- Zeitpunkt (Wochentag + Uhrzeit) global einstellbar unter ⚙ Einstellungen
+- Pro Depot aktivierbar unter Depot-Einstellungen → Apprise-Bereich
+- E-Mail-Empfänger erhalten eine HTML-formatierte Version
 
 -----
 
@@ -217,20 +242,23 @@ Benachrichtigungen enthalten Kurs, ATH, Abstand, Kaufempfehlung und — falls zu
 
 ## Versionshistorie
 
-|Version|Beschreibung                                                   |
-|-------|---------------------------------------------------------------|
-|1.9.1  |Nachkauf-Schwelle pro Depot                                    |
-|1.9.0  |Nachkauf-Kandidaten in Benachrichtigungen (🛒), 3-Phasen-Refresh|
-|1.8.0  |Parqet-Sync Backup mit Rückgängig-Funktion                     |
-|1.7.1  |COMPANY_DB und ISIN_MAP entfernt, XETRA-Suche optimiert        |
-|1.7.0  |Aktiensplits über UI verwaltbar, Depot-basierte ISIN-Auswahl   |
-|1.6.x  |Kaufempfehlung in Benachrichtigungen, App und Tabelle          |
-|1.5.0  |Zeitzone und Handelszeiten über UI einstellbar                 |
-|1.4.x  |Parqet Client ID pro Depot, config/ und data/ zusammengeführt  |
-|1.3.0  |Nachkauf-Kandidaten Filter                                     |
-|1.2.0  |Parqet OAuth PKCE Integration                                  |
-|1.1.0  |XETRA-Ticker-Unterstützung                                     |
-|1.0.0  |Erstes Release                                                 |
+|Version|Beschreibung                                                              |
+|-------|--------------------------------------------------------------------------|
+|2.2.x  |Sektor-Tags mit Auto-Fetch, Sektor-Übersicht, Sektor-Filter               |
+|2.1.x  |Wöchentliche Zusammenfassung (Apprise + HTML-E-Mail), Verlaufsbereinigung |
+|2.0.x  |Bestätigungsmodus, Kursstand in Benachrichtigungen, Verlauf-Verbesserungen|
+|1.9.1  |Nachkauf-Schwelle pro Depot                                               |
+|1.9.0  |Nachkauf-Kandidaten in Benachrichtigungen (🛒), 3-Phasen-Refresh           |
+|1.8.0  |Parqet-Sync Backup mit Rückgängig-Funktion                                |
+|1.7.1  |COMPANY_DB und ISIN_MAP entfernt, XETRA-Suche optimiert                   |
+|1.7.0  |Aktiensplits über UI verwaltbar, Depot-basierte ISIN-Auswahl              |
+|1.6.x  |Kaufempfehlung in Benachrichtigungen, App und Tabelle                     |
+|1.5.0  |Zeitzone und Handelszeiten über UI einstellbar                            |
+|1.4.x  |Parqet Client ID pro Depot, config/ und data/ zusammengeführt             |
+|1.3.0  |Nachkauf-Kandidaten Filter                                                |
+|1.2.0  |Parqet OAuth PKCE Integration                                             |
+|1.1.0  |XETRA-Ticker-Unterstützung                                                |
+|1.0.0  |Erstes Release                                                            |
 
 -----
 
