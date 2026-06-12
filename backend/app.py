@@ -19,7 +19,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.1.2"
+VERSION           = "2.2.6"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -244,6 +244,69 @@ def get_eur_rate(currency):
         return {"USD":0.92,"GBP":1.17,"CHF":1.05,"JPY":0.0062,
                 "CAD":0.68,"AUD":0.60,"DKK":0.134,"HKD":0.118}.get(currency, 0.92)
 
+SECTOR_MAP = {
+    # Industrie (spezifisch) → hat Vorrang
+    "Semiconductors":                   "🔬 Halbleiter",
+    "Semiconductor Equipment & Materials": "🔬 Halbleiter",
+    "Biotechnology":                    "🧬 Biotech",
+    "Drug Manufacturers—General":       "🏥 Gesundheit",
+    "Drug Manufacturers—Specialty & Generic": "🏥 Gesundheit",
+    "Pharmaceuticals":                  "🏥 Gesundheit",
+    "Auto Manufacturers":               "🚗 Automobil",
+    "Auto Parts":                       "🚗 Automobil",
+    "Aerospace & Defense":              "🛡️ Rüstung & Sicherheit",
+    "REIT":                             "🏠 Immobilien",
+    "Real Estate":                      "🏠 Immobilien",
+    "Exchange Traded Fund":             "🌐 ETF / Fonds",
+    "Asset Management":                 "🏦 Finanzen",
+    "Banks—Diversified":                "🏦 Finanzen",
+    "Banks—Regional":                   "🏦 Finanzen",
+    "Insurance—Life":                   "🏦 Finanzen",
+    "Insurance—Diversified":            "🏦 Finanzen",
+    # Sektor (Fallback)
+    "Technology":                       "💻 Technologie",
+    "Healthcare":                       "🏥 Gesundheit",
+    "Financial Services":               "🏦 Finanzen",
+    "Financial":                        "🏦 Finanzen",
+    "Consumer Cyclical":                "🛒 Konsum (zyklisch)",
+    "Consumer Defensive":               "🧴 Konsum (defensiv)",
+    "Energy":                           "⚡ Energie",
+    "Communication Services":           "📡 Kommunikation",
+    "Industrials":                      "🏭 Industrie",
+    "Basic Materials":                  "⛏️ Rohstoffe",
+    "Utilities":                        "💡 Versorger",
+}
+
+def fetch_sector_from_yahoo(ticker):
+    """Holt Sektor über Yahoo Finance Search-API — kein Crumb nötig."""
+    candidates = [ticker]
+    if "." in ticker:
+        candidates.append(ticker.rsplit(".", 1)[0])
+    for t in candidates:
+        try:
+            url = f"https://query1.finance.yahoo.com/v1/finance/search?q={urlquote(t)}&quotesCount=5&newsCount=0"
+            r   = requests.get(url, headers=YH, timeout=10)
+            r.raise_for_status()
+            quotes = r.json().get("quotes", [])
+            # Exakten Ticker-Match bevorzugen, sonst ersten Equity-Eintrag nehmen
+            match = next((q for q in quotes if q.get("symbol","").upper() == t.upper()), None)
+            if not match:
+                match = next((q for q in quotes if q.get("quoteType") == "EQUITY"), None)
+            if not match:
+                continue
+            industry = match.get("industry", "")
+            sector   = match.get("sector",   "")
+            log.info(f"Sektor-Fetch {t}: industry='{industry}' sector='{sector}'")
+            for key in [industry, sector]:
+                if key and key in SECTOR_MAP:
+                    return SECTOR_MAP[key]
+            if industry or sector:
+                log.info(f"Kein Mapping für '{industry}'/'{sector}' ({t}) — bitte SECTOR_MAP ergänzen")
+                return None
+        except Exception as e:
+            log.info(f"Sektor-Fetch {t}: {e}")
+    return None
+
 def fetch_stock_data(ticker):
     enc  = urlquote(ticker)
     urls = [
@@ -286,7 +349,7 @@ def fetch_stock_data(ticker):
             if not valid: continue
             best_i, best_v = max(valid, key=lambda x: x[1])
             if abs(best_v - ath) < 0.01 and best_i < len(timestamps):
-                ath_date = datetime.utcfromtimestamp(timestamps[best_i]).strftime("%d.%m.%Y")
+                ath_date = datetime.fromtimestamp(timestamps[best_i], tz=pytz.UTC).strftime("%d.%m.%Y")
                 break
     except Exception as _e:
         log.debug(f"ATH-Datum nicht ermittelbar: {_e}")
@@ -347,7 +410,12 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
         return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
-def send_apprise(title, body, urls, mention=""):
+EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "postmark://", "ses://")
+
+def _is_email_url(u):
+    return u.lower().startswith(EMAIL_PREFIXES)
+
+def send_apprise(title, body, urls, mention="", html_body=None):
     if not load_settings().get("notifications_enabled", True): return True
     if not urls: return False
     try:
@@ -355,11 +423,15 @@ def send_apprise(title, body, urls, mention=""):
         for u in urls:
             ap = apprise_lib.Apprise()
             ap.add(u)
-            # Mention nur bei Discord-URLs voranstellen
             is_discord = u.lower().startswith("discord")
             msg = f"{mention}\n{body}" if (mention and is_discord) else body
-            if not ap.notify(title=title, body=msg):
-                ok = False
+            if html_body and _is_email_url(u):
+                if not ap.notify(title=title, body=html_body,
+                                 body_format=apprise_lib.NotifyFormat.HTML):
+                    ok = False
+            else:
+                if not ap.notify(title=title, body=msg):
+                    ok = False
         add_log("alert", title, body, ok)
         return ok
     except Exception as e:
@@ -399,6 +471,12 @@ def _fetch_prices(stocks):
         try:
             data      = fetch_stock_data(s["ticker"])
             stocks[i] = _make_stock(data, s)
+            # Sektor auto-holen wenn noch nicht gesetzt
+            if not stocks[i].get("sector"):
+                sec = fetch_sector_from_yahoo(s["ticker"])
+                if sec:
+                    stocks[i]["sector"] = sec
+                    log.info(f"Sektor gesetzt: {s['name']} → {sec}")
             ok_list.append(s["name"])
         except Exception as e:
             log.error(f"{s['name']}: {e}")
@@ -654,14 +732,139 @@ def build_digest_body(depot, stocks):
     if near_lines:
         near_section = "\n\n⚠️ Nah am nächsten Level:\n" + "\n".join(near_lines)
 
+    # Sektor-Verteilung
+    sector_section = ""
+    sector_counts = {}
+    for s in stocks:
+        sec = s.get("sector")
+        if sec:
+            sector_counts[sec] = sector_counts.get(sec, 0) + 1
+    if sector_counts:
+        parts = " · ".join(f"{k} {v}" for k, v in sorted(sector_counts.items(), key=lambda x: -x[1]))
+        sector_section = f"\n\n📂 Sektoren: {parts}"
+
     link    = f"\n\n{APP_URL}" if APP_URL else ""
     body = (f"Depot: {name} ({total} Aktien)\n\n"
             f"📊 Verteilung:\n{dist}"
             f"{nk_lines}"
             f"{perf_section}"
             f"{near_section}"
+            f"{sector_section}"
             f"{link}")
     return title, body
+
+
+def build_digest_html(depot, stocks, kw):
+    """Baut eine HTML-Version des Digests für E-Mail-Versand."""
+    name  = depot.get("name", "Depot")
+    total = len(stocks)
+
+    # Verteilung
+    b = {"<20": 0, "20-39": 0, "40-59": 0, ">60": 0}
+    for s in stocks:
+        cur = s.get("current_eur"); ath = s.get("ath_eur")
+        if not cur or not ath or ath == 0: continue
+        d = (ath - cur) / ath * 100
+        if   d < 20: b["<20"]   += 1
+        elif d < 40: b["20-39"] += 1
+        elif d < 60: b["40-59"] += 1
+        else:        b[">60"]   += 1
+
+    dist_html = f"""
+    <table style="width:100%;border-collapse:collapse;margin-top:8px">
+      <tr><td style="padding:4px 8px">✅ &lt; 20% unter ATH</td><td style="padding:4px 8px;font-weight:600;color:#22c55e">{b['<20']}</td></tr>
+      <tr style="background:#f9fafb"><td style="padding:4px 8px">🟡 20–39%</td><td style="padding:4px 8px;font-weight:600;color:#eab308">{b['20-39']}</td></tr>
+      <tr><td style="padding:4px 8px">🟠 40–59%</td><td style="padding:4px 8px;font-weight:600;color:#f97316">{b['40-59']}</td></tr>
+      <tr style="background:#f9fafb"><td style="padding:4px 8px">🔴 ≥60%</td><td style="padding:4px 8px;font-weight:600;color:#ef4444">{b['>60']}</td></tr>
+    </table>"""
+
+    # Nachkauf-Kandidaten
+    threshold = int(depot.get("nachkauf_threshold") or 30)
+    nk_set    = calc_nachkauf_set(stocks, threshold)
+    nk_html   = ""
+    if nk_set:
+        budget = depot.get("buy_budget")
+        rows   = []
+        for s in stocks:
+            if s.get("ticker") not in nk_set: continue
+            cur = s.get("current_eur"); ath = s.get("ath_eur")
+            if not cur or not ath or ath == 0: continue
+            d   = (ath - cur) / ath * 100
+            mul = 3 if d >= 60 else (2 if d >= 40 else 1)
+            qty_str = ""
+            if budget:
+                qty = calc_buy_quantity(budget, mul, cur)
+                if qty:
+                    qty_str = f" &nbsp;→&nbsp; {qty} Stk. · ~{qty*cur:.0f} €"
+            rows.append(f"<tr><td style='padding:4px 8px'>{s['name']}</td>"
+                        f"<td style='padding:4px 8px;color:#f97316'>-{d:.1f}%</td>"
+                        f"<td style='padding:4px 8px;color:#22c55e'>{qty_str}</td></tr>")
+        if rows:
+            nk_html = f"""<h3 style="color:#f97316;margin:20px 0 8px">🛒 Nachkauf-Kandidaten</h3>
+            <table style="width:100%;border-collapse:collapse">{''.join(rows)}</table>"""
+
+    # Performance
+    perf_stocks = [(s, s.get("perf_1w")) for s in stocks if s.get("perf_1w") is not None]
+    perf_html   = ""
+    if perf_stocks:
+        best  = max(perf_stocks, key=lambda x: x[1])
+        worst = min(perf_stocks, key=lambda x: x[1])
+        perf_html = f"""<h3 style="margin:20px 0 8px">📈 Wochenperformance</h3>
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="padding:4px 8px">📈 Beste</td><td style="padding:4px 8px;font-weight:600">{best[0]['name']}</td><td style="padding:4px 8px;color:#22c55e">{best[1]:+.1f}%</td></tr>
+          <tr style="background:#f9fafb"><td style="padding:4px 8px">📉 Schlechteste</td><td style="padding:4px 8px;font-weight:600">{worst[0]['name']}</td><td style="padding:4px 8px;color:#ef4444">{worst[1]:+.1f}%</td></tr>
+        </table>"""
+
+    # Nah am Level
+    near_rows = []
+    for s in stocks:
+        cur = s.get("current_eur"); ath = s.get("ath_eur")
+        if not cur or not ath or ath == 0: continue
+        d  = (ath - cur) / ath * 100
+        lb = s.get("last_notified_block", 0)
+        for lvl in [20, 30, 40, 50, 60]:
+            if lvl > lb:
+                next_price = round(ath * (1 - lvl / 100), 2)
+                gap        = (cur - next_price) / cur * 100
+                if 0 < gap < 3:
+                    near_rows.append(f"<tr><td style='padding:4px 8px'>{s['name']}</td>"
+                                     f"<td style='padding:4px 8px;color:#f97316'>-{d:.1f}%</td>"
+                                     f"<td style='padding:4px 8px;color:#94a3b8'>→ -{lvl}%-Block bei {next_price:.2f} €</td></tr>")
+                break
+    near_html = ""
+    if near_rows:
+        near_html = f"""<h3 style="color:#f59e0b;margin:20px 0 8px">⚠️ Nah am nächsten Level</h3>
+        <table style="width:100%;border-collapse:collapse">{''.join(near_rows)}</table>"""
+
+    # Sektoren
+    sector_counts = {}
+    for s in stocks:
+        sec = s.get("sector")
+        if sec: sector_counts[sec] = sector_counts.get(sec, 0) + 1
+    sector_html = ""
+    if sector_counts:
+        chips = " ".join(f"<span style='display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:12px;margin:2px'>{k} {v}</span>"
+                         for k, v in sorted(sector_counts.items(), key=lambda x: -x[1]))
+        sector_html = f"""<h3 style="margin:20px 0 8px">📂 Sektoren</h3><div>{chips}</div>"""
+
+    link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
+
+    return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
+    <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
+      <h2 style="margin:0;font-size:18px">📊 DepotRadar Wochenbericht — KW {kw}</h2>
+      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {name} · {total} Aktien</div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
+      <h3 style="margin:0 0 8px">📊 ATH-Verteilung</h3>
+      {dist_html}
+      {nk_html}
+      {perf_html}
+      {near_html}
+      {sector_html}
+      {link_html}
+    </div>
+    <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
+    </body></html>"""
 
 
 def send_weekly_digests():
@@ -671,6 +874,7 @@ def send_weekly_digests():
     if not s.get("digest_enabled", False): return
     log.info("Wöchentlicher Digest wird versendet…")
     depots = load_depots()
+    kw     = datetime.now().isocalendar()[1]
     for dc in depots:
         if not dc.get("weekly_digest", False): continue
         urls    = dc.get("apprise_urls", [])
@@ -680,9 +884,10 @@ def send_weekly_digests():
         mention = dc.get("notification_mention", "")
         title, body = build_digest_body(dc, stocks)
         if title:
+            html_body = build_digest_html(dc, stocks, kw)
             add_log("digest", f"📊 Wochenbericht [{dc['name']}]",
                     f"Gesendet an {len(urls)} URL(s).", success=True)
-            send_apprise(title, body, urls, mention=mention)
+            send_apprise(title, body, urls, mention=mention, html_body=html_body)
 
 
 def schedule_digest_job():
@@ -1518,7 +1723,7 @@ def patch_stock(depot_id, ticker):
     stock  = next((s for s in stocks if s["ticker"] == ticker), None)
     if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
     # Erlaubte Felder die per PATCH gesetzt werden dürfen
-    ALLOWED = {"bought_levels", "notes"}
+    ALLOWED = {"bought_levels", "notes", "sector"}
     for key, val in body.items():
         if key in ALLOWED:
             stock[key] = val
@@ -1559,6 +1764,19 @@ def wl_add_stock(depot_id, wl_id):
     stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
              "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
     stocks.append(stock); save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stock), 201
+
+@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>", methods=["PATCH"])
+def wl_patch_stock(depot_id, wl_id, ticker):
+    body   = request.get_json() or {}
+    stocks = load_wl_stocks(depot_id, wl_id)
+    stock  = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
+    if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
+    ALLOWED = {"sector", "notes"}
+    for key, val in body.items():
+        if key in ALLOWED:
+            stock[key] = val
+    save_wl_stocks(depot_id, wl_id, stocks)
+    return jsonify(stock)
 
 @app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>", methods=["DELETE"])
 def wl_delete_stock(depot_id, wl_id, ticker):
