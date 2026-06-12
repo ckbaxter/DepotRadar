@@ -2,7 +2,7 @@ import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, 
 from datetime import datetime, timedelta
 from urllib.parse import quote as urlquote
 
-import pytz, yaml, requests, apprise as apprise_lib
+import pytz, requests, apprise as apprise_lib
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, jsonify, request, redirect
@@ -12,14 +12,13 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 
 DATA_DIR      = "/data"
-CONFIG_FILE   = "/data/ath-tracker.yml"   # Optional — Defaults werden verwendet wenn nicht vorhanden
 DEPOTS_FILE   = os.path.join(DATA_DIR, "depots.json")
 NOTIF_FILE    = os.path.join(DATA_DIR, "notifications.json")
 SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.2.6"
+VERSION           = "2.2.8"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -54,21 +53,6 @@ _CFG_DEF = {
     "refresh_interval_seconds": 3600,
 }
 
-def load_config():
-    cfg = {"timezone": _CFG_DEF["timezone"], "trading": dict(_CFG_DEF["trading"]),
-           "refresh_interval_seconds": _CFG_DEF["refresh_interval_seconds"]}
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, encoding="utf-8") as f:
-                loaded = yaml.safe_load(f) or {}
-            if "timezone" in loaded: cfg["timezone"] = loaded["timezone"]
-            if "trading"  in loaded: cfg["trading"].update(loaded["trading"])
-            if "refresh_interval_seconds" in loaded:
-                cfg["refresh_interval_seconds"] = int(loaded["refresh_interval_seconds"])
-        except Exception as e:
-            log.error(f"config.yml: {e}")
-    return cfg
-
 # ── File helpers ──────────────────────────────────────────────────
 def _safe(s):            return re.sub(r'[^a-z0-9_\-]', '_', s.lower())
 def depot_file(d):        return os.path.join(DATA_DIR, f"depot_{_safe(d)}.json")
@@ -90,25 +74,21 @@ def save_depots(d):       _save_json(DEPOTS_FILE, d)
 def load_notifications(): return _load_json(NOTIF_FILE, [])
 
 def load_settings():
-    """
-    Einstellungen mit Priorität: settings.json > ath-tracker.yml > _CFG_DEF
-    Enthält jetzt auch timezone und trading — alles in einer Quelle.
-    """
-    cfg = load_config()  # liest ath-tracker.yml oder gibt _CFG_DEF zurück
+    """Einstellungen mit Priorität: settings.json > _CFG_DEF"""
     s = {
-        "refresh_interval":      cfg["refresh_interval_seconds"],
+        "refresh_interval":      _CFG_DEF["refresh_interval_seconds"],
         "notifications_enabled": True,
         "digest_enabled":        False,
         "digest_day":            6,
         "digest_time":           "18:00",
     "verlauf_retention_days": 60,
-        "timezone":              cfg["timezone"],
+        "timezone":              _CFG_DEF["timezone"],
         "trading":               {
-            "days":         list(cfg["trading"]["days"]),
-            "start_hour":   cfg["trading"]["start_hour"],
-            "start_minute": cfg["trading"].get("start_minute", 0),
-            "end_hour":     cfg["trading"]["end_hour"],
-            "end_minute":   cfg["trading"].get("end_minute", 0),
+            "days":         list(_CFG_DEF["trading"]["days"]),
+            "start_hour":   _CFG_DEF["trading"]["start_hour"],
+            "start_minute": _CFG_DEF["trading"].get("start_minute", 0),
+            "end_hour":     _CFG_DEF["trading"]["end_hour"],
+            "end_minute":   _CFG_DEF["trading"].get("end_minute", 0),
         },
     }
     if os.path.exists(SETTINGS_FILE):
@@ -194,7 +174,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"ATH:             {new_ath:.2f} EUR\n"
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR\n"
-                f"Kursstand:       {stock.get('time', '—')}{link}")
+                f"Kursstand:       {stock.get('market_time', '—')}{link}")
         send_apprise(title, body, urls or [], mention=mention)
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
         cleared = [lvl for lvl in [20, 30, 40, 50, 60] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
