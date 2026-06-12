@@ -4,6 +4,7 @@ from urllib.parse import quote as urlquote
 
 import pytz, yaml, requests, apprise as apprise_lib
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, jsonify, request, redirect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -18,7 +19,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.0.15"
+VERSION           = "2.1.2"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -97,6 +98,9 @@ def load_settings():
     s = {
         "refresh_interval":      cfg["refresh_interval_seconds"],
         "notifications_enabled": True,
+        "digest_enabled":        False,
+        "digest_day":            6,
+        "digest_time":           "18:00",
     "verlauf_retention_days": 60,
         "timezone":              cfg["timezone"],
         "trading":               {
@@ -109,7 +113,8 @@ def load_settings():
     }
     if os.path.exists(SETTINGS_FILE):
         saved = json.load(open(SETTINGS_FILE, encoding="utf-8"))
-        for key in ("notifications_enabled", "refresh_interval", "timezone", "next_refresh_ts", "verlauf_retention_days"):
+        for key in ("notifications_enabled", "refresh_interval", "timezone", "next_refresh_ts",
+                    "verlauf_retention_days", "digest_enabled", "digest_day", "digest_time"):
             if key in saved: s[key] = saved[key]
         if "trading" in saved:
             s["trading"].update(saved["trading"])
@@ -571,10 +576,140 @@ def get_next_run_info():
                 return tz.localize(datetime(check.year, check.month, check.day, sh, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
     return "unbekannt"
 
+def build_digest_body(depot, stocks):
+    """Baut den Digest-Text für ein Depot."""
+    name   = depot.get("name", "Depot")
+    total  = len(stocks)
+    if total == 0:
+        return None, None
+
+    DAY_NAMES = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"]
+    now       = datetime.now()
+    kw        = now.isocalendar()[1]
+    title     = f"📊 DepotRadar Wochenbericht — KW {kw}"
+
+    # ATH-Verteilung
+    buckets = {"<20": [], "20-39": [], "40-59": [], ">60": []}
+    for s in stocks:
+        cur = s.get("current_eur"); ath = s.get("ath_eur")
+        if not cur or not ath or ath == 0: continue
+        d = (ath - cur) / ath * 100
+        if   d < 20: buckets["<20"].append(s)
+        elif d < 40: buckets["20-39"].append(s)
+        elif d < 60: buckets["40-59"].append(s)
+        else:        buckets[">60"].append(s)
+
+    dist = (f"  < 20% unter ATH:  {len(buckets['<20'])} Aktie(n) ✅\n"
+            f"  20–39%:           {len(buckets['20-39'])} Aktie(n) 🟡\n"
+            f"  40–59%:           {len(buckets['40-59'])} Aktie(n) 🟠\n"
+            f"  ≥60%:             {len(buckets['>60'])} Aktie(n) 🔴")
+
+    # Nachkauf-Kandidaten
+    threshold = int(depot.get("nachkauf_threshold") or 30)
+    nk_set    = calc_nachkauf_set(stocks, threshold)
+    nk_lines  = ""
+    if nk_set:
+        budget = depot.get("buy_budget")
+        lines  = []
+        for s in stocks:
+            if s.get("ticker") not in nk_set: continue
+            cur = s.get("current_eur"); ath = s.get("ath_eur")
+            if not cur or not ath or ath == 0: continue
+            d   = (ath - cur) / ath * 100
+            mul = 3 if d >= 60 else (2 if d >= 40 else 1)
+            qty_str = ""
+            if budget:
+                qty = calc_buy_quantity(budget, mul, cur)
+                if qty:
+                    cost = round(qty * cur, 2)
+                    qty_str = f" — {qty} Stk. · ~{cost:.0f} €"
+            lines.append(f"  {s['name']} (-{d:.1f}%){qty_str}")
+        if lines:
+            nk_lines = "\n\n🛒 Nachkauf-Kandidaten:\n" + "\n".join(lines)
+
+    # Beste/schlechteste Woche
+    perf_stocks = [(s, s.get("perf_1w")) for s in stocks if s.get("perf_1w") is not None]
+    perf_section = ""
+    if perf_stocks:
+        best  = max(perf_stocks, key=lambda x: x[1])
+        worst = min(perf_stocks, key=lambda x: x[1])
+        perf_section = (f"\n\n📈 Beste Woche:    {best[0]['name']} {best[1]:+.1f}%"
+                        f"\n📉 Schlechteste:  {worst[0]['name']} {worst[1]:+.1f}%")
+
+    # Nah am nächsten Level (< 3% Puffer)
+    near_lines = []
+    for s in stocks:
+        cur = s.get("current_eur"); ath = s.get("ath_eur")
+        if not cur or not ath or ath == 0: continue
+        d  = (ath - cur) / ath * 100
+        lb = s.get("last_notified_block", 0)
+        for lvl in [20, 30, 40, 50, 60]:
+            if lvl > lb:
+                next_price = round(ath * (1 - lvl / 100), 2)
+                gap        = (cur - next_price) / cur * 100
+                if 0 < gap < 3:
+                    near_lines.append(f"  {s['name']} -{d:.1f}% (→ -{lvl}%-Block bei {next_price:.2f} €)")
+                break
+    near_section = ""
+    if near_lines:
+        near_section = "\n\n⚠️ Nah am nächsten Level:\n" + "\n".join(near_lines)
+
+    link    = f"\n\n{APP_URL}" if APP_URL else ""
+    body = (f"Depot: {name} ({total} Aktien)\n\n"
+            f"📊 Verteilung:\n{dist}"
+            f"{nk_lines}"
+            f"{perf_section}"
+            f"{near_section}"
+            f"{link}")
+    return title, body
+
+
+def send_weekly_digests():
+    """Sendet den Wochenbericht an alle Depots die es aktiviert haben."""
+    s = load_settings()
+    if not s.get("notifications_enabled", True): return
+    if not s.get("digest_enabled", False): return
+    log.info("Wöchentlicher Digest wird versendet…")
+    depots = load_depots()
+    for dc in depots:
+        if not dc.get("weekly_digest", False): continue
+        urls    = dc.get("apprise_urls", [])
+        if not urls: continue
+        did     = dc["id"]
+        stocks  = load_stocks(did)
+        mention = dc.get("notification_mention", "")
+        title, body = build_digest_body(dc, stocks)
+        if title:
+            add_log("digest", f"📊 Wochenbericht [{dc['name']}]",
+                    f"Gesendet an {len(urls)} URL(s).", success=True)
+            send_apprise(title, body, urls, mention=mention)
+
+
+def schedule_digest_job():
+    """Plant den Digest-Job anhand der aktuellen Einstellungen."""
+    s        = load_settings()
+    tz       = pytz.timezone(s.get("timezone", "Europe/Berlin"))
+    enabled  = s.get("digest_enabled", False)
+    day      = int(s.get("digest_day", 6))          # 0=Mo … 6=So
+    t        = s.get("digest_time", "18:00")
+    try:
+        hour, minute = map(int, t.split(":"))
+    except Exception:
+        hour, minute = 18, 0
+    # APScheduler day_of_week: 0=Mon … 6=Sun
+    dow_map  = {0:"mon",1:"tue",2:"wed",3:"thu",4:"fri",5:"sat",6:"sun"}
+    scheduler.add_job(
+        send_weekly_digests, CronTrigger(
+            day_of_week=dow_map[day], hour=hour, minute=minute, timezone=tz),
+        id="weekly_digest", replace_existing=True, misfire_grace_time=None)
+    log.info(f"Digest-Job geplant: {dow_map[day]} {hour:02d}:{minute:02d} ({'aktiv' if enabled else 'inaktiv — Job läuft, prüft intern'})")
+
+
 def start_scheduler():
     _restore_last_refresh()
     scheduler.add_job(trading_window_check, "cron", minute="*", id="trading_check",
                       replace_existing=True, misfire_grace_time=None)
+    schedule_digest_job()
     if not scheduler.running: scheduler.start()
     log.info("Scheduler gestartet")
 
@@ -1241,6 +1376,8 @@ def update_depot(depot_id):
             if "nachkauf_threshold" in body:
                 raw = body["nachkauf_threshold"]
                 d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
+            if "weekly_digest" in body:
+                d["weekly_digest"] = bool(body["weekly_digest"])
             save_depots(depots); return jsonify(d)
     return jsonify({"error": "Nicht gefunden"}), 404
 
@@ -1550,7 +1687,10 @@ def update_settings():
         if "start_minute" in t: s["trading"]["start_minute"] = int(t["start_minute"])
         if "end_hour"     in t: s["trading"]["end_hour"]      = int(t["end_hour"])
         if "end_minute"   in t: s["trading"]["end_minute"]    = int(t["end_minute"])
-    save_settings(s); return jsonify(s)
+    if "digest_enabled" in body: s["digest_enabled"] = bool(body["digest_enabled"])
+    if "digest_day"     in body: s["digest_day"]     = int(body["digest_day"])
+    if "digest_time"    in body: s["digest_time"]    = str(body["digest_time"])
+    save_settings(s); schedule_digest_job(); return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
 def get_notifications(): return jsonify(list(reversed(load_notifications())))
