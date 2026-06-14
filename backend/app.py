@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.2.8"
+VERSION           = "2.3.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -60,10 +60,14 @@ def depot_backup_file(d): return os.path.join(DATA_DIR, f"depot_{_safe(d)}_backu
 def watchlist_file(d,w): return os.path.join(DATA_DIR, f"wl_{_safe(d)}_{_safe(w)}.json")
 
 def _load_json(path, default):
-    return json.load(open(path, encoding="utf-8")) if os.path.exists(path) else default
+    if not os.path.exists(path):
+        return default
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 def _save_json(path, data):
-    json.dump(data, open(path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 def load_stocks(d):       return _load_json(depot_file(d), [])
 def save_stocks(d, s):    _save_json(depot_file(d), s)
@@ -81,7 +85,7 @@ def load_settings():
         "digest_enabled":        False,
         "digest_day":            6,
         "digest_time":           "18:00",
-    "verlauf_retention_days": 60,
+        "verlauf_retention_days": 60,
         "timezone":              _CFG_DEF["timezone"],
         "trading":               {
             "days":         list(_CFG_DEF["trading"]["days"]),
@@ -92,7 +96,8 @@ def load_settings():
         },
     }
     if os.path.exists(SETTINGS_FILE):
-        saved = json.load(open(SETTINGS_FILE, encoding="utf-8"))
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            saved = json.load(f)
         for key in ("notifications_enabled", "refresh_interval", "timezone", "next_refresh_ts",
                     "verlauf_retention_days", "digest_enabled", "digest_day", "digest_time"):
             if key in saved: s[key] = saved[key]
@@ -135,12 +140,12 @@ def migrate_if_needed():
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
-def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention=""):
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
     lb = stock.get("last_notified_block", cb)
-    confirm_mode = stock.get("notification_confirm", False)
+    confirm_mode = confirm
     pending_key  = f"pending_notify_{cb}"
     # Existiert ein ausstehendes Flag für ein Level <= cb? (z.B. -20% pending, jetzt -33%)
     has_pending  = any(stock.get(f"pending_notify_{lvl}") for lvl in [20, 30, 40, 50, 60] if lvl <= cb)
@@ -214,9 +219,8 @@ YH = {
 
 def get_eur_rate(currency):
     """Gibt EUR-Umrechnungskurs zurück. Normalisiert GBp → GBP automatisch."""
-    if currency in ("EUR", "GBp"):
-        currency = "GBP" if currency == "GBp" else "EUR"
-        if currency == "EUR": return 1.0
+    if currency == "EUR": return 1.0
+    if currency == "GBp": currency = "GBP"
     try:
         r = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
         return float(r.json()["rates"]["EUR"])
@@ -468,10 +472,9 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="
     for i, s in enumerate(stocks):
         try:
             is_nk   = s["ticker"] in nachkauf_set
-            s["notification_confirm"] = confirm
             new_blk = check_and_notify(
                 s, s["current_eur"], s["ath_eur"],
-                label, urls, buy_budget, is_nk, mention
+                label, urls, buy_budget, is_nk, mention, confirm=confirm
             )
             stocks[i]["last_notified_block"] = new_blk
         except Exception as e:
@@ -641,7 +644,6 @@ def build_digest_body(depot, stocks):
     if total == 0:
         return None, None
 
-    DAY_NAMES = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"]
     now       = datetime.now()
     kw        = now.isocalendar()[1]
     title     = f"📊 DepotRadar Wochenbericht — KW {kw}"
@@ -1150,9 +1152,11 @@ def parqet_portfolios(depot_id):
         raw  = parqet_api_get(depot, "/portfolios", depot_id)
         pf   = (raw if isinstance(raw, list)
                 else raw.get("portfolios") or raw.get("items") or raw.get("data")
+                or raw.get("result") or raw.get("content") or raw.get("records")
                 or ([raw] if "id" in raw else []))
         return jsonify(pf)
     except Exception as e:
+        log.error(f"Parqet /portfolios Fehler: {e}")
         return jsonify({"error": str(e)}), 502
 
 @app.route("/api/depots/<depot_id>/parqet/select-portfolio", methods=["POST"])
@@ -1656,7 +1660,9 @@ def api_refresh_stock(ticker):
         data    = fetch_stock_data(ticker); s = stocks[idx]
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Bestand: {depot['name']}", depot.get("apprise_urls", []), mention=depot.get("notification_mention",""))
+                                   f"Bestand: {depot['name']}", depot.get("apprise_urls", []),
+                                   mention=depot.get("notification_mention",""),
+                                   confirm=depot.get("notification_confirm", False))
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
         save_stocks(did, stocks)
         add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True)
@@ -1774,7 +1780,9 @@ def wl_refresh_stock(depot_id, wl_id, ticker):
         data    = fetch_stock_data(ticker); s = stocks[idx]
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Beobachtung: {wl_name}", depot.get("apprise_urls", []), mention=depot.get("notification_mention",""))
+                                   f"Beobachtung: {wl_name}", depot.get("apprise_urls", []),
+                                   mention=depot.get("notification_mention",""),
+                                   confirm=depot.get("notification_confirm", False))
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
         save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stocks[idx])
     except Exception as e: return jsonify({"error": str(e)}), 502
