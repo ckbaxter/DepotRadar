@@ -1417,7 +1417,7 @@ function renderDepotTabs(){
       tab.className = "depot-tab" + (isActive ? " active" : "");
       tab.style.color = isActive ? "" : "var(--muted)";
       tab.innerHTML = '📋 ' + wl.name + '<span class="depot-tab-gear" title="Watchlist-Einstellungen">&#9881;</span>';
-      tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openWlSettings(wl);});
+      tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openWlSettings(wl, dc.id);});
       tab.addEventListener("click", ()=>{ activeDepot=dc; switchWatchlist(wl); });
       bar.appendChild(tab);
     });
@@ -1828,9 +1828,20 @@ async function openAthCheck(){
   _athCheckResults = [];
   document.getElementById("athCorrectBtn").style.display = "none";
 
-  // Stocks laden für Fortschrittsanzeige
+  // Depot-Stocks + alle Watchlist-Stocks laden
   const sr = await fetch(`${API}/stocks?depot=${activeDepot.id}`);
-  const stocks = await sr.json();
+  const depotStocks = await sr.json();
+  let allStocks = depotStocks.map(s => ({...s, _source: "Bestand"}));
+  for(const wl of (activeDepot.watchlists||[])){
+    try {
+      const wr = await fetch(`${API}/watchlist/${activeDepot.id}/${wl.id}/stocks`);
+      const wls = await wr.json();
+      allStocks = allStocks.concat(wls.map(s => ({...s, _source: `📋 ${wl.name}`})));
+    } catch(e){}
+  }
+  // Duplikate entfernen (gleicher Ticker mehrfach)
+  const seen = new Set();
+  const stocks = allStocks.filter(s => { if(seen.has(s.ticker)) return false; seen.add(s.ticker); return true; });
   const total = stocks.length;
 
   const el = document.getElementById("athCheckContent");
@@ -1873,6 +1884,7 @@ async function openAthCheck(){
             _athCheckResults.push({
               ticker:     s.ticker,
               name:       s.name,
+              source:     s._source || "Bestand",
               stored_ath: s.ath_eur,
               yahoo_ath:  d.yahoo_ath,
               diff_pct:   Math.round(diffPct * 1000) / 10,
@@ -1926,6 +1938,7 @@ function renderAthCheckResults(){
       <div style="font-weight:600;font-size:13px;margin-bottom:6px">
         ${s.name}
         <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px">${s.ticker}</span>
+        ${s.source && s.source !== "Bestand" ? `<span style="font-size:10px;color:var(--accent);margin-left:6px">${s.source}</span>` : ""}
       </div>
       <div style="display:flex;gap:16px;font-size:12px;margin-bottom:8px;flex-wrap:wrap">
         <span>Gespeichert: <b>${s.stored_ath.toFixed(2)} EUR</b></span>
@@ -2437,8 +2450,11 @@ function openNewDepotModal(){
 }
 async function createDepot(){
   const name=document.getElementById("newDepotName").value.trim(); if(!name) return;
-  const r=await fetch(`${API}/depots`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+  const body={name};
+  if(activeUser && activeUser.id) body.user_id=activeUser.id;
+  const r=await fetch(`${API}/depots`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const d=await r.json(); if(!r.ok){toast("Fehler: "+d.error,false);return;}
+  if(activeUser && activeUser.id){ if(!activeUser.depots) activeUser.depots=[]; activeUser.depots.push(d.id); }
   closeModal("newDepotModal"); activeDepot=d; localStorage.setItem("activeDepot",d.id);
   toast(`Depot "${name}" erstellt`); loadDepots();
 }
@@ -2623,17 +2639,19 @@ async function createWatchlist(){
   switchWatchlist(wl);
 }
 
-function openWlSettings(wl){
+let editingWlDepotId = null;
+function openWlSettings(wl, depotId){
   editingWl = wl;
+  editingWlDepotId = depotId || (activeDepot?.id);
   document.getElementById("editWlName").value = wl.name;
   openModal("wlSettingsModal");
   setTimeout(()=>document.getElementById("editWlName").focus(), 100);
 }
 
 async function saveWlSettings(){
-  if(!editingWl) return;
+  if(!editingWl || !editingWlDepotId) return;
   const name = document.getElementById("editWlName").value.trim(); if(!name) return;
-  const r = await fetch(`${API}/watchlists/${editingWl.id}`, {method:"PUT",
+  const r = await fetch(`${API}/depots/${editingWlDepotId}/watchlists/${editingWl.id}`, {method:"PUT",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("wlSettingsModal"); toast("Watchlist gespeichert");
@@ -2642,9 +2660,9 @@ async function saveWlSettings(){
 }
 
 async function deleteCurrentWl(){
-  if(!editingWl) return;
+  if(!editingWl || !editingWlDepotId) return;
   if(!confirm(`Watchlist "${editingWl.name}" löschen?`)) return;
-  await fetch(`${API}/watchlists/${editingWl.id}`, {method:"DELETE"});
+  await fetch(`${API}/depots/${editingWlDepotId}/watchlists/${editingWl.id}`, {method:"DELETE"});
   closeModal("wlSettingsModal"); toast("Watchlist gelöscht");
   if(activeView.id === editingWl.id){
     activeDepot = depotsCache[0] || null;
@@ -2652,6 +2670,7 @@ async function deleteCurrentWl(){
   }
   loadDepots();
 }
+
 
 // ── Settings ──────────────────────────────────────────────────────
 let _tradingDays = [0,1,2,3,4];
@@ -3279,13 +3298,6 @@ async function editUser(userId){
       <input class="form-input" id="editUserName" value="${user.name}" style="margin-bottom:8px">
       <input class="form-input" id="editUserPin" placeholder="Neuer PIN (leer = unverändert)" maxlength="4" inputmode="numeric" style="margin-bottom:12px">
 
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Depots:</div>
-      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">
-        ${allDepots.map(d=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-          <input type="checkbox" class="edit-user-depot" value="${d.id}" ${user.depots?.includes(d.id)?"checked":""}> ${d.name}
-        </label>`).join("")}
-      </div>
-
       <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
       <div style="font-size:12px;font-weight:600;margin-bottom:4px">Apprise-URLs</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
@@ -3339,10 +3351,9 @@ async function editUser(userId){
 async function saveEditUser(userId){
   const name    = document.getElementById("editUserName")?.value.trim();
   const pin     = document.getElementById("editUserPin")?.value.trim();
-  const depots  = [...document.querySelectorAll(".edit-user-depot:checked")].map(el=>el.value);
   const mention = document.getElementById("editUserMention")?.value.trim()||"";
   const confirm = document.getElementById("editUserConfirm")?.checked||false;
-  const body    = {name, depots, apprise_urls:userUrls, notification_mention:mention, notification_confirm:confirm};
+  const body    = {name, apprise_urls:userUrls, notification_mention:mention, notification_confirm:confirm};
   if(pin) body.pin = pin;
   await fetch(`${API}/users/${userId}`, {method:"PATCH",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
@@ -3370,7 +3381,12 @@ let _notifUserFilter = "all";
 
 async function openNotifModal(){
   const r = await fetch(`${API}/notifications`);
-  _notifItems = await r.json(); // Backend-Reihenfolge: älteste zuerst — wir drehen beim Rendern um
+  const raw = await r.json();
+  // Explizit nach Zeit sortieren: neueste zuerst
+  _notifItems = raw.sort((a,b) => {
+    const parse = s => { const [d,t]=s.split(' '); const [day,mo,yr]=d.split('.'); const [h,m,sec]=t.split(':'); return new Date(yr,mo-1,day,h,m,sec); };
+    return parse(b.time) - parse(a.time);
+  });
 
   // Filter-Reset: User-Filter default auf aktuellen User wenn Multi-User aktiv
   _notifTypeFilter = "all";
@@ -3421,7 +3437,7 @@ function _updateNotifFilterBtns(){
 
 function _renderNotifList(){
   const list = document.getElementById("notifList");
-  let items = [..._notifItems].reverse(); // Neueste zuerst
+  let items = [..._notifItems]; // Backend liefert bereits neueste zuerst (reversed)
 
   // Typ-Filter
   if(_notifTypeFilter === "alarm")
@@ -4351,7 +4367,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.12 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.15 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
