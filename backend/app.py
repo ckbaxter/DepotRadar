@@ -19,7 +19,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 USERS_FILE    = os.path.join(DATA_DIR, "users.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.4.3"
+VERSION           = "2.4.5"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -207,7 +207,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR\n"
                 f"Kursstand:       {stock.get('market_time', '—')}{link}")
-        send_apprise(title, body, urls or [], mention=mention)
+        send_apprise(title, body, urls or [], mention=mention, html_body=html_body, depot_id=depot_id)
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
         cleared = [lvl for lvl in [20, 30, 40, 50, 60] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
         if cleared:
@@ -219,7 +219,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                     f"[{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\n"
                     f"Benachrichtigung wurde gesendet.{skip_note}",
-                    success=True)
+                    success=True, depot_id=depot_id)
         return cb
     elif cb < lb:
         # Kurs hat sich erholt — alle pending flags löschen
@@ -230,7 +230,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                     f"↩ Bestätigung abgebrochen [{label}]: {stock['name']}",
                     f"Kurs hat sich erholt — ausstehende Level ({lvl_str}) wurden nicht bestätigt.\n"
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR",
-                    success=True)
+                    success=True, depot_id=depot_id)
         return cb
     # Ausstehende Flags für Level oberhalb des aktuellen cb bereinigen
     for lvl in [20, 30, 40, 50, 60]:
@@ -426,7 +426,7 @@ EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "pos
 def _is_email_url(u):
     return u.lower().startswith(EMAIL_PREFIXES)
 
-def send_apprise(title, body, urls, mention="", html_body=None):
+def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None):
     if not load_settings().get("notifications_enabled", True): return True
     if not urls: return False
     try:
@@ -898,8 +898,8 @@ def send_weekly_digests():
         if title:
             html_body = build_digest_html(dc, stocks, kw)
             add_log("digest", f"📊 Wochenbericht [{dc['name']}]",
-                    f"Gesendet an {len(urls)} URL(s).", success=True)
-            send_apprise(title, body, urls, mention=mention, html_body=html_body)
+                    f"Gesendet an {len(urls)} URL(s).", success=True, depot_id=dc['id'])
+            send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id'])
 
 
 def schedule_digest_job():
@@ -1297,7 +1297,7 @@ def parqet_sync(depot_id):
             break
     save_depots(depots)
     add_log("manual_refresh", f"Parqet Sync: {depot['name']}",
-            f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)}", True)
+            f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)}", True, depot_id=depot_id)
     return jsonify({"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches})
 
 @app.route("/api/depots/<depot_id>/parqet/apply-mismatch", methods=["POST"])
@@ -1473,7 +1473,7 @@ def ath_log(depot_id):
         body = f"{count} Abweichung(en) gefunden — " +                ", ".join(f"{r['name']}: {r['stored_ath']:.2f}→{r['yahoo_ath']:.2f} EUR" for r in items)
     else:
         body = "Alle ATH-Werte sind korrekt ✓"
-    add_log("manual_refresh", f"ATH-Prüfung: {depot.get('name', depot_id)}", body, True)
+    add_log("manual_refresh", f"ATH-Prüfung: {depot.get('name', depot_id)}", body, True, depot_id=depot_id)
     return jsonify({"ok": True})
 
 @app.route("/api/ath-check-single", methods=["GET"])
@@ -1575,7 +1575,16 @@ def create_depot():
         return jsonify({"error": "Name existiert bereits"}), 409
     did = gen_id(name); save_stocks(did, [])
     depot = {"id": did, "name": name, "apprise_urls": [], "watchlists": []}
-    depots.append(depot); save_depots(depots); return jsonify(depot), 201
+    depots.append(depot); save_depots(depots)
+    # Depot dem aktuellen User zuordnen
+    user_id = body.get("user_id")
+    if user_id:
+        users = load_users()
+        user  = next((u for u in users if u["id"] == user_id), None)
+        if user:
+            user.setdefault("depots", []).append(did)
+            save_users(users)
+    return jsonify(depot), 201
 
 @app.route("/api/depots/<depot_id>", methods=["PUT"])
 def update_depot(depot_id):
@@ -1698,7 +1707,7 @@ def api_refresh_stock(ticker):
                                    mention=u_ment, confirm=u_conf)
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
         save_stocks(did, stocks)
-        add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True)
+        add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True, depot_id=did)
         return jsonify(stocks[idx])
     except Exception as e: return jsonify({"error": str(e)}), 502
 
@@ -1731,7 +1740,7 @@ def change_ticker(ticker):
     save_stocks(did, stocks)
     depots = load_depots()
     depot  = next((d for d in depots if d["id"] == did), {})
-    add_log("manual_refresh", f"Ticker geändert: {old['name']} ({depot.get('name', did)})", f"{ticker} → {new_tick}", True)
+    add_log("manual_refresh", f"Ticker geändert: {old['name']} ({depot.get('name', did)})", f"{ticker} → {new_tick}", True, depot_id=did)
     return jsonify(stocks[idx])
 
 @app.route("/api/depots/<depot_id>/stocks/<ticker>", methods=["PATCH"])
