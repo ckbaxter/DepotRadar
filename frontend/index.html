@@ -3217,13 +3217,12 @@ async function openUserModal(isSetup=false){
     <div style="margin-bottom:16px">
       ${named.map(u => `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-          <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">${u.name.charAt(0).toUpperCase()}</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:${u.id===activeUser?.id?'var(--accent)':'var(--bg3)'};color:${u.id===activeUser?.id?'#fff':'var(--muted)'};display:flex;align-items:center;justify-content:center;font-weight:700;border:1px solid var(--border)">${u.name.charAt(0).toUpperCase()}</div>
           <div style="flex:1">
-            <div style="font-weight:600">${u.name}</div>
+            <div style="font-weight:600">${u.name}${u.id===activeUser?.id?' <span style="font-size:10px;color:var(--accent)">● Ich</span>':''}</div>
             <div style="font-size:11px;color:var(--muted)">${u.depots?.length || 0} Depot(s) · ${u.has_pin ? "PIN gesetzt" : "Kein PIN"}</div>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">✏️</button>
-          ${activeUser?.id !== u.id ? `<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteUser('${u.id}')">🗑</button>` : ""}
+          ${u.id===activeUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">✏️ Bearbeiten</button>` : ""}
         </div>`).join("")}
     </div>
     <button class="btn btn-primary btn-sm" onclick="addUserForm()" style="width:100%">+ Benutzer hinzufügen</button>
@@ -4367,7 +4366,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.15 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.16 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
