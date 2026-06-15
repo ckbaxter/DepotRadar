@@ -258,7 +258,7 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 
 /* Modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
-.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;position:relative}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
 .modal-title{font-size:16px;font-weight:600}
 .modal-body{padding:20px;overflow-y:auto;flex:1 1 auto}
@@ -438,11 +438,15 @@ select</style>
 
   <div class="table-wrap">
     <div class="table-header">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%">
         <span style="font-weight:600;font-size:15px" id="viewTitle">—</span>
         <span class="last-update" id="lastUpdate"></span>
         <span class="next-refresh" id="nextRefresh"></span>
         <span class="next-refresh" id="depotBudgetInfo" style="color:var(--green)"></span>
+        <div style="flex:1"></div>
+        <button id="addStockBtn" class="btn btn-primary btn-sm"
+                style="font-size:12px;padding:5px 10px;flex-shrink:0"
+                onclick="openAddModal()">+ Aktie hinzufügen</button>
       </div>
     </div>
     <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
@@ -959,7 +963,8 @@ select</style>
       <details class="help-section">
         <summary class="help-summary">🔔 Apprise Benachrichtigungen</summary>
         <div class="help-body">
-          Benachrichtigungen werden pro Depot konfiguriert — Tippen auf das ⚙-Icon im Depot-Tab.
+          Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.<br><br>
+          Ohne Multi-User können Apprise-URLs weiterhin direkt in den Depot-Einstellungen hinterlegt werden (⚙-Icon im Depot-Tab).<br><br>
           Eine Benachrichtigung kommt wenn eine Aktie die eingestellte ATH-Schwelle unterschreitet.
           Nachkauf-Kandidaten werden mit einem 🛒-Symbol hervorgehoben.<br><br>
           <b>Beispiel einer Benachrichtigung:</b>
@@ -994,7 +999,7 @@ http://depotradar.example.lan</div>
           <b>Login:</b><br>
           Jeder Benutzer kann einen optionalen 4-stelligen PIN schützen. Ohne PIN reicht ein Klick auf den Namen. Nach dem Login sieht man nur die eigenen Depots und Watchlists.<br><br>
           <b>Benutzer verwalten:</b><br>
-          Über den Benutzer-Chip oben im Header (nur sichtbar wenn mehrere Benutzer angelegt sind) öffnet sich die Benutzerverwaltung. Dort können Benutzer angelegt, bearbeitet und gelöscht werden — jeder Benutzer kann alle verwalten.<br><br>
+          Über den Benutzer-Chip oben rechts im Header öffnet sich die Benutzerverwaltung. Dort können eigene Einstellungen und PIN geändert sowie neue Benutzer angelegt werden.<br><br>
           <b>Benachrichtigungen:</b><br>
           Apprise-URLs und Benachrichtigungseinstellungen werden pro Benutzer hinterlegt (in der Benutzerverwaltung). Diese haben Vorrang über die depot-spezifischen Einstellungen.<br><br>
           <b>Verlauf:</b><br>
@@ -1477,20 +1482,11 @@ function openAddTabDropdown(e){
 // ── View Tabs (Bestand + Watchlists) ─────────────────────────────
 function renderViewTabs(){
   const bar = document.getElementById("viewBar");
-  if(!bar) return;
-  bar.innerHTML = "";
-  const spacer = document.createElement("div");
-  spacer.style.cssText = "flex:1 1 auto;min-width:8px";
-  bar.appendChild(spacer);
-  const addStockBtn = document.createElement("button");
-  addStockBtn.id = "addStockBtn";
-  addStockBtn.className = "btn btn-primary btn-sm";
-  addStockBtn.style.cssText = "font-size:12px;padding:5px 10px;flex-shrink:0";
-  addStockBtn.innerHTML = isWl() ? "+ Zur Watchlist hinzufügen" : "+ Aktie hinzufügen";
-  addStockBtn.addEventListener("click", openAddModal);
-  bar.appendChild(addStockBtn);
+  if(bar) bar.style.display = "none"; // leer seit Button in Titelzeile verschoben
   const banner = document.getElementById("wlBanner");
   if(banner) banner.style.display = isWl() ? "block" : "none";
+  const btn = document.getElementById("addStockBtn");
+  if(btn) btn.innerHTML = isWl() ? "+ Zur Watchlist hinzufügen" : "+ Aktie hinzufügen";
 }
 
 // ── Load stocks based on current view ───────────────────────────
@@ -1746,40 +1742,32 @@ function showClientIdInput(){
 }
 
 // ── Settings Modal Scroll ────────────────────────────────────────
-function initSettingsScrollBtn(){
-  const modal = document.querySelector('#settingsModal .modal');
-  const btn   = document.getElementById("settingsScrollBtn");
-  if(!modal || !btn) return;
+// ── Modal Scroll Buttons ──────────────────────────────────────────
+function initModalScrollBtn(modalId, btnId){
+  // Seit modal-body flex:1 hat, scrollt modal-body statt modal
+  const body = document.querySelector(`#${modalId} .modal-body`);
+  const btn  = document.getElementById(btnId);
+  if(!body || !btn) return;
   const check = () => {
-    const remaining = modal.scrollHeight - modal.scrollTop - modal.clientHeight;
+    const remaining = body.scrollHeight - body.scrollTop - body.clientHeight;
     btn.style.display = remaining > 40 ? "block" : "none";
   };
-  modal.addEventListener("scroll", check);
-  setTimeout(check, 100);
+  body.removeEventListener("scroll", check);
+  body.addEventListener("scroll", check);
+  setTimeout(check, 120);
 }
 
-function scrollSettingsModal(){
-  const modal = document.querySelector('#settingsModal .modal');
-  if(modal) modal.scrollBy({top: 200, behavior:"smooth"});
+function scrollModalBody(modalId){
+  const body = document.querySelector(`#${modalId} .modal-body`);
+  if(body) body.scrollBy({top: 220, behavior:"smooth"});
 }
 
-// ── Depot Modal Scroll ───────────────────────────────────────────
-function initDepotScrollBtn(){
-  const modal = document.querySelector('#depotSettingsModal .modal');
-  const btn   = document.getElementById("depotScrollBtn");
-  if(!modal || !btn) return;
-  const check = () => {
-    const remaining = modal.scrollHeight - modal.scrollTop - modal.clientHeight;
-    btn.style.display = remaining > 40 ? "block" : "none";
-  };
-  modal.addEventListener("scroll", check);
-  setTimeout(check, 100);
-}
-
-function scrollDepotModal(){
-  const modal = document.querySelector('#depotSettingsModal .modal');
-  if(modal) modal.scrollBy({top: 200, behavior:"smooth"});
-}
+function initSettingsScrollBtn(){ initModalScrollBtn("settingsModal",   "settingsScrollBtn"); }
+function initDepotScrollBtn()   { initModalScrollBtn("depotSettingsModal","depotScrollBtn"); }
+function initUserScrollBtn()    { initModalScrollBtn("userModal",         "userScrollBtn"); }
+function scrollSettingsModal()  { scrollModalBody("settingsModal"); }
+function scrollDepotModal()     { scrollModalBody("depotSettingsModal"); }
+function scrollUserModal()      { scrollModalBody("userModal"); }
 
 // ── Hilfe-Modal ───────────────────────────────────────────────────
 function openHelpModal(){
@@ -3230,6 +3218,7 @@ async function openUserModal(isSetup=false){
 
   document.getElementById("userModal").style.display = "flex";
   if(isSetup) renderAddUserForm(true);
+  setTimeout(initUserScrollBtn, 150);
 }
 
 async function renderAddUserForm(isFirst=false){
@@ -3345,6 +3334,7 @@ async function editUser(userId){
     </div>`;
 
   renderUserUrlList();
+  setTimeout(initUserScrollBtn, 150);
 }
 
 async function saveEditUser(userId){
@@ -4366,7 +4356,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.16 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.21 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
@@ -4417,6 +4407,13 @@ setInterval(loadSchedulerStatus,30000);
       <button class="close-btn" onclick="closeModal('userModal')">&#215;</button>
     </div>
     <div class="modal-body" id="userModalBody"></div>
+    <button id="userScrollBtn" onclick="scrollUserModal()"
+            style="display:none;position:absolute;right:12px;bottom:70px;
+                   width:36px;height:36px;border-radius:50%;
+                   background:var(--accent);color:#fff;border:none;
+                   cursor:pointer;font-size:18px;line-height:1;
+                   box-shadow:0 2px 8px rgba(78,124,246,.4);
+                   z-index:10;transition:opacity .2s">↓</button>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('userModal')">Schließen</button>
       <button class="btn btn-ghost" style="color:var(--red)" onclick="logoutUser()">Abmelden</button>
