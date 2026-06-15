@@ -18,7 +18,7 @@ SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.4.1"
+VERSION           = "2.3.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -590,10 +590,9 @@ def trading_window_check():
     t = s["trading"]; days = t.get("days", [0,1,2,3,4])
     sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
     eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
-    end_mins = eh * 60 + em
+    now_mins = now.hour * 60 + now.minute
+    start_mins = sh * 60 + sm; end_mins = eh * 60 + em
     if now.weekday() not in days or now_mins < start_mins or now_mins > end_mins: return
-    if get_today_holiday(s["timezone"]):
-        log.debug("Markt-Feiertag heute — kein automatischer Refresh"); return
     today = now.date()
     if now.hour == sh and now.minute == sm and _start_of_day_done != today:
         _start_of_day_done = today; _last_refresh = now.replace(second=0, microsecond=0); s["next_refresh_ts"] = (_last_refresh + timedelta(seconds=interval)).timestamp(); save_settings(s); cleanup_old_logs(); refresh_all_depots("auto"); return
@@ -637,43 +636,6 @@ def get_next_run_info():
             elif i > 0:
                 return tz.localize(datetime(check.year, check.month, check.day, sh, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
     return "unbekannt"
-
-# ── Markt-Feiertage ───────────────────────────────────────────────
-# Format: (YYYY-MM-DD, Anzeigename, Börsen)
-MARKET_HOLIDAYS = [
-    # 2025 NYSE
-    ("2025-01-01","Neujahr","NYSE"), ("2025-01-20","Martin Luther King Jr. Day","NYSE"),
-    ("2025-02-17","Presidents' Day","NYSE"), ("2025-04-18","Karfreitag","NYSE/XETRA"),
-    ("2025-04-21","Ostermontag","XETRA"), ("2025-05-01","Tag der Arbeit","XETRA"),
-    ("2025-05-26","Memorial Day","NYSE"), ("2025-06-19","Juneteenth","NYSE"),
-    ("2025-07-04","Independence Day","NYSE"), ("2025-09-01","Labor Day","NYSE"),
-    ("2025-11-27","Thanksgiving","NYSE"), ("2025-12-24","Heiligabend","XETRA"),
-    ("2025-12-25","1. Weihnachtstag","NYSE/XETRA"), ("2025-12-26","2. Weihnachtstag","XETRA"),
-    # 2026 NYSE + XETRA
-    ("2026-01-01","Neujahr","NYSE/XETRA"), ("2026-01-19","Martin Luther King Jr. Day","NYSE"),
-    ("2026-02-16","Presidents' Day","NYSE"), ("2026-04-03","Karfreitag","NYSE/XETRA"),
-    ("2026-04-06","Ostermontag","XETRA"), ("2026-05-01","Tag der Arbeit","XETRA"),
-    ("2026-05-25","Memorial Day","NYSE"), ("2026-06-19","Juneteenth","NYSE"),
-    ("2026-07-03","Independence Day (beobachtet)","NYSE"), ("2026-09-07","Labor Day","NYSE"),
-    ("2026-11-26","Thanksgiving","NYSE"), ("2026-12-24","Heiligabend","XETRA"),
-    ("2026-12-25","1. Weihnachtstag","NYSE/XETRA"), ("2026-12-26","2. Weihnachtstag","XETRA"),
-    # 2027 NYSE + XETRA
-    ("2027-01-01","Neujahr","NYSE/XETRA"), ("2027-01-18","Martin Luther King Jr. Day","NYSE"),
-    ("2027-02-15","Presidents' Day","NYSE"), ("2027-03-26","Karfreitag","NYSE/XETRA"),
-    ("2027-03-29","Ostermontag","XETRA"), ("2027-05-01","Tag der Arbeit","XETRA"),
-    ("2027-05-31","Memorial Day","NYSE"), ("2027-06-19","Juneteenth","NYSE"),
-    ("2027-07-05","Independence Day (beobachtet)","NYSE"), ("2027-09-06","Labor Day","NYSE"),
-    ("2027-11-25","Thanksgiving","NYSE"), ("2027-12-24","Heiligabend","XETRA"),
-    ("2027-12-27","1. Weihnachtstag (beobachtet)","NYSE/XETRA"), ("2027-12-28","2. Weihnachtstag","XETRA"),
-]
-_HOLIDAY_LOOKUP = {h[0]: (h[1], h[2]) for h in MARKET_HOLIDAYS}
-
-def get_today_holiday(tz_name="Europe/Berlin"):
-    today = datetime.now(pytz.timezone(tz_name)).strftime("%Y-%m-%d")
-    if today in _HOLIDAY_LOOKUP:
-        name, exchanges = _HOLIDAY_LOOKUP[today]
-        return {"date": today, "name": name, "exchanges": exchanges}
-    return None
 
 def build_digest_body(depot, stocks):
     """Baut den Digest-Text für ein Depot."""
@@ -1951,12 +1913,7 @@ def test_notification():
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    s        = load_settings()
-    holiday  = get_today_holiday(s.get("timezone", "Europe/Berlin"))
-    return jsonify({"status": "ok", "version": VERSION,
-                    "time": datetime.now().isoformat(),
-                    "next_refresh": get_next_run_info(),
-                    "holiday_today": holiday})
+    return jsonify({"status": "ok", "version": VERSION, "time": datetime.now().isoformat(), "next_refresh": get_next_run_info()})
 
 if __name__ == "__main__":
     migrate_if_needed(); start_scheduler()
