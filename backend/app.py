@@ -19,7 +19,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 USERS_FILE    = os.path.join(DATA_DIR, "users.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.4.5"
+VERSION           = "2.4.9"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -158,6 +158,47 @@ def gen_id(name):
     return f"{re.sub(r'[^a-z0-9]', '_', name.lower())[:20].strip('_')}_{int(time_mod.time())}"
 
 # ── Migration ─────────────────────────────────────────────────────
+def reset_pin_from_env():
+    """Setzt den PIN eines Users zurück wenn RESET_PIN_USER gesetzt ist."""
+    reset_name = os.environ.get("RESET_PIN_USER", "").strip()
+    if not reset_name: return
+    users = load_users()
+    for u in users:
+        if u.get("name", "").lower() == reset_name.lower():
+            u["pin_hash"] = None
+            save_users(users)
+            log.info(f"PIN für User '{u['name']}' via RESET_PIN_USER zurückgesetzt")
+            return
+    log.warning(f"RESET_PIN_USER: User '{reset_name}' nicht gefunden")
+
+def delete_user_from_env():
+    """Löscht einen User (und seine exklusiven Depots) wenn DELETE_USER gesetzt ist."""
+    del_name = os.environ.get("DELETE_USER", "").strip()
+    if not del_name: return
+    users   = load_users()
+    target  = next((u for u in users if u.get("name","").lower() == del_name.lower()), None)
+    if not target:
+        log.warning(f"DELETE_USER: User '{del_name}' nicht gefunden"); return
+    target_depots = set(target.get("depots", []))
+    remaining_users = [u for u in users if u["id"] != target["id"]]
+    # Depots die anderen Usern gehören — nicht löschen
+    shared = {did for u in remaining_users for did in u.get("depots", [])}
+    exclusive = target_depots - shared
+    # Exklusive Depots löschen
+    depots = load_depots()
+    for did in exclusive:
+        depot = next((d for d in depots if d["id"] == did), None)
+        if not depot: continue
+        for f in [depot_file(did)] + [watchlist_file(did, wl["id"]) for wl in depot.get("watchlists", [])]:
+            if os.path.exists(f): os.remove(f)
+        log.info(f"Depot '{depot.get('name', did)}' gelöscht (war exklusiv für '{target['name']}')")
+    save_depots([d for d in depots if d["id"] not in exclusive])
+    if not remaining_users:
+        log.error("DELETE_USER: Abgebrochen — würde alle Benutzer löschen. Mindestens ein Benutzer muss verbleiben.")
+        return
+    save_users(remaining_users)
+    log.info(f"User '{target['name']}' via DELETE_USER gelöscht ({len(exclusive)} Depot(s) entfernt)")
+
 def migrate_if_needed():
     """Stellt sicher dass splits.json existiert. Alle Datenmigration bereits abgeschlossen."""
     if not os.path.exists(SPLITS_FILE):
@@ -1617,7 +1658,15 @@ def delete_depot(depot_id):
     if not depot: return jsonify({"error": "Nicht gefunden"}), 404
     for f in [depot_file(depot_id)] + [watchlist_file(depot_id, wl["id"]) for wl in depot.get("watchlists", [])]:
         if os.path.exists(f): os.remove(f)
-    save_depots([d for d in depots if d["id"] != depot_id]); return jsonify({"ok": True})
+    save_depots([d for d in depots if d["id"] != depot_id])
+    # Aus users.json entfernen
+    users = load_users()
+    changed = False
+    for u in users:
+        if depot_id in u.get("depots", []):
+            u["depots"].remove(depot_id); changed = True
+    if changed: save_users(users)
+    return jsonify({"ok": True})
 
 # ── Watchlist CRUD ────────────────────────────────────────────────
 @app.route("/api/depots/<depot_id>/watchlists", methods=["POST"])
@@ -1999,8 +2048,11 @@ def api_update_user(user_id):
 
 @app.route("/api/users/<user_id>", methods=["DELETE"])
 def api_delete_user(user_id):
-    users = [u for u in load_users() if u["id"] != user_id]
-    save_users(users)
+    users = load_users()
+    remaining = [u for u in users if u["id"] != user_id]
+    if not remaining:
+        return jsonify({"error": "Letzten Benutzer kann nicht löschen"}), 400
+    save_users(remaining)
     return jsonify({"ok": True})
 
 @app.route("/api/users/<user_id>/verify-pin", methods=["POST"])
@@ -2017,5 +2069,5 @@ def health():
     return jsonify({"status": "ok", "version": VERSION, "time": datetime.now().isoformat(), "next_refresh": get_next_run_info()})
 
 if __name__ == "__main__":
-    migrate_if_needed(); start_scheduler()
+    reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False)
