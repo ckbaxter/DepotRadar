@@ -1,4 +1,4 @@
-import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, shutil
+import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, shutil, uuid as _uuid
 from datetime import datetime, timedelta
 from urllib.parse import quote as urlquote
 
@@ -16,9 +16,10 @@ DEPOTS_FILE   = os.path.join(DATA_DIR, "depots.json")
 NOTIF_FILE    = os.path.join(DATA_DIR, "notifications.json")
 SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+USERS_FILE    = os.path.join(DATA_DIR, "users.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.3.0"
+VERSION           = "2.4.3"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -77,6 +78,25 @@ def load_depots():        return _load_json(DEPOTS_FILE, [])
 def save_depots(d):       _save_json(DEPOTS_FILE, d)
 def load_notifications(): return _load_json(NOTIF_FILE, [])
 
+# ── User helpers ──────────────────────────────────────────────────
+def hash_pin(pin):
+    if not pin: return None
+    return hashlib.sha256(str(pin).encode()).hexdigest()
+
+def load_users():  return _load_json(USERS_FILE, [])
+def save_users(u): _save_json(USERS_FILE, u)
+
+def get_depot_user(depot_id):
+    for u in load_users():
+        if depot_id in u.get("depots", []):
+            return u
+    return None
+
+def users_active():
+    users = load_users()
+    if not users: return False
+    return any(u.get("name") for u in users)
+
 def load_settings():
     """Einstellungen mit Priorität: settings.json > _CFG_DEF"""
     s = {
@@ -110,10 +130,17 @@ def save_settings(s):     _save_json(SETTINGS_FILE, s)
 
 def save_notifications(n): _save_json(NOTIF_FILE, n[-100:])
 
-def add_log(etype, title, body, success=True):
+def add_log(etype, title, body, success=True, depot_id=None):
     n = load_notifications()
-    n.append({"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-              "type": etype, "title": title, "body": body, "success": success})
+    entry = {"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+             "type": etype, "title": title, "body": body, "success": success}
+    if depot_id:
+        entry["depot_id"] = depot_id
+        user = get_depot_user(depot_id)
+        if user:
+            entry["user_id"]   = user["id"]
+            entry["user_name"] = user.get("name", "")
+    n.append(entry)
     save_notifications(n)
 
 def get_depot(depot_id):
@@ -140,7 +167,7 @@ def migrate_if_needed():
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
-def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False):
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
@@ -157,7 +184,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
             add_log("pending_notify",
                     f"[{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\nBest\u00e4tigung beim n\u00e4chsten Refresh erwartet.",
-                    success=True)
+                    success=True, depot_id=depot_id)
             return lb  # last_notified_block noch nicht erhöhen
         lp         = round(new_ath * (1 - cb / 100), 2)
         link       = f"\n\n{APP_URL}" if APP_URL else ""
@@ -416,11 +443,11 @@ def send_apprise(title, body, urls, mention="", html_body=None):
             else:
                 if not ap.notify(title=title, body=msg):
                     ok = False
-        add_log("alert", title, body, ok)
+        add_log("alert", title, body, ok, depot_id=depot_id)
         return ok
     except Exception as e:
         log.error(f"Apprise: {e}")
-        add_log("alert", title, body, False)
+        add_log("alert", title, body, False, depot_id=depot_id)
         return False
 
 # ── Stock helpers ─────────────────────────────────────────────────
@@ -467,14 +494,14 @@ def _fetch_prices(stocks):
             err_list.append(f"{s['name']}: {e}")
     return stocks, ok_list, err_list
 
-def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="", confirm=False):
+def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="", confirm=False, depot_id=None):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
     for i, s in enumerate(stocks):
         try:
             is_nk   = s["ticker"] in nachkauf_set
             new_blk = check_and_notify(
                 s, s["current_eur"], s["ath_eur"],
-                label, urls, buy_budget, is_nk, mention, confirm=confirm
+                label, urls, buy_budget, is_nk, mention, confirm=confirm, depot_id=depot_id
             )
             stocks[i]["last_notified_block"] = new_blk
         except Exception as e:
@@ -483,7 +510,10 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="
 
 def _refresh_depot(depot, trigger="auto"):
     did       = depot["id"]; dname = depot["name"]
-    urls      = depot.get("apprise_urls", [])
+    user      = get_depot_user(did)
+    urls      = user["apprise_urls"]           if user and user.get("apprise_urls")                        else depot.get("apprise_urls", [])
+    mention   = user["notification_mention"]   if user and user.get("notification_mention") is not None   else depot.get("notification_mention", "")
+    confirm   = user["notification_confirm"]   if user and user.get("notification_confirm") is not None   else depot.get("notification_confirm", False)
     budget    = depot.get("buy_budget") or None
     raw_t = depot.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else 30
 
@@ -503,12 +533,12 @@ def _refresh_depot(depot, trigger="auto"):
                        for wl_id, (_, wls, _, _) in wl_data.items()}
 
     # ── Phase 3: Benachrichtigungen + Speichern ───────────────────
-    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, depot.get("notification_mention",""), depot.get("notification_confirm", False))
+    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, mention, confirm, depot_id=did)
     save_stocks(did, stocks)
 
     for wl_id, (wl, wls, _, _) in wl_data.items():
         wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
-                                  urls, budget, wl_nachkauf[wl_id], depot.get("notification_mention",""), depot.get("notification_confirm", False))
+                                  urls, budget, wl_nachkauf[wl_id], mention, confirm, depot_id=did)
         save_wl_stocks(did, wl_id, wls)
 
     return ok, err
@@ -1424,11 +1454,11 @@ def ath_check(depot_id):
                 f"ATH-Prüfung: {depot.get('name', depot_id)}",
                 f"{len(results)} Abweichung(en) gefunden — " +
                 ", ".join(f"{r['name']}: {r['stored_ath']:.2f}→{r['yahoo_ath']:.2f} EUR ({r['direction']})" for r in results),
-                True)
+                True, depot_id=depot_id)
     else:
         add_log("manual_refresh",
                 f"ATH-Prüfung: {depot.get('name', depot_id)}",
-                "Alle ATH-Werte sind korrekt ✓", True)
+                "Alle ATH-Werte sind korrekt ✓", True, depot_id=depot_id)
     return jsonify(results)
 
 @app.route("/api/depots/<depot_id>/ath-log", methods=["POST"])
@@ -1481,7 +1511,7 @@ def ath_correct(depot_id):
         add_log("manual_refresh",
                 f"ATH-Korrektur: {depot.get('name', depot_id)}",
                 f"{len(updated)} Wert(e) korrigiert — " + ", ".join(details),
-                True)
+                True, depot_id=depot_id)
     return jsonify({"updated": updated})
 
 # ── Splits CRUD ──────────────────────────────────────────────────
@@ -1659,10 +1689,13 @@ def api_refresh_stock(ticker):
     try:
         data    = fetch_stock_data(ticker); s = stocks[idx]
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
+        user    = get_depot_user(did)
+        u_urls  = user["apprise_urls"]          if user and user.get("apprise_urls")                      else depot.get("apprise_urls", [])
+        u_ment  = user["notification_mention"]  if user and user.get("notification_mention") is not None  else depot.get("notification_mention", "")
+        u_conf  = user["notification_confirm"]  if user and user.get("notification_confirm") is not None  else depot.get("notification_confirm", False)
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Bestand: {depot['name']}", depot.get("apprise_urls", []),
-                                   mention=depot.get("notification_mention",""),
-                                   confirm=depot.get("notification_confirm", False))
+                                   f"Bestand: {depot['name']}", u_urls,
+                                   mention=u_ment, confirm=u_conf)
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
         save_stocks(did, stocks)
         add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True)
@@ -1677,7 +1710,7 @@ def api_refresh_all():
         if depot:
             ok, err = _refresh_depot(depot, "manual")
             add_log("manual_refresh", f"Refresh: {depot['name']}",
-                    f"OK: {len(ok)} Fehler: {len(err)}", len(err) == 0)
+                    f"OK: {len(ok)} Fehler: {len(err)}", len(err) == 0, depot_id=did)
         return jsonify(load_stocks(did))
     refresh_all_depots("manual"); return jsonify({"ok": True})
 
@@ -1779,10 +1812,13 @@ def wl_refresh_stock(depot_id, wl_id, ticker):
     try:
         data    = fetch_stock_data(ticker); s = stocks[idx]
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
+        user    = get_depot_user(depot_id)
+        u_urls  = user["apprise_urls"]         if user and user.get("apprise_urls")                      else depot.get("apprise_urls", [])
+        u_ment  = user["notification_mention"] if user and user.get("notification_mention") is not None  else depot.get("notification_mention", "")
+        u_conf  = user["notification_confirm"] if user and user.get("notification_confirm") is not None  else depot.get("notification_confirm", False)
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Beobachtung: {wl_name}", depot.get("apprise_urls", []),
-                                   mention=depot.get("notification_mention",""),
-                                   confirm=depot.get("notification_confirm", False))
+                                   f"Beobachtung: {wl_name}", u_urls,
+                                   mention=u_ment, confirm=u_conf)
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
         save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stocks[idx])
     except Exception as e: return jsonify({"error": str(e)}), 502
@@ -1910,6 +1946,62 @@ def test_notification():
     txt     = f"Verbindung funktioniert!{link}"
     ok = send_apprise(msg, txt, urls, mention=mention)
     return jsonify({"ok": ok})
+
+# ── User API ──────────────────────────────────────────────────────
+@app.route("/api/users", methods=["GET"])
+def api_get_users():
+    users = load_users()
+    return jsonify([{**{k: v for k, v in u.items() if k != "pin_hash"},
+                     "has_pin": bool(u.get("pin_hash"))} for u in users])
+
+@app.route("/api/users", methods=["POST"])
+def api_create_user():
+    body = request.get_json() or {}
+    users = load_users()
+    new_user = {
+        "id":                    str(_uuid.uuid4())[:8],
+        "name":                  body.get("name", "").strip(),
+        "pin_hash":              hash_pin(body.get("pin")),
+        "is_default":            bool(body.get("is_default", False)),
+        "depots":                body.get("depots", []),
+        "apprise_urls":          body.get("apprise_urls", []),
+        "notification_mention":  body.get("notification_mention", ""),
+        "notification_confirm":  bool(body.get("notification_confirm", False)),
+    }
+    users.append(new_user); save_users(users)
+    return jsonify({**{k: v for k, v in new_user.items() if k != "pin_hash"},
+                    "has_pin": bool(new_user.get("pin_hash"))}), 201
+
+@app.route("/api/users/<user_id>", methods=["PATCH"])
+def api_update_user(user_id):
+    body  = request.get_json() or {}
+    users = load_users()
+    user  = next((u for u in users if u["id"] == user_id), None)
+    if not user: return jsonify({"error": "Nicht gefunden"}), 404
+    if "name"                 in body: user["name"]                = body["name"].strip()
+    if "pin"                  in body: user["pin_hash"]            = hash_pin(body["pin"])
+    if "depots"               in body: user["depots"]              = body["depots"]
+    if "apprise_urls"         in body: user["apprise_urls"]        = body["apprise_urls"]
+    if "notification_mention" in body: user["notification_mention"]= body["notification_mention"]
+    if "notification_confirm" in body: user["notification_confirm"]= bool(body["notification_confirm"])
+    save_users(users)
+    return jsonify({**{k: v for k, v in user.items() if k != "pin_hash"},
+                    "has_pin": bool(user.get("pin_hash"))})
+
+@app.route("/api/users/<user_id>", methods=["DELETE"])
+def api_delete_user(user_id):
+    users = [u for u in load_users() if u["id"] != user_id]
+    save_users(users)
+    return jsonify({"ok": True})
+
+@app.route("/api/users/<user_id>/verify-pin", methods=["POST"])
+def api_verify_pin(user_id):
+    body  = request.get_json() or {}
+    users = load_users()
+    user  = next((u for u in users if u["id"] == user_id), None)
+    if not user: return jsonify({"ok": False}), 404
+    if not user.get("pin_hash"): return jsonify({"ok": True})
+    return jsonify({"ok": hash_pin(str(body.get("pin", ""))) == user["pin_hash"]})
 
 @app.route("/api/health", methods=["GET"])
 def health():

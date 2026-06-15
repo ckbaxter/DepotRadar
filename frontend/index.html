@@ -163,6 +163,31 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .sn{font-weight:600}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
 .weight-wrap{display:flex;align-items:center;gap:6px;margin-top:3px}
+.snapshot-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+/* ── Multi-User ── */
+.user-overlay{position:fixed;inset:0;background:var(--bg);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px}
+.user-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;width:100%;max-width:400px;text-align:center}
+.user-card h2{margin:0 0 8px;font-size:20px}
+.user-card p{color:var(--muted);font-size:13px;margin:0 0 24px}
+.user-btn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.user-btn{padding:12px 8px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:14px;font-weight:600;color:var(--text);transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:6px}
+.user-btn:hover{border-color:var(--accent);color:var(--accent)}
+.user-btn .user-avatar{width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700}
+.pin-dots{display:flex;gap:8px;justify-content:center;margin:16px 0}
+.pin-dot{width:14px;height:14px;border-radius:50%;background:var(--border);transition:background .15s}
+.pin-dot.filled{background:var(--accent)}
+.pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:220px;margin:0 auto}
+.pin-key{padding:14px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);font-size:18px;font-weight:600;cursor:pointer;transition:all .15s;color:var(--text)}
+.pin-key:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.user-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);font-size:12px;color:var(--text);cursor:pointer;transition:all .15s}
+.user-chip:hover{border-color:var(--accent);color:var(--accent)}
+.snapshot-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;cursor:pointer;user-select:none;gap:8px}
+.snapshot-header-left{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.snapshot-period{display:flex;gap:4px;flex-wrap:wrap}
+.snapshot-period button{padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:11px;cursor:pointer;transition:all .15s}
+.snapshot-period button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.snapshot-body{padding:0 16px 14px}
+.snapshot-perf{font-size:12px;color:var(--muted);margin-bottom:8px}
 .weight-bg{flex:1;height:3px;background:rgba(100,116,139,.2);border-radius:2px;overflow:hidden}
 .weight-fill{height:3px;background:var(--accent);border-radius:2px;transition:width .3s}
 .weight-pct{font-size:10px;color:var(--muted);min-width:30px;text-align:right}align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:rgba(100,116,139,.12);border:1px solid rgba(100,116,139,.18);font-size:10px;color:var(--muted);font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
@@ -233,10 +258,10 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 
 /* Modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
-.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
 .modal-title{font-size:16px;font-weight:600}
-.modal-body{padding:20px}
+.modal-body{padding:20px;overflow-y:auto;flex:1 1 auto}
 .modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .close-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px;min-width:32px;min-height:32px}
 .close-btn:hover{color:var(--text)}
@@ -314,6 +339,7 @@ select</style>
   </div>
   <div class="topbar-right">
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Farbschema: Auto / Hell / Dunkel">A</button>
+    <span id="userChip" class="user-chip" onclick="openUserModal()" style="display:none" title="Benutzer & Einstellungen"></span>
     <button class="btn btn-ghost btn-sm" onclick="openNotifModal()">&#128236;<span class="btn-label"> Verlauf</span></button>
     <button class="btn btn-ghost btn-sm" onclick="openSettingsModal()">&#9881;<span class="btn-label"> Einstellungen</span></button>
     <button class="btn btn-ghost btn-sm" onclick="openHelpModal()" title="Hilfe" style="font-weight:700;font-size:15px;min-width:32px;margin-left:4px">?</button>
@@ -323,7 +349,7 @@ select</style>
 
 <!-- Depot tabs -->
 <div class="depot-bar" id="depotBar">
-  <button class="bar-add-btn" onclick="openNewDepotModal()" title="Neues Depot">+</button>
+  <button class="bar-add-btn" onclick="openAddTabDropdown(event)" title="Neues Depot / Neue Watchlist">+</button>
 </div>
 
 <!-- View tabs (Bestand + Watchlists) -->
@@ -383,6 +409,30 @@ select</style>
     </button>
     <div id="sectorOverview" style="display:none;padding:6px 16px 10px;display:none">
       <div id="sectorChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+  </div>
+
+  <!-- Portfolio-Verlauf -->
+  <div class="snapshot-section" id="snapshotSection" style="display:none">
+    <div class="snapshot-header" onclick="toggleSnapshotSection()">
+      <div class="snapshot-header-left">
+        <span id="snapshotToggleIcon">▶</span>
+        <span>📈 Portfolio-Verlauf</span>
+        <span id="snapshotPerf" style="font-size:11px;font-weight:400;color:var(--muted)"></span>
+      </div>
+      <div class="snapshot-period" onclick="event.stopPropagation()">
+        <button onclick="setSnapshotPeriod('1W')" id="sp-1W">1W</button>
+        <button onclick="setSnapshotPeriod('1M')" id="sp-1M">1M</button>
+        <button onclick="setSnapshotPeriod('3M')" id="sp-3M">3M</button>
+        <button onclick="setSnapshotPeriod('6M')" id="sp-6M">6M</button>
+        <button onclick="setSnapshotPeriod('1J')" id="sp-1J">1J</button>
+        <button onclick="setSnapshotPeriod('all')" id="sp-all" class="active">Alles</button>
+      </div>
+    </div>
+    <div id="snapshotBody" style="display:none">
+      <div class="snapshot-body">
+        <svg id="snapshotChart" width="100%" height="160" style="display:block"></svg>
+      </div>
     </div>
   </div>
 
@@ -541,44 +591,39 @@ select</style>
         </details>
       </div>
       <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 12px">
-      <div class="form-group">
-        <label class="form-label">Apprise-URLs (für dieses Depot)</label>
-        <div class="form-hint" style="margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
-        <div class="url-list" id="depotUrlList"></div>
-        <!-- Neue URL Eingabe mit inline Speichern -->
-        <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
-          <input class="form-input" id="newDepotUrlInput" placeholder="Neue Apprise-URL …"
-                 style="flex:1" oninput="toggleAddUrlBtn(this)"/>
-          <button class="btn btn-ghost btn-sm" id="addUrlBtn" onclick="addDepotUrl()"
-                  style="display:none;white-space:nowrap">+ Hinzufügen</button>
-        </div>
-        <!-- Mention Prefix -->
-        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <input class="form-input" id="depotMentionInput" placeholder="z.B. @everyone, @here"
-                 style="flex:1;max-width:220px;font-size:12px;font-family:monospace"
-                 title="Discord Mention — wird vor jede Benachrichtigung gestellt"/>
-          <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
-        </div>
-        <!-- Bestätigungs-Toggle -->
-        <div style="margin-top:12px">
-          <div style="display:flex;align-items:center;gap:10px">
-            <label class="toggle-switch">
-              <input type="checkbox" id="depotConfirmToggle" onchange="onDepotConfirmChange()"/>
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </label>
-            <span style="font-size:13px">Bestätigung beim nächsten Refresh</span>
+      <!-- Benachrichtigungen: user-aware -->
+      <div id="depotNotifSection">
+        <div class="form-group">
+          <label class="form-label">Apprise-URLs (für dieses Depot)</label>
+          <div class="form-hint" style="margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
+          <div class="url-list" id="depotUrlList"></div>
+          <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+            <input class="form-input" id="newDepotUrlInput" placeholder="Neue Apprise-URL …"
+                   style="flex:1" oninput="toggleAddUrlBtn(this)"/>
+            <button class="btn btn-ghost btn-sm" id="addUrlBtn" onclick="addDepotUrl()"
+                    style="display:none;white-space:nowrap">+ Hinzufügen</button>
           </div>
-          <details style="margin-top:8px">
-            <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
-              <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
-            </summary>
-            <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
-              Eine Aktie muss <b style="color:var(--text)">zwei aufeinanderfolgende Refreshes</b>
-              unter dem ATH-Level liegen bevor eine Benachrichtigung gesendet wird.
-              Vermeidet Fehlalarme bei kurzen Kursausreißern.
+          <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input class="form-input" id="depotMentionInput" placeholder="z.B. @everyone, @here"
+                   style="flex:1;max-width:220px;font-size:12px;font-family:monospace"
+                   title="Discord Mention — wird vor jede Benachrichtigung gestellt"/>
+            <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
+          </div>
+          <div style="margin-top:12px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <label class="toggle-switch">
+                <input type="checkbox" id="depotConfirmToggle" onchange="onDepotConfirmChange()"/>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+              <span style="font-size:13px">Bestätigung beim nächsten Refresh</span>
             </div>
-          </details>
+          </div>
         </div>
+      </div>
+      <div id="depotNotifUserHint" style="display:none;background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:12px">
+        🔔 Benachrichtigungen werden über die <b style="color:var(--text)">Benutzereinstellungen</b> konfiguriert.<br>
+        <span style="font-size:11px">Klicke oben rechts auf deinen Namen um sie zu bearbeiten.</span>
+      </div>
         <!-- Wöchentliche Zusammenfassung Toggle -->
         <div id="depotDigestRow" style="margin-top:12px;display:none">
           <div style="display:flex;align-items:center;gap:10px">
@@ -599,13 +644,12 @@ select</style>
             </div>
           </details>
         </div>
-        <!-- Test Button — nur aktiv wenn URLs vorhanden -->
-        <div style="margin-top:10px">
+        <!-- Test Button — versteckt wenn User-Benachrichtigungen aktiv -->
+        <div style="margin-top:10px" id="depotTestBtnWrap">
           <button class="btn btn-ghost btn-sm" id="depotTestBtn"
                   onclick="testDepotNotification()" disabled
                   style="opacity:0.4">🔔 Benachrichtigung testen</button>
         </div>
-      </div>
       <!-- Parqet Integration -->
       <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <div style="font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">
@@ -941,11 +985,28 @@ http://depotradar.example.lan</div>
         </div>
       </details>
 
+      <details class="help-section">
+        <summary class="help-summary">👤 Benutzer & Multi-User</summary>
+        <div class="help-body">
+          DepotRadar unterstützt mehrere Benutzerprofile — ideal wenn mehrere Personen die App gemeinsam nutzen.<br><br>
+          <b>Einrichtung:</b><br>
+          Beim ersten Start erscheint ein Setup-Screen. Wähle „Benutzer anlegen" um Profile einzurichten, oder „Ohne Benutzer starten" um die App wie gewohnt ohne Login zu nutzen.<br><br>
+          <b>Login:</b><br>
+          Jeder Benutzer kann einen optionalen 4-stelligen PIN schützen. Ohne PIN reicht ein Klick auf den Namen. Nach dem Login sieht man nur die eigenen Depots und Watchlists.<br><br>
+          <b>Benutzer verwalten:</b><br>
+          Über den Benutzer-Chip oben im Header (nur sichtbar wenn mehrere Benutzer angelegt sind) öffnet sich die Benutzerverwaltung. Dort können Benutzer angelegt, bearbeitet und gelöscht werden — jeder Benutzer kann alle verwalten.<br><br>
+          <b>Benachrichtigungen:</b><br>
+          Apprise-URLs und Benachrichtigungseinstellungen werden pro Benutzer hinterlegt (in der Benutzerverwaltung). Diese haben Vorrang über die depot-spezifischen Einstellungen.<br><br>
+          <b>Verlauf:</b><br>
+          Der Verlauf zeigt standardmäßig nur Einträge des eingeloggten Benutzers. Mit dem User-Filter kann auf alle Benutzer oder einen bestimmten Benutzer gewechselt werden. System-Einträge (Auto-Refresh etc.) erscheinen nur unter „Alle".<br><br>
+          <b>Rollback:</b><br>
+          Die Multi-User-Funktion kann jederzeit deaktiviert werden indem die Datei <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">data/users.json</code> gelöscht wird — alle Depots und Daten bleiben dabei unberührt.
+        </div>
+      </details>
+
     </div>
   </div>
 </div>
-
-<!-- Modal: Einstellungen -->
 <div class="overlay" id="settingsModal" style="display:none" onclick="closeIfOverlay(event,'settingsModal')">
   <div class="modal" onclick="event.stopPropagation()" style="position:relative">
     <div class="modal-header">
@@ -1144,15 +1205,20 @@ http://depotradar.example.lan</div>
       <span class="modal-title">&#128236; Verlauf</span>
       <button class="close-btn" onclick="closeModal('notifModal')">&#215;</button>
     </div>
-    <!-- Filter bar -->
-    <div style="padding:10px 16px 0;display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--border);padding-bottom:10px">
-      <div style="display:flex;gap:4px">
+    <!-- Filter bar: Ebene 1 = User, Ebene 2 = Typ -->
+    <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px">
+      <!-- Ebene 1: User-Filter (nur bei Multi-User) -->
+      <div id="notifUserFilters" style="display:none;flex-wrap:wrap;gap:4px">
+        <span style="font-size:11px;color:var(--muted);align-self:center;margin-right:2px">👤</span>
+      </div>
+      <!-- Ebene 2: Typ-Filter -->
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--muted);align-self:center;margin-right:2px">🔍</span>
         <button class="btn btn-ghost btn-sm notif-filter-btn active" id="nfAll"
                 onclick="setNotifTypeFilter('all')" style="font-size:12px">Alle</button>
         <button class="btn btn-ghost btn-sm notif-filter-btn" id="nfAlarm"
                 onclick="setNotifTypeFilter('alarm')" style="font-size:12px">🔔 Nur Alarme</button>
       </div>
-      <div id="notifDepotFilters" style="display:flex;gap:4px;flex-wrap:wrap"></div>
     </div>
     <div class="modal-body"><div id="notifList"></div></div>
   </div>
@@ -1252,12 +1318,14 @@ http://depotradar.example.lan</div>
 
 <script>
 const API = "/api";
-let depotsCache   = [];
-let activeDepot   = null;
-let activeView    = {type:"depot", id:null, name:"Bestand"}; // type: depot | watchlist
+let depotsCache      = [];
+let watchlistsCache  = [];
+let activeDepot      = null;
+let activeView       = {type:"depot", id:null, name:""}; // type: depot | watchlist
 let stocksCache   = [];
 let selectedCompany = null;
 let depotUrls     = [];
+let userUrls      = [];
 let editingDepot  = null;
 let editingWl     = null;
 let sortKey = "discount", sortDir = 1;
@@ -1291,156 +1359,178 @@ function toast(msg, ok=true){
 
 function isWl(){ return activeView.type==="watchlist"; }
 
-// ── Depot Tabs ────────────────────────────────────────────────────
+// ── Depot + Watchlist Tabs ────────────────────────────────────────
 async function loadDepots(){
-  const r=await fetch(`${API}/depots`); depotsCache=await r.json();
-  renderDepotTabs();
-  // Set active depot
-  if(!activeDepot && depotsCache.length>0){
-    const saved=depotsCache.find(d=>d.id===storedDepotId);
-    activeDepot=saved||depotsCache[0];
+  const r = await fetch(`${API}/depots`);
+  const allDepots = await r.json();
+  const allowedD = getUserDepotIds();
+  depotsCache = allowedD ? allDepots.filter(d => allowedD.includes(d.id)) : allDepots;
+  watchlistsCache = depotsCache.flatMap(d => (d.watchlists||[]).map(w => ({...w, depot_id: d.id})));
+
+  // Frisch aus localStorage lesen (nicht die page-load-Konstante storedView)
+  const savedDepotId = localStorage.getItem("activeDepot");
+  let savedView = null;
+  try { savedView = JSON.parse(localStorage.getItem("activeView")); } catch {}
+
+  if(!activeDepot && depotsCache.length > 0){
+    const saved = depotsCache.find(d => d.id === savedDepotId);
+    activeDepot = saved || depotsCache[0];
+    activeView  = {type:"depot", id:null, name:""};
   } else if(activeDepot){
-    activeDepot=depotsCache.find(d=>d.id===activeDepot.id)||depotsCache[0];
+    // Prüfen ob aktives Depot noch zum User gehört — sonst erstes Depot nehmen
+    activeDepot = depotsCache.find(d => d.id === activeDepot.id) || depotsCache[0];
+    activeView  = {type:"depot", id:null, name:""};
   }
-  // Restore or default view
-  if(storedView && activeDepot){
-    if(storedView.type==="depot"){ activeView={type:"depot",id:null,name:"Bestand"}; }
-    else {
-      const wl=(activeDepot.watchlists||[]).find(w=>w.id===storedView.id);
-      if(wl) activeView={type:"watchlist",id:wl.id,name:wl.name};
-    }
+  // Watchlist nur wiederherstellen wenn sie zum aktuellen User-Depot gehört
+  if(savedView && savedView.type === "watchlist" && activeDepot){
+    const wl = (activeDepot.watchlists||[]).find(w => w.id === savedView.id);
+    if(wl) activeView = {type:"watchlist", id:wl.id, name:wl.name};
   }
-  renderDepotTabs(); renderViewTabs(); loadCurrentStocks();
+  renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
+}
+
+function getUserWatchlistIds(){
+  if(!activeUser || activeUser.is_default || !activeUser.watchlists?.length) return null;
+  return activeUser.watchlists;
 }
 
 function renderDepotTabs(){
-  const bar=document.getElementById("depotBar");
-  const addBtn=bar.querySelector(".bar-add-btn");
-  bar.innerHTML="";
-  depotsCache.forEach(d=>{
-    const tab=document.createElement("div");
-    tab.className="depot-tab"+(activeDepot&&activeDepot.id===d.id?" active":"");
-    const dc=d;
-    tab.innerHTML=dc.name+'<span class="depot-tab-gear" title="Depot-Einstellungen">&#9881;</span>';
-    tab.querySelector(".depot-tab-gear").addEventListener("click",e=>{e.stopPropagation();openDepotSettings(dc);});
-    tab.addEventListener("click",()=>switchDepot(dc));
+  const bar = document.getElementById("depotBar");
+  const addBtn = bar.querySelector(".bar-add-btn");
+  bar.innerHTML = "";
+
+  // Depot-Tabs
+  depotsCache.forEach(dc => {
+    const tab = document.createElement("div");
+    tab.className = "depot-tab" + (activeDepot&&activeDepot.id===dc.id&&activeView.type==="depot" ? " active" : "");
+    tab.innerHTML = dc.name + '<span class="depot-tab-gear" title="Depot-Einstellungen">&#9881;</span>';
+    tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openDepotSettings(dc);});
+    tab.addEventListener("click", ()=>switchDepot(dc));
     bar.appendChild(tab);
   });
-  bar.appendChild(addBtn);
+
+  // Watchlist-Tabs (alle Depots)
+  depotsCache.forEach(dc => {
+    (dc.watchlists||[]).forEach(wl => {
+      const tab = document.createElement("div");
+      const isActive = activeView.type==="watchlist" && activeView.id===wl.id;
+      tab.className = "depot-tab" + (isActive ? " active" : "");
+      tab.style.color = isActive ? "" : "var(--muted)";
+      tab.innerHTML = '📋 ' + wl.name + '<span class="depot-tab-gear" title="Watchlist-Einstellungen">&#9881;</span>';
+      tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openWlSettings(wl);});
+      tab.addEventListener("click", ()=>{ activeDepot=dc; switchWatchlist(wl); });
+      bar.appendChild(tab);
+    });
+  });
+
+  if(addBtn) bar.appendChild(addBtn);
 }
 
 function switchDepot(depot){
-  activeDepot=depot; activeView={type:"depot",id:null,name:"Bestand"};
-  // Filter zurücksetzen beim Depot-Wechsel
-  _buyFilterActive = false; _summaryFilter = "all";
+  activeDepot=depot; activeView={type:"depot",id:null,name:""};
+  _buyFilterActive=false; _summaryFilter="all";
   clearStockSearch();
-  ["green","yellow","orange","red"].forEach(k => {
-    const el = document.getElementById("scard-"+k);
-    if(el) el.classList.remove("active");
+  ["green","yellow","orange","red"].forEach(k=>{
+    const el=document.getElementById("scard-"+k); if(el) el.classList.remove("active");
   });
-  const btn  = document.getElementById("buyFilterBtn");
-  const wrap = document.getElementById("thresholdWrap");
-  if(btn)  btn.classList.remove("active");
-  if(wrap) wrap.style.display = "none";
-  localStorage.setItem("activeDepot",depot.id);
-  localStorage.setItem("activeView",JSON.stringify(activeView));
+  const btn=document.getElementById("buyFilterBtn");
+  const wrap=document.getElementById("thresholdWrap");
+  if(btn) btn.classList.remove("active");
+  if(wrap) wrap.style.display="none";
+  localStorage.setItem("activeDepot", depot.id);
+  localStorage.setItem("activeView", JSON.stringify(activeView));
+  renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
+}
+
+function switchWatchlist(wl){
+  activeView={type:"watchlist", id:wl.id, name:wl.name};
+  _buyFilterActive=false; _summaryFilter="all";
+  clearStockSearch();
+  localStorage.setItem("activeView", JSON.stringify(activeView));
   renderDepotTabs(); renderViewTabs(); loadCurrentStocks();
 }
 
-// ── View Tabs (Bestand + Watchlists) ─────────────────────────────
-function renderViewTabs(){
-  const bar=document.getElementById("viewBar"); bar.innerHTML="";
-  if(!activeDepot) return;
 
-  // Bestand tab
-  const bestand=document.createElement("div");
-  bestand.className="view-tab"+(activeView.type==="depot"?" active":"");
-  bestand.textContent="Bestand";
-  bestand.addEventListener("click",()=>switchView({type:"depot",id:null,name:"Bestand"}));
-  bar.appendChild(bestand);
-
-  // Watchlist tabs
-  (activeDepot.watchlists||[]).forEach(wl=>{
-    const tab=document.createElement("div");
-    tab.className="view-tab wl"+(activeView.type==="watchlist"&&activeView.id===wl.id?" active":"");
-    const w=wl;
-    tab.innerHTML='&#128269; '+w.name+'<span class="view-tab-gear" title="Einstellungen">&#9881;</span>';
-    tab.querySelector(".view-tab-gear").addEventListener("click",e=>{e.stopPropagation();openWlSettings(w);});
-    tab.addEventListener("click",()=>switchView({type:"watchlist",id:w.id,name:w.name}));
-    bar.appendChild(tab);
+function openAddTabDropdown(e){
+  e.stopPropagation();
+  document.getElementById("addTabDrop")?.remove();
+  const drop = document.createElement("div");
+  drop.id = "addTabDrop";
+  const rect = e.currentTarget.getBoundingClientRect();
+  drop.style.cssText = `position:fixed;z-index:9998;background:var(--bg2);border:1px solid var(--border);
+    border-radius:8px;padding:6px;box-shadow:0 6px 20px rgba(0,0,0,.3);min-width:160px;
+    left:${rect.left}px;top:${rect.bottom+4}px`;
+  [["🏛 Neues Depot", openNewDepotModal], ["📋 Neue Watchlist", openNewWlModal]].forEach(([label, fn])=>{
+    const d = document.createElement("div");
+    d.textContent = label;
+    d.style.cssText = "padding:8px 12px;font-size:13px;cursor:pointer;border-radius:6px;color:var(--text)";
+    d.onmouseenter = ()=>d.style.background="var(--bg3)";
+    d.onmouseleave = ()=>d.style.background="";
+    d.onclick = ()=>{ drop.remove(); fn(); };
+    drop.appendChild(d);
   });
-
-  // + Neue Beobachtungsliste (direkt neben den Tabs)
-  const addBtn=document.createElement("button");
-  addBtn.className="bar-add-btn"; addBtn.title="Neue Beobachtungsliste"; addBtn.textContent="+";
-  addBtn.addEventListener("click", openNewWlModal); bar.appendChild(addBtn);
-
-  // Spacer pushes Aktie-hinzufügen to the far right
-  const spacer=document.createElement("div");
-  spacer.style.cssText="flex:1 1 auto;min-width:8px";
-  bar.appendChild(spacer);
-
-  // + Aktie hinzufügen (blau, ganz rechts)
-  const addStockBtn=document.createElement("button");
-  addStockBtn.id="addStockBtn";
-  addStockBtn.className="btn btn-primary btn-sm";
-  addStockBtn.style.cssText="font-size:12px;padding:5px 10px;flex-shrink:0";
-  addStockBtn.innerHTML="+ Aktie hinzufügen";
-  addStockBtn.addEventListener("click", openAddModal);
-  bar.appendChild(addStockBtn);
-
-  // Update add button label
-  document.getElementById("addModalTitle").textContent=isWl()?`Zu "${activeView.name}" hinzufügen`:`Zu "${activeDepot.name}" hinzufügen`;
-
-  // Watchlist banner
-  const banner=document.getElementById("wlBanner");
-  if(isWl()){
-    banner.style.display="block";
-    banner.innerHTML=`<div class="wl-banner" style="margin:12px 0 0">&#128269; Beobachtungsliste — Aktien können ins Depot verschoben werden</div>`;
-  } else { banner.style.display="none"; }
+  document.body.appendChild(drop);
+  setTimeout(()=>document.addEventListener("click", ()=>drop.remove(), {once:true}), 10);
 }
 
-function switchView(view){
-  activeView=view;
-  localStorage.setItem("activeView",JSON.stringify(view));
-  renderViewTabs(); loadCurrentStocks();
+
+// ── View Tabs (Bestand + Watchlists) ─────────────────────────────
+function renderViewTabs(){
+  const bar = document.getElementById("viewBar");
+  if(!bar) return;
+  bar.innerHTML = "";
+  const spacer = document.createElement("div");
+  spacer.style.cssText = "flex:1 1 auto;min-width:8px";
+  bar.appendChild(spacer);
+  const addStockBtn = document.createElement("button");
+  addStockBtn.id = "addStockBtn";
+  addStockBtn.className = "btn btn-primary btn-sm";
+  addStockBtn.style.cssText = "font-size:12px;padding:5px 10px;flex-shrink:0";
+  addStockBtn.innerHTML = isWl() ? "+ Zur Watchlist hinzufügen" : "+ Aktie hinzufügen";
+  addStockBtn.addEventListener("click", openAddModal);
+  bar.appendChild(addStockBtn);
+  const banner = document.getElementById("wlBanner");
+  if(banner) banner.style.display = isWl() ? "block" : "none";
 }
 
 // ── Load stocks based on current view ───────────────────────────
 async function loadCurrentStocks(){
-  if(!activeDepot) return;
-  // Nachkauf-Schwelle vom aktiven Depot laden
-  _buyThreshold = activeDepot.nachkauf_threshold ?? 30;
-  // ATH-Prüfen Button nur im Bestand anzeigen
+  const depot = isWl() ? null : activeDepot;
+  if(!isWl() && !activeDepot) return;
+  _buyThreshold = activeDepot?.nachkauf_threshold ?? 30;
   const athBtn = document.getElementById("athCheckBtn");
   if(athBtn) athBtn.style.display = isWl() ? "none" : "";
+  renderViewTabs();
   updateViewTitle();
   try {
     let stocks;
     if(isWl()){
-      const r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`);
-      stocks=await r.json();
+      const r = await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`);
+      stocks = await r.json();
     } else {
-      const r=await fetch(`${API}/stocks?depot=${activeDepot.id}`);
-      stocks=await r.json();
+      const r = await fetch(`${API}/stocks?depot=${activeDepot.id}`);
+      stocks = await r.json();
     }
     renderTable(stocks);
-    const times=stocks.filter(s=>s.updated).map(s=>s.updated);
-    if(times.length) document.getElementById("lastUpdate").textContent="Stand: "+times[times.length-1];
-  } catch(e){ console.error("loadCurrentStocks:", e); toast("Fehler beim Laden",false); }
+    const times = stocks.filter(s=>s.updated).map(s=>s.updated);
+    if(times.length) document.getElementById("lastUpdate").textContent = "Stand: "+times[times.length-1];
+  } catch(e){ toast("Fehler beim Laden", false); }
 }
 
+
 function updateViewTitle(){
-  const title=document.getElementById("viewTitle");
-  if(!activeDepot){ title.textContent="—"; return; }
-  if(isWl()) title.innerHTML=`${activeDepot.name} — &#128269; ${activeView.name}`;
-  else title.innerHTML=`${activeDepot.name} — Bestand`;
-  // Budget anzeigen
-  const budgetEl=document.getElementById("depotBudgetInfo");
+  const title = document.getElementById("viewTitle");
+  if(isWl()){
+    title.innerHTML = `📋 ${activeView.name}`;
+  } else if(activeDepot){
+    title.innerHTML = activeDepot.name;
+  } else {
+    title.textContent = "—"; return;
+  }
+  const budgetEl = document.getElementById("depotBudgetInfo");
   if(budgetEl){
-    budgetEl.textContent=activeDepot.buy_budget
-      ? `💰 Budget: ${activeDepot.buy_budget.toLocaleString("de-DE")} €`
-      : "";
+    budgetEl.textContent = activeDepot?.buy_budget
+      ? `💰 Budget: ${activeDepot.buy_budget.toLocaleString("de-DE")} €` : "";
   }
 }
 
@@ -2052,8 +2142,7 @@ function renderTable(stocks){
   document.getElementById("tBody").innerHTML=sorted.map(s=>{
     const d=disc(s),c=dcls(d);
     const nm=s.name.length>26?s.name.substring(0,25)+"…":s.name;
-    const wls=(activeDepot&&activeDepot.watchlists)||[];
-      const moveToWlBtn=wls.length>0?`<button class="icon-btn move" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="In Beobachtungsliste" style="font-size:11px">&#8594;&#128269;</button>`:"";
+    const moveToWlBtn=watchlistsCache.length>0?`<button class="icon-btn move" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="In Watchlist" style="font-size:11px">&#8594;&#128269;</button>`:"";
       const actions=wl
       ? `<button class="icon-btn" onclick="wlRefreshOne('${s.ticker}',this)" title="Aktualisieren">&#8635;</button>
          ${moveBtn(s.ticker)}
@@ -2103,8 +2192,7 @@ function renderTable(stocks){
         ${bought?kBadge:""}
       </div>`;
     }).join("");
-    const wls2=(activeDepot&&activeDepot.watchlists)||[];
-    const moveToWlBtn2=wls2.length>0?`<button class="icon-btn move btn-sm" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" >&#8594;&#128269;</button>`:"";
+    const moveToWlBtn2=watchlistsCache.length>0?`<button class="icon-btn move btn-sm" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" >&#8594;&#128269;</button>`:"";
     const cardActions=wl
       ? `<button class="icon-btn btn-sm" onclick="wlRefreshOne('${s.ticker}',this)">&#8635;</button>
          <button class="icon-btn move btn-sm" onclick="moveToDepot('${s.ticker}')">&#8594; Depot</button>
@@ -2203,14 +2291,48 @@ async function wlDeleteStock(ticker, name){
 }
 
 async function moveToDepot(ticker){
-  const stock=stocksCache.find(s=>s.ticker===ticker); if(!stock) return;
-  if(!confirm(`"${stock.name}" in den Bestand "${activeDepot.name}" verschieben?`)) return;
+  const stock = stocksCache.find(s=>s.ticker===ticker); if(!stock) return;
+  if(depotsCache.length === 1){
+    // Nur ein Depot — direkt verschieben
+    await _doMoveToDepot(ticker, depotsCache[0], stock.name);
+  } else {
+    // Mehrere Depots — Auswahl anzeigen
+    const choice = await showDepotPicker(`"${stock.name}" in welches Depot?`);
+    if(choice) await _doMoveToDepot(ticker, choice, stock.name);
+  }
+}
+
+async function _doMoveToDepot(ticker, depot, stockName){
   try {
-    const r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}/move`,{method:"POST"});
-    const d=await r.json();
+    const r = await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}/move`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({depot_id:depot.id})});
+    const d = await r.json();
     if(!r.ok) throw new Error(d.error);
-    toast(`${stock.name} ins Depot verschoben ✓`); loadCurrentStocks();
-  } catch(e){ toast("Fehler: "+e.message,false); }
+    toast(`${stockName} → ${depot.name} ✓`); loadCurrentStocks();
+  } catch(e){ toast("Fehler: "+e.message, false); }
+}
+
+function showDepotPicker(title){
+  return new Promise(resolve=>{
+    const existing = document.getElementById("depotPickerOverlay");
+    if(existing) existing.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "depotPickerOverlay";
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px";
+    overlay.innerHTML = `<div style="background:var(--bg2);border-radius:12px;padding:20px;min-width:240px;max-width:360px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">${title}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${depotsCache.map(d=>`<button class="btn btn-ghost" style="justify-content:flex-start" onclick="depotPickerResolve('${d.id}')">🏛 ${d.name}</button>`).join("")}
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="depotPickerResolve(null)">Abbrechen</button>
+    </div>`;
+    document.body.appendChild(overlay);
+    window.depotPickerResolve = (id)=>{
+      overlay.remove();
+      delete window.depotPickerResolve;
+      resolve(id ? depotsCache.find(d=>d.id===id) : null);
+    };
+  });
 }
 
 // ── Refresh all ───────────────────────────────────────────────────
@@ -2364,6 +2486,14 @@ function openDepotSettings(depot){
     const row = document.getElementById("depotDigestRow");
     if(row) row.style.display = (s.notifications_enabled && s.digest_enabled) ? "block" : "none";
   });
+  // Benachrichtigungssektion: bei eingeloggtem User ausblenden
+  const hasNamedUser = activeUser && activeUser.name;
+  const notifSection = document.getElementById("depotNotifSection");
+  const notifHint    = document.getElementById("depotNotifUserHint");
+  const testWrap     = document.getElementById("depotTestBtnWrap");
+  if(notifSection) notifSection.style.display = hasNamedUser ? "none" : "block";
+  if(notifHint)    notifHint.style.display    = hasNamedUser ? "block" : "none";
+  if(testWrap)     testWrap.style.display     = hasNamedUser ? "none"  : "block";
   renderDepotUrlList(); openModal("depotSettingsModal");
   setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
@@ -2372,9 +2502,27 @@ function renderDepotUrlList(){
   document.getElementById("depotUrlList").innerHTML=depotUrls.length===0
     ?'<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
     :depotUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeDepotUrl(${i})">&#215;</button></div>`).join("");
-  // Test-Button aktivieren wenn URLs vorhanden
   const testBtn = document.getElementById("depotTestBtn");
   if(testBtn){ testBtn.disabled = depotUrls.length === 0; testBtn.style.opacity = depotUrls.length ? "1" : "0.4"; }
+}
+
+function renderUserUrlList(){
+  const el = document.getElementById("userUrlList"); if(!el) return;
+  el.innerHTML = userUrls.length===0
+    ? '<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
+    : userUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeUserUrl(${i})">&#215;</button></div>`).join("");
+}
+function addUserUrl(){
+  const v=document.getElementById("newUserUrlInput").value.trim(); if(!v) return;
+  userUrls.push(v);
+  document.getElementById("newUserUrlInput").value="";
+  const btn=document.getElementById("addUserUrlBtn"); if(btn) btn.style.display="none";
+  renderUserUrlList();
+}
+function removeUserUrl(i){ userUrls.splice(i,1); renderUserUrlList(); }
+function toggleUserAddUrlBtn(input){
+  const btn=document.getElementById("addUserUrlBtn");
+  if(btn) btn.style.display=input.value.trim()?"block":"none";
 }
 
 function toggleAddUrlBtn(input){
@@ -2416,18 +2564,29 @@ async function testDepotNotification(){
   const d=await r.json(); toast(d.ok?"Test gesendet!":"Fehlgeschlagen",d.ok);
 }
 
+async function testUserNotification(){
+  if(!userUrls.length){toast("Keine URLs konfiguriert",false);return;}
+  const mention = document.getElementById("editUserMention")?.value.trim()||"";
+  const r = await fetch(`${API}/notifications/test`,{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({urls:userUrls, mention})});
+  const d = await r.json(); toast(d.ok?"Test gesendet!":"Fehlgeschlagen",d.ok);
+}
+
 // ── Move Bestand -> Watchlist ─────────────────────────────────────
 let movingTicker = null;
 function openMoveToWlModal(ticker, name){
   movingTicker = ticker;
-  document.getElementById("moveToWlText").textContent = `"${name}" in welche Beobachtungsliste verschieben?`;
+  document.getElementById("moveToWlText").textContent = `"${name}" in welche Watchlist verschieben?`;
   const list = document.getElementById("moveToWlList");
-  const wls = activeDepot ? (activeDepot.watchlists || []) : [];
-  list.innerHTML = wls.map(wl =>
-    `<button class="btn btn-ghost" style="justify-content:flex-start;gap:8px" onclick="confirmMoveToWl('${wl.id}','${wl.name.replace(/'/g,"\'")}')">
-      &#128269; ${wl.name}
+  list.innerHTML = watchlistsCache.map(wl =>
+    `<button class="btn btn-ghost" style="justify-content:flex-start;gap:8px"
+             onclick="confirmMoveToWl('${wl.id}','${wl.name.replace(/'/g,"\\'")}')">
+      📋 ${wl.name}
     </button>`
   ).join("");
+  if(!watchlistsCache.length)
+    list.innerHTML = '<div style="color:var(--muted);font-size:13px">Keine Watchlists vorhanden</div>';
   openModal("moveToWlModal");
 }
 async function confirmMoveToWl(wlId, wlName){
@@ -2444,45 +2603,53 @@ async function confirmMoveToWl(wlId, wlName){
   } catch(e){ toast("Fehler: "+e.message, false); }
 }
 
+
 // ── Watchlist management ──────────────────────────────────────────
 function openNewWlModal(){
   document.getElementById("newWlName").value=""; openModal("newWlModal");
   setTimeout(()=>document.getElementById("newWlName").focus(),100);
 }
 async function createWatchlist(){
-  if(!activeDepot) return;
-  const name=document.getElementById("newWlName").value.trim(); if(!name) return;
-  const r=await fetch(`${API}/depots/${activeDepot.id}/watchlists`,{method:"POST",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
-  const wl=await r.json(); if(!r.ok){toast("Fehler: "+wl.error,false);return;}
-  closeModal("newWlModal"); toast(`Beobachtungsliste "${name}" erstellt`);
+  if(!activeDepot){ toast("Bitte zuerst ein Depot auswählen", false); return; }
+  const name = document.getElementById("newWlName").value.trim(); if(!name) return;
+  const r = await fetch(`${API}/depots/${activeDepot.id}/watchlists`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+  const wl = await r.json(); if(!r.ok){toast("Fehler: "+wl.error,false);return;}
+  closeModal("newWlModal"); toast(`Watchlist "${name}" erstellt`);
   activeDepot.watchlists = (activeDepot.watchlists||[]);
   activeDepot.watchlists.push(wl);
-  // Lokale depotsCache aktualisieren damit renderViewTabs die neue WL findet
   const cachedDepot = depotsCache.find(d => d.id === activeDepot.id);
-  if(cachedDepot){ cachedDepot.watchlists = activeDepot.watchlists; }
-  switchView({type:"watchlist", id:wl.id, name:wl.name});
+  if(cachedDepot) cachedDepot.watchlists = activeDepot.watchlists;
+  switchWatchlist(wl);
 }
+
 function openWlSettings(wl){
-  editingWl=wl; document.getElementById("editWlName").value=wl.name;
-  openModal("wlSettingsModal"); setTimeout(()=>document.getElementById("editWlName").focus(),100);
+  editingWl = wl;
+  document.getElementById("editWlName").value = wl.name;
+  openModal("wlSettingsModal");
+  setTimeout(()=>document.getElementById("editWlName").focus(), 100);
 }
+
 async function saveWlSettings(){
-  if(!editingWl||!activeDepot) return;
-  const name=document.getElementById("editWlName").value.trim(); if(!name) return;
-  const r=await fetch(`${API}/depots/${activeDepot.id}/watchlists/${editingWl.id}`,{method:"PUT",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+  if(!editingWl) return;
+  const name = document.getElementById("editWlName").value.trim(); if(!name) return;
+  const r = await fetch(`${API}/watchlists/${editingWl.id}`, {method:"PUT",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
   if(!r.ok){toast("Fehler",false);return;}
-  closeModal("wlSettingsModal"); toast("Beobachtungsliste gespeichert");
-  if(activeView.id===editingWl.id){activeView.name=name;}
+  closeModal("wlSettingsModal"); toast("Watchlist gespeichert");
+  if(activeView.id === editingWl.id){ activeView.name = name; }
   loadDepots();
 }
+
 async function deleteCurrentWl(){
-  if(!editingWl||!activeDepot) return;
-  if(!confirm(`Beobachtungsliste "${editingWl.name}" löschen?`)) return;
-  await fetch(`${API}/depots/${activeDepot.id}/watchlists/${editingWl.id}`,{method:"DELETE"});
-  closeModal("wlSettingsModal"); toast("Beobachtungsliste gelöscht");
-  if(activeView.id===editingWl.id) switchView({type:"depot",id:null,name:"Bestand"});
+  if(!editingWl) return;
+  if(!confirm(`Watchlist "${editingWl.name}" löschen?`)) return;
+  await fetch(`${API}/watchlists/${editingWl.id}`, {method:"DELETE"});
+  closeModal("wlSettingsModal"); toast("Watchlist gelöscht");
+  if(activeView.id === editingWl.id){
+    activeDepot = depotsCache[0] || null;
+    activeView  = {type:"depot", id:null, name:""};
+  }
   loadDepots();
 }
 
@@ -2568,6 +2735,116 @@ function onDigestEnabledChange(){
 function toggleBlur(id){
   const el = document.getElementById(id);
   if(el) el.classList.toggle("revealed");
+}
+
+// ── Portfolio-Verlauf ─────────────────────────────────────────────
+let _snapshots = [];
+let _snapshotPeriod = "all";
+
+async function loadSnapshots(){
+  try {
+    const r = await fetch(`${API}/snapshots`);
+    _snapshots = await r.json();
+    renderSnapshotSection();
+  } catch(e){}
+}
+
+function renderSnapshotSection(){
+  if(!activeDepot) return;
+  const did  = activeDepot.id;
+  const data = _snapshots.filter(s => s.depots && s.depots[did] && s.depots[did].value);
+  const sec  = document.getElementById("snapshotSection");
+  if(!data.length){ sec.style.display="none"; return; }
+  sec.style.display = "block";
+  renderSnapshotChart(data, did);
+}
+
+function getSnapshotRange(data){
+  const now  = new Date();
+  const days = {"1W":7,"1M":30,"3M":90,"6M":180,"1J":365,"all":9999};
+  const cutoff = new Date(now - days[_snapshotPeriod]*86400000);
+  const cutStr = cutoff.toISOString().slice(0,10);
+  return data.filter(s => s.date >= cutStr);
+}
+
+function setSnapshotPeriod(p){
+  _snapshotPeriod = p;
+  ["1W","1M","3M","6M","1J","all"].forEach(k=>{
+    const btn=document.getElementById("sp-"+k);
+    if(btn) btn.classList.toggle("active", k===p);
+  });
+  if(!activeDepot) return;
+  const did = activeDepot.id;
+  const data = _snapshots.filter(s => s.depots && s.depots[did]);
+  renderSnapshotChart(data, did);
+}
+
+function renderSnapshotChart(data, did){
+  const filtered = getSnapshotRange(data);
+  if(filtered.length < 2){
+    document.getElementById("snapshotPerf").textContent = filtered.length < 2 ? "— noch zu wenig Daten" : "";
+    document.getElementById("snapshotChart").innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--muted)" font-size="12">Noch zu wenig Daten für diesen Zeitraum</text>`;
+    return;
+  }
+  const values = filtered.map(s => s.depots[did].value);
+  const dates  = filtered.map(s => s.date);
+  const minV   = Math.min(...values);
+  const maxV   = Math.max(...values);
+  const range  = maxV - minV || 1;
+  const first  = values[0]; const last = values[values.length-1];
+  const perf   = ((last - first) / first * 100);
+  const perfSign = perf >= 0 ? "+" : "";
+  const perfColor = perf >= 0 ? "var(--green)" : "var(--red)";
+
+  // Performance-Anzeige im Header
+  const perfEl = document.getElementById("snapshotPerf");
+  if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}%</span> · ${fmtEUR(last)}`;
+
+  // SVG Liniendiagramm
+  const W = 800; const H = 140; const pad = {t:10,r:10,b:24,l:60};
+  const iW = W - pad.l - pad.r; const iH = H - pad.t - pad.b;
+  const n  = values.length;
+
+  const px = i => pad.l + (i / (n-1)) * iW;
+  const py = v => pad.t + iH - ((v - minV) / range) * iH;
+
+  // Pfad
+  const pts = values.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
+  const fillPts = `${px(0)},${py(minV)} L ${pts} L ${px(n-1)},${py(minV)} Z`;
+  const lineColor = perf >= 0 ? "#22c55e" : "#ef4444";
+
+  // X-Achsen-Labels (max 5)
+  const step  = Math.max(1, Math.floor(n/5));
+  const xLabels = values.map((v,i) => {
+    if(i % step !== 0 && i !== n-1) return "";
+    const d = new Date(dates[i]+"T00:00:00");
+    return `<text x="${px(i)}" y="${H-4}" text-anchor="middle" font-size="9" fill="var(--muted)">${d.getDate()}.${d.getMonth()+1}.</text>`;
+  }).join("");
+
+  // Y-Achsen-Labels
+  const yLabels = [minV, (minV+maxV)/2, maxV].map(v =>
+    `<text x="${pad.l-4}" y="${py(v)+4}" text-anchor="end" font-size="9" fill="var(--muted)">${fmtEUR(v)}</text>`
+  ).join("");
+
+  document.getElementById("snapshotChart").innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:160px;display:block">
+      <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.2"/>
+        <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${fillPts}" fill="url(#sg)"/>
+      <path d="M ${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
+      ${xLabels}${yLabels}
+    </svg>`;
+}
+
+function toggleSnapshotSection(){
+  const body = document.getElementById("snapshotBody");
+  const icon = document.getElementById("snapshotToggleIcon");
+  const open = body.style.display !== "none";
+  body.style.display = open ? "none" : "block";
+  icon.textContent  = open ? "▶" : "▼";
+  localStorage.setItem("snapshotCollapsed", open ? "1" : "0");
 }
 
 // ── Sektor-Übersicht ─────────────────────────────────────────────
@@ -2756,30 +3033,366 @@ document.addEventListener("click", e=>{
   if(pop && pop.style.display!=="none" && !pop.contains(e.target)) closeSectorPopover();
 });
 
+// ── Multi-User ────────────────────────────────────────────────────
+let _usersCache = [];
+let activeUser  = null;
+let _pinBuffer  = "";
+let _pinTarget  = null;
+
+async function initUsers(){
+  try {
+    const r = await fetch(`${API}/users`);
+    _usersCache = await r.json();
+  } catch(e){ _usersCache = []; }
+
+  if(_usersCache.length === 0){
+    // Noch keine users.json — Setup-Screen zeigen
+    document.getElementById("setupOverlay").style.display = "flex";
+    return false;
+  }
+
+  const defaults = _usersCache.filter(u => u.is_default);
+  const named    = _usersCache.filter(u => u.name);
+
+  if(defaults.length > 0 && named.length === 0){
+    // Nur Default-User → direkt einloggen, kein Screen
+    activeUser = defaults[0];
+    updateUserChip();
+    return true;
+  }
+
+  // Gespeicherten User aus localStorage wiederherstellen — kein PIN beim Neu-Laden
+  const savedId = localStorage.getItem("activeUserId");
+  if(savedId){
+    const saved = _usersCache.find(u => u.id === savedId);
+    if(saved){
+      // Direkt einloggen ohne PIN — User war bereits eingeloggt
+      activeUser = saved; updateUserChip(); return true;
+    }
+  }
+  showLoginScreen();
+  return false;
+}
+
+function showLoginScreen(){
+  const grid = document.getElementById("loginUserGrid");
+  const named = _usersCache.filter(u => u.name);
+  grid.innerHTML = named.map(u => `
+    <button class="user-btn" onclick="selectLoginUser('${u.id}')">
+      <div class="user-avatar">${u.name.charAt(0).toUpperCase()}</div>
+      <span>${u.name}</span>
+    </button>`).join("");
+  document.getElementById("pinSection").style.display = "none";
+  document.getElementById("loginUserGrid").style.display = "grid";
+  document.getElementById("loginOverlay").style.display = "flex";
+}
+
+function selectLoginUser(userId){
+  const user = _usersCache.find(u => u.id === userId);
+  if(!user) return;
+  if(!user.has_pin){ loginUser(user); return; }
+  showPinEntry(user);
+}
+
+function showPinEntry(user){
+  _pinTarget = user; _pinBuffer = "";
+  document.getElementById("pinLabel").textContent = `PIN für ${user.name}`;
+  document.getElementById("loginUserGrid").style.display = "none";
+  document.getElementById("pinSection").style.display = "block";
+  renderPinDots();
+  const grid = document.getElementById("pinGrid");
+  const keys = [1,2,3,4,5,6,7,8,9,"⌫",0,"✓"];
+  grid.innerHTML = keys.map(k => `<button class="pin-key" onclick="pinKey('${k}')">${k}</button>`).join("");
+}
+
+function renderPinDots(){
+  document.getElementById("pinDots").innerHTML =
+    [0,1,2,3].map(i => `<div class="pin-dot${i < _pinBuffer.length ? " filled" : ""}"></div>`).join("");
+}
+
+async function pinKey(k){
+  if(k === "⌫"){ _pinBuffer = _pinBuffer.slice(0,-1); renderPinDots(); return; }
+  if(k === "✓" || _pinBuffer.length >= 4){
+    if(k !== "✓" && _pinBuffer.length < 4){ _pinBuffer += k; renderPinDots(); }
+    // PIN prüfen
+    const r = await fetch(`${API}/users/${_pinTarget.id}/verify-pin`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({pin: _pinBuffer})});
+    const d = await r.json();
+    if(d.ok){ loginUser(_pinTarget); }
+    else { _pinBuffer = ""; renderPinDots(); toast("Falscher PIN", false); }
+    return;
+  }
+  if(typeof k === "string" && k !== "✓" && k !== "⌫") _pinBuffer += k;
+  renderPinDots();
+  if(_pinBuffer.length === 4){ pinKey("✓"); }
+}
+
+function cancelPinEntry(){
+  _pinTarget = null; _pinBuffer = "";
+  document.getElementById("pinSection").style.display = "none";
+  document.getElementById("loginUserGrid").style.display = "grid";
+}
+
+function loginUser(user){
+  const switching = activeUser && activeUser.id !== user.id;
+  activeUser = user;
+  localStorage.setItem("activeUserId", user.id);
+  // Beim User-Wechsel: gespeicherte Ansicht zurücksetzen damit kein fremdes Depot/WL geladen wird
+  if(switching){
+    activeDepot = null;
+    activeView  = {type:"depot", id:null, name:""};
+    localStorage.removeItem("activeView");
+    localStorage.removeItem("activeDepot");
+  }
+  document.getElementById("loginOverlay").style.display = "none";
+  updateUserChip();
+  loadDepots();
+}
+
+function logoutUser(){
+  activeUser = null;
+  localStorage.removeItem("activeUserId");
+  closeModal("userModal");
+  showLoginScreen();
+}
+
+function updateUserChip(){
+  const chip = document.getElementById("userChip");
+  if(!chip) return;
+  if(activeUser && activeUser.name){
+    chip.style.display = "inline-flex";
+    chip.innerHTML = `<span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${activeUser.name.charAt(0).toUpperCase()}</span> ${activeUser.name}`;
+  } else {
+    chip.style.display = "none";
+  }
+}
+
+// Setup-Screen Handler
+async function setupWithoutUser(){
+  // Default-User erstellen
+  const r = await fetch(`${API}/users`, {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({name:"", is_default:true, depots:[], apprise_urls:[], notification_mention:"", notification_confirm:false})});
+  const u = await r.json();
+  _usersCache = [u];
+  activeUser  = u;
+  document.getElementById("setupOverlay").style.display = "none";
+  updateUserChip();
+  loadDepots();
+}
+
+async function setupWithUser(){
+  document.getElementById("setupOverlay").style.display = "none";
+  openUserModal(true);
+}
+
+// User-Management-Modal
+async function openUserModal(isSetup=false){
+  _usersCache = await fetch(`${API}/users`).then(r=>r.json());
+  const body = document.getElementById("userModalBody");
+  const named = _usersCache.filter(u => u.name);
+  const allDepots = depotsCache || [];
+
+  body.innerHTML = `
+    <div style="margin-bottom:16px">
+      ${named.map(u => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">${u.name.charAt(0).toUpperCase()}</div>
+          <div style="flex:1">
+            <div style="font-weight:600">${u.name}</div>
+            <div style="font-size:11px;color:var(--muted)">${u.depots?.length || 0} Depot(s) · ${u.has_pin ? "PIN gesetzt" : "Kein PIN"}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">✏️</button>
+          ${activeUser?.id !== u.id ? `<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteUser('${u.id}')">🗑</button>` : ""}
+        </div>`).join("")}
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="addUserForm()" style="width:100%">+ Benutzer hinzufügen</button>
+    <div id="userFormArea" style="margin-top:12px"></div>`;
+
+  document.getElementById("userModal").style.display = "flex";
+  if(isSetup) renderAddUserForm(true);
+}
+
+async function renderAddUserForm(isFirst=false){
+  // Depots live laden damit sie im Formular erscheinen
+  const allDepots = await fetch(`${API}/depots`).then(r=>r.json()).catch(()=>[]);
+  document.getElementById("userFormArea").innerHTML = `
+    <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-top:8px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">${isFirst ? "Ersten Benutzer anlegen" : "Neuer Benutzer"}</div>
+      <input class="form-input" id="newUserName" placeholder="Name" style="margin-bottom:8px">
+      <input class="form-input" id="newUserPin" placeholder="PIN (optional, 4-stellig)" maxlength="4" inputmode="numeric" style="margin-bottom:8px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Depots zuordnen:</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+        ${allDepots.map(d => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="new-user-depot" value="${d.id}" ${isFirst?"checked":""}> ${d.name}
+        </label>`).join("")}
+        ${!allDepots.length ? '<div style="color:var(--muted);font-size:12px">Keine Depots vorhanden</div>' : ""}
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveNewUser(${isFirst})" style="width:100%">Speichern</button>
+    </div>`;
+}
+
+function addUserForm(){ renderAddUserForm(false); }
+
+async function saveNewUser(isFirst=false){
+  const name = document.getElementById("newUserName")?.value.trim();
+  const pin  = document.getElementById("newUserPin")?.value.trim();
+  if(!name){ toast("Bitte einen Namen eingeben", false); return; }
+  const depots = [...document.querySelectorAll(".new-user-depot:checked")].map(el=>el.value);
+  await fetch(`${API}/users`, {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({name, pin: pin||null, depots, apprise_urls:[], notification_mention:"", notification_confirm:false})});
+  toast("Benutzer angelegt ✓");
+  if(isFirst){
+    _usersCache = await fetch(`${API}/users`).then(r=>r.json());
+    const newUser = _usersCache.find(u=>u.name===name);
+    if(newUser){ loginUser(newUser); closeModal("userModal"); return; }
+  }
+  openUserModal();
+}
+
+async function deleteUser(userId){
+  if(!confirm("Benutzer wirklich löschen?")) return;
+  await fetch(`${API}/users/${userId}`, {method:"DELETE"});
+  openUserModal();
+}
+
+async function editUser(userId){
+  const user = _usersCache.find(u=>u.id===userId);
+  if(!user) return;
+  const allDepots = await fetch(`${API}/depots`).then(r=>r.json()).catch(()=>[]);
+  // Bestehende URLs vorausfüllen — bei leerem User aus erstem eigenen Depot migrieren
+  userUrls = [...(user.apprise_urls||[])];
+  if(!userUrls.length){
+    const firstDepot = allDepots.find(d => user.depots?.includes(d.id));
+    if(firstDepot?.apprise_urls?.length) userUrls = [...firstDepot.apprise_urls];
+  }
+  const mention = user.notification_mention
+    || allDepots.find(d=>user.depots?.includes(d.id))?.notification_mention || "";
+  const confirmChk = user.notification_confirm
+    ?? allDepots.find(d=>user.depots?.includes(d.id))?.notification_confirm ?? false;
+
+  document.getElementById("userFormArea").innerHTML = `
+    <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-top:8px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">✏️ ${user.name} bearbeiten</div>
+      <input class="form-input" id="editUserName" value="${user.name}" style="margin-bottom:8px">
+      <input class="form-input" id="editUserPin" placeholder="Neuer PIN (leer = unverändert)" maxlength="4" inputmode="numeric" style="margin-bottom:12px">
+
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Depots:</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">
+        ${allDepots.map(d=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="edit-user-depot" value="${d.id}" ${user.depots?.includes(d.id)?"checked":""}> ${d.name}
+        </label>`).join("")}
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px">Apprise-URLs</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
+      <div class="url-list" id="userUrlList"></div>
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+        <input class="form-input" id="newUserUrlInput" placeholder="Neue Apprise-URL …"
+               style="flex:1" oninput="toggleUserAddUrlBtn(this)"/>
+        <button class="btn btn-ghost btn-sm" id="addUserUrlBtn" onclick="addUserUrl()"
+                style="display:none;white-space:nowrap">+ Hinzufügen</button>
+      </div>
+
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <input class="form-input" id="editUserMention" value="${mention}"
+               placeholder="z.B. @everyone, @here"
+               style="flex:1;max-width:220px;font-size:12px;font-family:monospace"/>
+        <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
+      </div>
+
+      <div style="margin-top:12px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <label class="toggle-switch">
+            <input type="checkbox" id="editUserConfirm" ${confirmChk?"checked":""}/>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <span style="font-size:13px">Bestätigung beim nächsten Refresh</span>
+        </div>
+        <details style="margin-top:8px">
+          <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
+            <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
+          </summary>
+          <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg2);border-radius:6px;padding:10px 12px">
+            Eine Aktie muss <b style="color:var(--text)">zwei aufeinanderfolgende Refreshes</b>
+            unter dem ATH-Level liegen bevor eine Benachrichtigung gesendet wird.
+            Vermeidet Fehlalarme bei kurzen Kursausreißern.
+          </div>
+        </details>
+        <div style="margin-top:10px">
+          <button class="btn btn-ghost btn-sm" onclick="testUserNotification()">🔔 Benachrichtigung testen</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-primary btn-sm" onclick="saveEditUser('${userId}')" style="flex:1">Speichern</button>
+        <button class="btn btn-ghost btn-sm" onclick="openUserModal()">Abbrechen</button>
+      </div>
+    </div>`;
+
+  renderUserUrlList();
+}
+
+async function saveEditUser(userId){
+  const name    = document.getElementById("editUserName")?.value.trim();
+  const pin     = document.getElementById("editUserPin")?.value.trim();
+  const depots  = [...document.querySelectorAll(".edit-user-depot:checked")].map(el=>el.value);
+  const mention = document.getElementById("editUserMention")?.value.trim()||"";
+  const confirm = document.getElementById("editUserConfirm")?.checked||false;
+  const body    = {name, depots, apprise_urls:userUrls, notification_mention:mention, notification_confirm:confirm};
+  if(pin) body.pin = pin;
+  await fetch(`${API}/users/${userId}`, {method:"PATCH",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if(activeUser?.id === userId){
+    _usersCache = await fetch(`${API}/users`).then(r=>r.json());
+    activeUser  = _usersCache.find(u=>u.id===userId) || activeUser;
+    updateUserChip();
+  }
+  toast("Gespeichert ✓");
+  openUserModal();
+}
+
+// Depot-Filterung nach aktivem User
+function getUserDepotIds(){
+  if(!activeUser || activeUser.is_default || !activeUser.depots?.length) return null; // null = alle
+  return activeUser.depots;
+}
+
 // ── Verlauf ───────────────────────────────────────────────────────
 const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht"};
 const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh"};
-let _notifItems = []; let _notifTypeFilter = "all"; let _notifDepotFilter = "all"; let _notifDepotFilterName = "all";
+let _notifItems = [];
+let _notifTypeFilter = "all";
+let _notifUserFilter = "all";
 
 async function openNotifModal(){
-  // Benachrichtigungen + Depots parallel laden
-  const [rN, rD] = await Promise.all([
-    fetch(`${API}/notifications`),
-    fetch(`${API}/depots`)
-  ]);
-  _notifItems = await rN.json();
-  const depots = await rD.json();
+  const r = await fetch(`${API}/notifications`);
+  _notifItems = await r.json(); // Backend-Reihenfolge: älteste zuerst — wir drehen beim Rendern um
 
-  // Depot-Filter Chips rendern
-  const chipWrap = document.getElementById("notifDepotFilters");
-  chipWrap.innerHTML = depots.map(d =>
-    `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfD_${d.id}"
-             onclick="setNotifDepotFilter('${d.id}','${d.name.replace(/'/g,"\'")}')"
-             style="font-size:12px">${d.name}</button>`
-  ).join("");
+  // Filter-Reset: User-Filter default auf aktuellen User wenn Multi-User aktiv
+  _notifTypeFilter = "all";
+  const namedUsers = _usersCache.filter(u => u.name);
+  _notifUserFilter = (activeUser && activeUser.name && namedUsers.length > 1) ? activeUser.id : "all";
 
-  // Filter zurücksetzen
-  _notifTypeFilter = "all"; _notifDepotFilter = "all"; _notifDepotFilterName = "all";
+  // User-Filter Chips rendern
+  const userWrap = document.getElementById("notifUserFilters");
+  if(userWrap && namedUsers.length > 1){
+    userWrap.style.display = "flex";
+    // "Alle" Chip + ein Chip pro User
+    const allChip = `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfUall" onclick="setNotifUserFilter('all')" style="font-size:12px">Alle</button>`;
+    const userChips = namedUsers.map(u =>
+        `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfU_${u.id}"
+                 onclick="setNotifUserFilter('${u.id}')"
+                 style="font-size:12px">${u.name}</button>`
+      ).join("");
+    userWrap.innerHTML = allChip + userChips;
+  } else if(userWrap){
+    userWrap.style.display = "none";
+  }
+
   _updateNotifFilterBtns();
   _renderNotifList();
   openModal("notifModal");
@@ -2791,57 +3404,54 @@ function setNotifTypeFilter(type){
   _renderNotifList();
 }
 
-function setNotifDepotFilter(id, name){
-  _notifDepotFilter      = _notifDepotFilter === id ? "all" : id;
-  _notifDepotFilterName  = _notifDepotFilter === "all" ? "all" : name;
+function setNotifUserFilter(userId){
+  _notifUserFilter = userId;
   _updateNotifFilterBtns();
   _renderNotifList();
 }
 
 function _updateNotifFilterBtns(){
-  document.getElementById("nfAll").classList.toggle("active",   _notifTypeFilter === "all");
-  document.getElementById("nfAlarm").classList.toggle("active", _notifTypeFilter === "alarm");
-  document.querySelectorAll("[id^='nfD_']").forEach(btn => {
-    const id = btn.id.replace("nfD_","");
-    btn.classList.toggle("active", _notifDepotFilter === id);
+  document.getElementById("nfAll")?.classList.toggle("active",  _notifTypeFilter === "all");
+  document.getElementById("nfAlarm")?.classList.toggle("active", _notifTypeFilter === "alarm");
+  document.getElementById("nfUall")?.classList.toggle("active",  _notifUserFilter === "all");
+  document.querySelectorAll("[id^='nfU_']").forEach(btn => {
+    btn.classList.toggle("active", btn.id === "nfU_"+_notifUserFilter);
   });
 }
 
 function _renderNotifList(){
   const list = document.getElementById("notifList");
-  let items = _notifItems;
+  let items = [..._notifItems].reverse(); // Neueste zuerst
 
-  // Typ-Filter: nur Alarme (anhand Titel, robust gegenüber type-Feldvarianten)
+  // Typ-Filter
   if(_notifTypeFilter === "alarm")
-    items = items.filter(n => n.title && n.title.includes("ATH-Alarm"));
+    items = items.filter(n => n.type === "alert" || n.type === "pending_notify" || n.type === "pending_confirmed");
 
-  // Depot-Filter
-  if(_notifDepotFilter !== "all")
-    items = items.filter(n => n.title && n.title.includes(_notifDepotFilterName));
+  // User-Filter: direkt über user_id im Eintrag — System-Einträge (kein user_id) nur bei "Alle"
+  if(_notifUserFilter !== "all"){
+    items = items.filter(n => n.user_id === _notifUserFilter);
+  }
 
   if(!items.length){
     list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">Keine Einträge</div>';
     return;
   }
-  list.innerHTML = '<div class="notif-list">' + items.map(n=>`
-    <div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
-      <div class="notif-title">${typeLabel[n.type]||n.type} &nbsp; ${n.title}</div>
+  list.innerHTML = '<div class="notif-list">' + items.map(n=>{
+    const userTag = n.user_name ? `<span style="font-size:10px;color:var(--accent);margin-left:6px">👤 ${n.user_name}</span>` : "";
+    return `<div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
+      <div class="notif-title">${typeLabel[n.type]||n.type} &nbsp; ${n.title}${userTag}</div>
       <div class="notif-body">${n.body}</div>
       <div class="notif-meta"><span>${n.time}</span><span>${n.success?"✓ OK":"✗ Fehler"}</span></div>
-    </div>`).join("") + '</div>';
+    </div>`;
+  }).join("") + '</div>';
 }
+
 
 // ── Scheduler status ──────────────────────────────────────────────
 async function loadSchedulerStatus(){
   try {
-    const [rs, rh] = await Promise.all([fetch(`${API}/settings`), fetch(`${API}/health`)]);
-    const s = await rs.json(); const h = await rh.json();
-    const nr = document.getElementById("nextRefresh");
-    if(h.holiday_today){
-      nr.innerHTML = `🏖 <span style="color:var(--yellow)">Feiertag: ${h.holiday_today.name} (${h.holiday_today.exchanges}) — kein automatischer Refresh</span>`;
-    } else if(s.next_refresh){
-      nr.textContent = "Nächster Refresh: " + s.next_refresh;
-    }
+    const r = await fetch(`${API}/settings`); const s = await r.json();
+    if(s.next_refresh) document.getElementById("nextRefresh").textContent = "Nächster Refresh: " + s.next_refresh;
   } catch(e){}
 }
 
@@ -3721,18 +4331,27 @@ async function deleteSplit(isin, date){
 setSortKey("discount");
 initTheme();
 initHelpHint();
+loadSnapshots();
+// Snapshot collapsed-State wiederherstellen
+if(localStorage.getItem("snapshotCollapsed") !== "0"){
+  // Standard: eingeklappt
+} else {
+  const b=document.getElementById("snapshotBody"); if(b) b.style.display="block";
+  const i=document.getElementById("snapshotToggleIcon"); if(i) i.textContent="▼";
+}
 checkParqetCallback();
 fetch(`${API}/health`).then(r=>r.json()).then(d=>{
   const el=document.getElementById("backendVersion");
   if(el) el.textContent=d.version||"—";
 }).catch(()=>{});
-loadDepots();
+// Multi-User Init → danach loadDepots
+initUsers().then(ok => { if(ok) loadDepots(); });
 loadSchedulerStatus();
 setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.5.11 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.12 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
@@ -3749,6 +4368,47 @@ setInterval(loadSchedulerStatus,30000);
     GitHub
   </a>
 </div>
+<!-- ── Setup-Overlay (Erstes Öffnen) ── -->
+<div id="setupOverlay" class="user-overlay" style="display:none">
+  <div class="user-card">
+    <h2>👋 Willkommen bei DepotRadar</h2>
+    <p>Möchtest du Benutzerprofile anlegen oder direkt starten?</p>
+    <button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="setupWithUser()">👤 Benutzer anlegen</button>
+    <button class="btn btn-ghost" style="width:100%" onclick="setupWithoutUser()">Ohne Benutzer starten</button>
+  </div>
+</div>
+
+<!-- ── Login-Overlay ── -->
+<div id="loginOverlay" class="user-overlay" style="display:none">
+  <div class="user-card">
+    <h2>DepotRadar</h2>
+    <p>Wer bist du?</p>
+    <div class="user-btn-grid" id="loginUserGrid"></div>
+    <!-- PIN-Eingabe -->
+    <div id="pinSection" style="display:none">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px" id="pinLabel"></div>
+      <div class="pin-dots" id="pinDots"></div>
+      <div class="pin-grid" id="pinGrid"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:12px;width:100%" onclick="cancelPinEntry()">← Zurück</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── User-Management-Modal ── -->
+<div class="overlay" id="userModal" style="display:none" onclick="closeIfOverlay(event,'userModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:480px;position:relative">
+    <div class="modal-header">
+      <span class="modal-title">👤 Benutzer</span>
+      <button class="close-btn" onclick="closeModal('userModal')">&#215;</button>
+    </div>
+    <div class="modal-body" id="userModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('userModal')">Schließen</button>
+      <button class="btn btn-ghost" style="color:var(--red)" onclick="logoutUser()">Abmelden</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sektor Popover -->
 <div id="sectorPopover">
   <input class="sp-search" id="spSearch" placeholder="Suchen…" oninput="filterSectorChips(this.value)">
