@@ -3461,8 +3461,29 @@ async function loadSchedulerStatus(){
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
-function openModal(id){document.getElementById(id).style.display="flex";}
-function closeModal(id){document.getElementById(id).style.display="none";}
+let _scrollY = 0;
+function openModal(id){
+  document.getElementById(id).style.display = "flex";
+  // Verhindert Layout-Shift durch Scrollbar beim Öffnen
+  if(document.querySelectorAll(".overlay[style*='flex']").length === 1){
+    _scrollY = window.scrollY;
+    document.body.style.position  = "fixed";
+    document.body.style.top       = `-${_scrollY}px`;
+    document.body.style.width     = "100%";
+    document.body.style.overflowY = "scroll"; // Scrollbar-Platz erhalten
+  }
+}
+function closeModal(id){
+  document.getElementById(id).style.display = "none";
+  // Body-Fix zurücksetzen wenn kein Modal mehr offen
+  if(!document.querySelector(".overlay[style*='flex']")){
+    document.body.style.position  = "";
+    document.body.style.top       = "";
+    document.body.style.width     = "";
+    document.body.style.overflowY = "";
+    window.scrollTo(0, _scrollY);
+  }
+}
 function closeIfOverlay(e,id){if(e.target===document.getElementById(id))closeModal(id);}
 
 // ── Parqet Integration ───────────────────────────────────────────
@@ -4356,7 +4377,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.21 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.22 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
