@@ -13,13 +13,14 @@ app = Flask(__name__)
 
 DATA_DIR      = "/data"
 DEPOTS_FILE   = os.path.join(DATA_DIR, "depots.json")
-NOTIF_FILE    = os.path.join(DATA_DIR, "notifications.json")
-SPLITS_FILE   = os.path.join(DATA_DIR, "splits.json")
-SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
-USERS_FILE    = os.path.join(DATA_DIR, "users.json")
+NOTIF_FILE     = os.path.join(DATA_DIR, "notifications.json")
+SPLITS_FILE    = os.path.join(DATA_DIR, "splits.json")
+SETTINGS_FILE  = os.path.join(DATA_DIR, "settings.json")
+USERS_FILE     = os.path.join(DATA_DIR, "users.json")
+SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.4.9"
+VERSION           = "2.5.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -77,6 +78,8 @@ def save_wl_stocks(d,w,s):_save_json(watchlist_file(d, w), s)
 def load_depots():        return _load_json(DEPOTS_FILE, [])
 def save_depots(d):       _save_json(DEPOTS_FILE, d)
 def load_notifications(): return _load_json(NOTIF_FILE, [])
+def load_snapshots():     return _load_json(SNAPSHOTS_FILE, [])
+def save_snapshots(s):    _save_json(SNAPSHOTS_FILE, s)
 
 # ── User helpers ──────────────────────────────────────────────────
 def hash_pin(pin):
@@ -584,6 +587,38 @@ def _refresh_depot(depot, trigger="auto"):
 
     return ok, err
 
+def take_snapshot():
+    """Erstellt einen täglichen Portfolio-Snapshot (einmal pro Tag beim Auto-Refresh)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    snaps = load_snapshots()
+    if any(s["date"] == today for s in snaps):
+        return  # Heute bereits gespeichert
+    depots   = load_depots()
+    entry    = {"date": today, "depots": {}}
+    has_data = False
+    for dc in depots:
+        stocks    = load_stocks(dc["id"])
+        total_val = 0.0; total_cost = 0.0
+        for s in stocks:
+            if s.get("current_eur") and s.get("shares"):
+                total_val  += s["current_eur"] * s["shares"]
+                if s.get("buy_price_eur"):
+                    total_cost += s["buy_price_eur"] * s["shares"]
+        if total_val > 0:
+            entry["depots"][dc["id"]] = {
+                "name":  dc["name"],
+                "value": round(total_val, 2),
+                "cost":  round(total_cost, 2) if total_cost else None,
+            }
+            has_data = True
+    if has_data:
+        snaps.append(entry)
+        # Max. 5 Jahre aufbewahren
+        cutoff = (datetime.now() - timedelta(days=1825)).strftime("%Y-%m-%d")
+        snaps  = [s for s in snaps if s["date"] >= cutoff]
+        save_snapshots(snaps)
+        log.info(f"Portfolio-Snapshot erstellt: {today}")
+
 def refresh_all_depots(trigger="auto"):
     depots = load_depots(); total_ok, total_err = [], []
     for depot in depots:
@@ -593,6 +628,8 @@ def refresh_all_depots(trigger="auto"):
     add_log(f"{trigger}_refresh", f"{label}er Refresh",
             f"Depots: {len(depots)} | OK: {len(total_ok)} | Fehler: {len(total_err)}",
             len(total_err) == 0)
+    if trigger == "auto":
+        take_snapshot()
 
 # ── Scheduler ─────────────────────────────────────────────────────
 scheduler = BackgroundScheduler(daemon=True)
@@ -2063,6 +2100,10 @@ def api_verify_pin(user_id):
     if not user: return jsonify({"ok": False}), 404
     if not user.get("pin_hash"): return jsonify({"ok": True})
     return jsonify({"ok": hash_pin(str(body.get("pin", ""))) == user["pin_hash"]})
+
+@app.route("/api/snapshots", methods=["GET"])
+def api_snapshots():
+    return jsonify(load_snapshots())
 
 @app.route("/api/health", methods=["GET"])
 def health():
