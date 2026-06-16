@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.5.1"
+VERSION           = "2.5.2"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -471,7 +471,6 @@ def _is_email_url(u):
     return u.lower().startswith(EMAIL_PREFIXES)
 
 def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None):
-    if not load_settings().get("notifications_enabled", True): return True
     if not urls: return False
     try:
         ok = True
@@ -565,26 +564,30 @@ def _refresh_depot(depot, trigger="auto"):
     stocks = load_stocks(did)
     stocks, ok, err = _fetch_prices(stocks)
 
-    wl_data = {}  # {wl_id: (wl_meta, stocks, ok_list, err_list)}
+    # Watchlist-Preise holen
+    wl_data = {}
     for wl in depot.get("watchlists", []):
         wls, wok, werr = _fetch_prices(load_wl_stocks(did, wl["id"]))
         wl_data[wl["id"]] = (wl, wls, wok, werr)
         ok += wok; err += werr
 
-    # ── Phase 2: Nachkauf-Set berechnen ───────────────────────────
-    nachkauf_set    = calc_nachkauf_set(stocks, threshold)
-    wl_nachkauf     = {wl_id: calc_nachkauf_set(wls, threshold)
-                       for wl_id, (_, wls, _, _) in wl_data.items()}
+    # Nachkauf-Sets berechnen
+    nachkauf_set = calc_nachkauf_set(stocks, threshold)
+    wl_nachkauf  = {wl_id: calc_nachkauf_set(wls, threshold)
+                    for wl_id, (_, wls, _, _) in wl_data.items()}
 
-    # ── Phase 3: Benachrichtigungen + Speichern ───────────────────
-    stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, mention, confirm, depot_id=did)
+    # Benachrichtigungen — nur wenn für dieses Depot aktiviert
+    if depot.get("notifications_enabled", True):
+        stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, mention, confirm, depot_id=did)
+        for wl_id, (wl, wls, _, _) in wl_data.items():
+            wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
+                                      urls, budget, wl_nachkauf[wl_id], mention, confirm, depot_id=did)
+            save_wl_stocks(did, wl_id, wls)
+    else:
+        for wl_id, (wl, wls, _, _) in wl_data.items():
+            save_wl_stocks(did, wl_id, wls)
+
     save_stocks(did, stocks)
-
-    for wl_id, (wl, wls, _, _) in wl_data.items():
-        wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
-                                  urls, budget, wl_nachkauf[wl_id], mention, confirm, depot_id=did)
-        save_wl_stocks(did, wl_id, wls)
-
     return ok, err
 
 def take_snapshot():
@@ -960,7 +963,6 @@ def build_digest_html(depot, stocks, kw):
 def send_weekly_digests():
     """Sendet den Wochenbericht an alle Depots die es aktiviert haben."""
     s = load_settings()
-    if not s.get("notifications_enabled", True): return
     if not s.get("digest_enabled", False): return
     log.info("Wöchentlicher Digest wird versendet…")
     depots = load_depots()
@@ -1684,6 +1686,8 @@ def update_depot(depot_id):
                 d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
             if "weekly_digest" in body:
                 d["weekly_digest"] = bool(body["weekly_digest"])
+            if "notifications_enabled" in body:
+                d["notifications_enabled"] = bool(body["notifications_enabled"])
             save_depots(depots); return jsonify(d)
     return jsonify({"error": "Nicht gefunden"}), 404
 
