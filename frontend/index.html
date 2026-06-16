@@ -639,8 +639,18 @@ select</style>
         </div>
       </div>
       <div id="depotNotifUserHint" style="display:none;background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:12px">
-        🔔 Benachrichtigungen werden über die <b style="color:var(--text)">Benutzereinstellungen</b> konfiguriert.<br>
+        🔔 Apprise-URLs werden pro Benutzer konfiguriert.<br>
         <span style="font-size:11px">Klicke oben rechts auf deinen Namen um sie zu bearbeiten.</span>
+      </div>
+      <!-- Benachrichtigungen für dieses Depot -->
+      <div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <label class="toggle-switch">
+            <input type="checkbox" id="depotNotifsEnabled" onchange="saveDepotSettings()"/>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <span style="font-size:13px">Benachrichtigungen für dieses Depot</span>
+        </div>
       </div>
         <!-- Wöchentliche Zusammenfassung Toggle -->
         <div id="depotDigestRow" style="margin-top:12px;display:none">
@@ -1033,21 +1043,8 @@ http://depotradar.example.lan</div>
       <button class="close-btn" onclick="closeModal('settingsModal')">&#215;</button>
     </div>
     <div class="modal-body">
-      <div class="info-box" style="display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-          <span style="font-weight:600;font-size:14px">&#128276; Benachrichtigungen</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="notifsEnabled" onchange="onNotifsEnabledChange()"/>
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div style="font-size:12px;color:var(--muted);line-height:1.5">
-          Apprise-URLs werden pro Depot konfiguriert — tippe auf das &#9881;-Icon im Depot-Tab.
-        </div>
-      </div>
-
       <!-- Wöchentliche Zusammenfassung -->
-      <div id="digestSection" style="display:none;margin-top:10px;padding-top:4px">
+      <div id="digestSection" style="margin-bottom:10px">
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">📊 Wöchentliche Zusammenfassung</div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
           <span style="font-size:13px;color:var(--muted)">Zusammenfassung aktivieren</span>
@@ -2507,11 +2504,12 @@ function openDepotSettings(depot){
   if(cbEl) cbEl.value = window.location.origin + "/api/parqet/callback";
   document.getElementById("depotMentionInput").value = depot.notification_mention || "";
   document.getElementById("depotConfirmToggle").checked = !!depot.notification_confirm;
+  document.getElementById("depotNotifsEnabled").checked = depot.notifications_enabled !== false;
   document.getElementById("depotDigestToggle").checked  = !!depot.weekly_digest;
   // Digest-Zeile nur zeigen wenn global aktiviert
   fetch(`${API}/settings`).then(r=>r.json()).then(s=>{
     const row = document.getElementById("depotDigestRow");
-    if(row) row.style.display = (s.notifications_enabled && s.digest_enabled) ? "block" : "none";
+    if(row) row.style.display = s.digest_enabled ? "block" : "none";
   });
   // Benachrichtigungssektion: bei eingeloggtem User ausblenden
   const hasNamedUser = activeUser && activeUser.name;
@@ -2567,6 +2565,7 @@ async function saveDepotSettings(){
     body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget,
       notification_mention:(document.getElementById("depotMentionInput")?.value||"").trim(),
       notification_confirm:document.getElementById("depotConfirmToggle")?.checked||false,
+      notifications_enabled:document.getElementById("depotNotifsEnabled")?.checked!==false,
       weekly_digest:document.getElementById("depotDigestToggle")?.checked||false})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
@@ -2704,10 +2703,9 @@ function updateDayButtons(){
 async function openSettingsModal(){
   const r=await fetch(`${API}/settings`); const s=await r.json();
   document.getElementById("refreshInterval").value = s.refresh_interval||3600;
-  document.getElementById("notifsEnabled").checked = s.notifications_enabled!==false;
   // Digest
   const digestEnabled = s.digest_enabled===true;
-  document.getElementById("digestSection").style.display = s.notifications_enabled!==false ? "block" : "none";
+  document.getElementById("digestSection").style.display = "block";
   document.getElementById("digestEnabled").checked = digestEnabled;
   document.getElementById("digestConfig").style.display = digestEnabled ? "flex" : "none";
   document.getElementById("digestDay").value  = s.digest_day  ?? 6;
@@ -2742,7 +2740,6 @@ async function saveSettings(){
     body:JSON.stringify({
       refresh_interval:      parseInt(document.getElementById("refreshInterval").value),
       verlauf_retention_days: parseInt(document.getElementById("verlaufRetention").value) || 60,
-      notifications_enabled: document.getElementById("notifsEnabled").checked,
       timezone:              document.getElementById("settingsTimezone").value,
       trading:               {days: _tradingDays, start_hour: startH, start_minute: startM, end_hour: endH, end_minute: endM},
       digest_enabled:        document.getElementById("digestEnabled").checked,
@@ -2752,10 +2749,6 @@ async function saveSettings(){
   toast("Einstellungen gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
 }
 
-function onNotifsEnabledChange(){
-  const on = document.getElementById("notifsEnabled").checked;
-  document.getElementById("digestSection").style.display = on ? "block" : "none";
-}
 
 function onDigestEnabledChange(){
   const on = document.getElementById("digestEnabled").checked;
@@ -4405,7 +4398,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.24 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.25 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
