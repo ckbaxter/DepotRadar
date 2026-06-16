@@ -356,58 +356,72 @@ select</style>
 <div class="view-bar" id="viewBar"></div>
 
 <div class="main">
-  <div class="summary">
-    <div class="scard scard-clickable" id="scard-all" onclick="setSummaryFilter('all')" title="Alle anzeigen"><div class="scard-label">Aktien gesamt</div><div class="scard-val" id="sc-total" style="color:var(--text)">—</div></div>
-    <div class="scard scard-clickable" id="scard-green" onclick="setSummaryFilter('green')" title="< 20% unter ATH filtern"><div class="scard-label">&lt; 20% unter ATH</div><div class="scard-val" id="sc-green" style="color:var(--green)">—</div></div>
-    <div class="scard scard-clickable" id="scard-yellow" onclick="setSummaryFilter('yellow')" title="20-39% filtern"><div class="scard-label">20–39% unter ATH</div><div class="scard-val" id="sc-yellow" style="color:var(--yellow)">—</div></div>
-    <div class="scard scard-clickable" id="scard-orange" onclick="setSummaryFilter('orange')" title="40-59% filtern"><div class="scard-label">40–59% unter ATH</div><div class="scard-val" id="sc-orange" style="color:var(--orange)">—</div></div>
-    <div class="scard scard-clickable" id="scard-red" onclick="setSummaryFilter('red')" title="> 60% filtern"><div class="scard-label">&gt; 60% unter ATH</div><div class="scard-val" id="sc-red" style="color:var(--red)">—</div></div>
+  <div class="snapshot-section">
+    <div class="snapshot-header" onclick="toggleAthOverview()">
+      <div class="snapshot-header-left">
+        <span id="athOverviewIcon">▼</span>
+        <span>📉 ATH-Übersicht</span>
+      </div>
+    </div>
+    <div id="athOverviewBody">
+      <div style="padding:0 12px 12px">
+        <div class="summary">
+          <div class="scard scard-clickable" id="scard-all" onclick="setSummaryFilter('all')" title="Alle anzeigen"><div class="scard-label">Aktien gesamt</div><div class="scard-val" id="sc-total" style="color:var(--text)">—</div></div>
+          <div class="scard scard-clickable" id="scard-green" onclick="setSummaryFilter('green')" title="< 20% unter ATH filtern"><div class="scard-label">&lt; 20% unter ATH</div><div class="scard-val" id="sc-green" style="color:var(--green)">—</div></div>
+          <div class="scard scard-clickable" id="scard-yellow" onclick="setSummaryFilter('yellow')" title="20-39% filtern"><div class="scard-label">20–39% unter ATH</div><div class="scard-val" id="sc-yellow" style="color:var(--yellow)">—</div></div>
+          <div class="scard scard-clickable" id="scard-orange" onclick="setSummaryFilter('orange')" title="40-59% filtern"><div class="scard-label">40–59% unter ATH</div><div class="scard-val" id="sc-orange" style="color:var(--orange)">—</div></div>
+          <div class="scard scard-clickable" id="scard-red" onclick="setSummaryFilter('red')" title="> 60% filtern"><div class="scard-label">&gt; 60% unter ATH</div><div class="scard-val" id="sc-red" style="color:var(--red)">—</div></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Portfolio-Übersicht (nur wenn Einstandsdaten vorhanden) -->
-  <div id="portfolioSummaryWrap" style="display:none">
-    <button onclick="togglePortfolioSummary()"
-            style="background:none;border:none;cursor:pointer;width:100%;text-align:left;
-                   padding:4px 16px;font-size:12px;color:var(--muted);display:flex;
-                   align-items:center;gap:6px;user-select:none">
-      <span id="portfolioToggleIcon">▶</span>
-      <span>Portfolio-Übersicht</span>
-    </button>
-    <div class="summary" id="portfolioSummary" style="display:none">
-    <div class="scard" onclick="toggleBlur('ps-total-wrap')" style="cursor:pointer" title="Tippen zum Anzeigen">
-      <div class="scard-label">Gesamtwert <span style="font-size:10px;opacity:.5">👁</span></div>
-      <div id="ps-total-wrap" class="blurred-val">
-        <div class="scard-val" id="ps-total" style="color:var(--text)">—</div>
+  <div id="portfolioSummaryWrap" style="display:none" class="snapshot-section">
+    <div class="snapshot-header" onclick="togglePortfolioSummary()">
+      <div class="snapshot-header-left">
+        <span id="portfolioToggleIcon">▶</span>
+        <span>📊 Portfolio-Übersicht</span>
       </div>
     </div>
-    <div class="scard" onclick="toggleBlur('ps-pnl-wrap')" style="cursor:pointer" title="Tippen zum Anzeigen">
-      <div class="scard-label">Gewinn / Verlust <span style="font-size:10px;opacity:.5">👁</span></div>
-      <div id="ps-pnl-wrap" class="blurred-val">
-        <div class="scard-val" id="ps-pnl">—</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-pnl-pct"></div>
+    <div id="portfolioSummary" style="display:none">
+      <div style="padding:0 16px 14px">
+        <div class="summary">
+          <div class="scard" onclick="toggleBlur('ps-total-wrap')" style="cursor:pointer" title="Tippen zum Anzeigen">
+            <div class="scard-label">Gesamtwert <span style="font-size:10px;opacity:.5">👁</span></div>
+            <div id="ps-total-wrap" class="blurred-val">
+              <div class="scard-val" id="ps-total" style="color:var(--text)">—</div>
+            </div>
+          </div>
+          <div class="scard" onclick="toggleBlur('ps-pnl-wrap')" style="cursor:pointer" title="Tippen zum Anzeigen">
+            <div class="scard-label">Gewinn / Verlust <span style="font-size:10px;opacity:.5">👁</span></div>
+            <div id="ps-pnl-wrap" class="blurred-val">
+              <div class="scard-val" id="ps-pnl">—</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-pnl-pct"></div>
+            </div>
+          </div>
+          <div class="scard">
+            <div class="scard-label">&#127881; Top 3</div>
+            <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-best">—</div>
+          </div>
+          <div class="scard">
+            <div class="scard-label">&#128577; Flop 3</div>
+            <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-worst">—</div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="scard">
-      <div class="scard-label">&#127881; Top 3</div>
-      <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-best">—</div>
-    </div>
-    <div class="scard">
-      <div class="scard-label">&#128577; Flop 3</div>
-      <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-worst">—</div>
-    </div>
-  </div>
   </div>
 
   <!-- Sektor-Übersicht -->
-  <div id="sectorOverviewWrap" style="display:none">
-    <button onclick="toggleSectorOverview()"
-            style="background:none;border:none;cursor:pointer;width:100%;text-align:left;
-                   padding:4px 16px;font-size:12px;color:var(--muted);display:flex;
-                   align-items:center;gap:6px;user-select:none">
-      <span id="sectorToggleIcon">▶</span>
-      <span>Sektor-Übersicht</span>
-    </button>
-    <div id="sectorOverview" style="display:none;padding:6px 16px 10px;display:none">
+  <div id="sectorOverviewWrap" style="display:none" class="snapshot-section">
+    <div class="snapshot-header" onclick="toggleSectorOverview()">
+      <div class="snapshot-header-left">
+        <span id="sectorToggleIcon">▶</span>
+        <span>🏷 Sektor-Übersicht</span>
+      </div>
+    </div>
+    <div id="sectorOverview" style="display:none;padding:6px 16px 14px">
       <div id="sectorChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
   </div>
@@ -2027,8 +2041,17 @@ function renderPortfolioStats(stocks){
   document.getElementById("portfolioSummaryWrap").style.display = "";
   // Gespeicherten Zustand wiederherstellen (Standard: eingeklappt)
   const open = localStorage.getItem("portfolioOpen") === "1";
-  wrap.style.display = open ? "" : "none";
+  document.getElementById("portfolioSummary").style.display = open ? "block" : "none";
   document.getElementById("portfolioToggleIcon").textContent = open ? "▼" : "▶";
+}
+
+function toggleAthOverview(){
+  const body = document.getElementById("athOverviewBody");
+  const icon = document.getElementById("athOverviewIcon");
+  const open = body.style.display !== "none";
+  body.style.display = open ? "none" : "block";
+  icon.textContent   = open ? "▶" : "▼";
+  localStorage.setItem("athOverviewCollapsed", open ? "1" : "0");
 }
 
 function togglePortfolioSummary(){
@@ -4372,12 +4395,17 @@ fetch(`${API}/health`).then(r=>r.json()).then(d=>{
 }).catch(()=>{});
 // Multi-User Init → danach loadDepots
 initUsers().then(ok => { if(ok) loadDepots(); });
+// ATH-Übersicht collapsed state
+if(localStorage.getItem("athOverviewCollapsed") === "1"){
+  const b=document.getElementById("athOverviewBody"); if(b) b.style.display="none";
+  const i=document.getElementById("athOverviewIcon"); if(i) i.textContent="▶";
+}
 loadSchedulerStatus();
 setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.22 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.24 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
