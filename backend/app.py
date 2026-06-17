@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.5.3"
+VERSION           = "2.5.4"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -760,7 +760,7 @@ def get_next_run_info():
     t = s["trading"]; days = t.get("days", [0,1,2,3,4])
     sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
     eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
-    end_mins = eh * 60 + em
+    start_mins = sh * 60 + sm; end_mins = eh * 60 + em
     if _last_refresh:
         c = _last_refresh + timedelta(seconds=interval)
         c_mins = c.hour * 60 + c.minute
@@ -769,25 +769,26 @@ def get_next_run_info():
             for _ in range(1, 8):
                 d += timedelta(days=1)
                 if d.weekday() in days:
-                    return tz.localize(datetime(d.year, d.month, d.day, sh, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
-        if c.hour < sh:
-            c = tz.localize(datetime(c.year, c.month, c.day, sh, 0))
+                    return tz.localize(datetime(d.year, d.month, d.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
+        if c_mins < start_mins:
+            c = tz.localize(datetime(c.year, c.month, c.day, sh, sm))
         return c.strftime("%d.%m.%Y %H:%M") + " Uhr"
     # Kein letzter Refresh bekannt — falls wir gerade in der Handelszeit sind,
     # now als Referenz nehmen damit das Intervall korrekt berechnet wird
     ref = now
+    now_mins = now.hour * 60 + now.minute
     d = now.date()
     for i in range(0, 8):
         check = d if i == 0 else d + timedelta(days=i)
         if check.weekday() in days:
-            if i == 0 and sh <= now.hour < eh:
+            if i == 0 and start_mins <= now_mins <= end_mins:
                 # Mitten in der Handelszeit: Intervall ab jetzt
                 c = ref + timedelta(seconds=interval)
                 return c.strftime("%d.%m.%Y %H:%M") + " Uhr"
-            if i == 0 and now.hour < sh:
-                return tz.localize(datetime(check.year, check.month, check.day, sh, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
+            if i == 0 and now_mins < start_mins:
+                return tz.localize(datetime(check.year, check.month, check.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
             elif i > 0:
-                return tz.localize(datetime(check.year, check.month, check.day, sh, 0)).strftime("%d.%m.%Y %H:%M") + " Uhr"
+                return tz.localize(datetime(check.year, check.month, check.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
     return "unbekannt"
 
 def build_digest_body(depot, stocks):
@@ -1260,8 +1261,8 @@ def parqet_undo_sync(depot_id):
         return jsonify({"error": "Kein Backup vorhanden"}), 404
     shutil.copy2(bak, depot_file(depot_id))
     os.remove(bak)
-    add_log("manual_refresh", f"Sync rückgängig gemacht",
-            f"Depot {depot_id} auf Stand vor letztem Sync zurückgesetzt", True)
+    add_log("manual_refresh", "Sync rückgängig gemacht",
+            f"Depot {depot_id} auf Stand vor letztem Sync zurückgesetzt", True, depot_id=depot_id)
     log.info(f"Parqet Sync rückgängig: {depot_id}")
     return jsonify({"ok": True})
 
