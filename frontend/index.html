@@ -2774,6 +2774,14 @@ async function loadSnapshots(){
   } catch(e){}
 }
 
+let _snapshotResizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(_snapshotResizeTimer);
+  _snapshotResizeTimer = setTimeout(() => {
+    if(activeDepot && _snapshots.length) renderSnapshotSection();
+  }, 200);
+});
+
 function renderSnapshotSection(){
   if(!activeDepot) return;
   const did  = activeDepot.id;
@@ -2825,8 +2833,15 @@ function renderSnapshotChart(data, did){
   const perfEl = document.getElementById("snapshotPerf");
   if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}%</span> · ${fmtEUR(last)}`;
 
-  // SVG Liniendiagramm
-  const W = 800; const H = 140; const pad = {t:10,r:10,b:24,l:60};
+  // Breite zur Laufzeit messen — am Parent-Container (HTML-Div), nicht am
+  // SVG-Element selbst (clientWidth auf <svg> ist in manchen Browsern unzuverlässig,
+  // besonders Safari/iPad). Fallback auf snapshotBody falls Sektion noch eingeklappt ist.
+  const chartEl   = document.getElementById("snapshotChart");
+  const container = chartEl?.parentElement;
+  const measuredW = container?.getBoundingClientRect().width
+                 || document.getElementById("snapshotBody")?.getBoundingClientRect().width
+                 || 340;
+  const W = Math.max(Math.round(measuredW), 200); const H = 160; const pad = {t:10,r:10,b:24,l:68};
   const iW = W - pad.l - pad.r; const iH = H - pad.t - pad.b;
   const n  = values.length;
 
@@ -2843,13 +2858,13 @@ function renderSnapshotChart(data, did){
   const xLabels = values.map((v,i) => {
     if(i % step !== 0 && i !== n-1) return "";
     const d = new Date(dates[i]+"T00:00:00");
-    return `<text x="${px(i)}" y="${H-4}" text-anchor="middle" font-size="9" fill="var(--muted)">${d.getDate()}.${d.getMonth()+1}.</text>`;
+    return `<text x="${px(i)}" y="${H-4}" text-anchor="middle" font-size="10" fill="var(--muted)">${d.getDate()}.${d.getMonth()+1}.</text>`;
   }).join("");
 
   // Y-Achsen-Labels: gerundet, ohne Nachkommastellen (Platzersparnis)
   const fmtYAxis = v => new Intl.NumberFormat("de-DE",{maximumFractionDigits:0}).format(Math.round(v)) + " €";
   const yLabels = [minV, (minV+maxV)/2, maxV].map(v =>
-    `<text x="${pad.l-4}" y="${py(v)+4}" text-anchor="end" font-size="9" fill="var(--muted)">${fmtYAxis(v)}</text>`
+    `<text x="${pad.l-4}" y="${py(v)+4}" text-anchor="end" font-size="12" fill="var(--muted)">${fmtYAxis(v)}</text>`
   ).join("");
 
   document.getElementById("snapshotChart").innerHTML = `
@@ -2867,10 +2882,14 @@ function renderSnapshotChart(data, did){
 function toggleSnapshotSection(){
   const body = document.getElementById("snapshotBody");
   const icon = document.getElementById("snapshotToggleIcon");
+  const perf = document.getElementById("snapshotPerf");
   const open = body.style.display !== "none";
   body.style.display = open ? "none" : "block";
   icon.textContent  = open ? "▶" : "▼";
+  if(perf) perf.style.display = open ? "none" : "";
   localStorage.setItem("snapshotCollapsed", open ? "1" : "0");
+  // Beim Aufklappen neu rendern — garantiert korrekte gemessene Breite
+  if(!open && activeDepot && _snapshots.length) renderSnapshotSection();
 }
 
 // ── Sektor-Übersicht ─────────────────────────────────────────────
@@ -4380,6 +4399,7 @@ loadSnapshots();
 // Snapshot collapsed-State wiederherstellen
 if(localStorage.getItem("snapshotCollapsed") !== "0"){
   // Standard: eingeklappt
+  const p=document.getElementById("snapshotPerf"); if(p) p.style.display="none";
 } else {
   const b=document.getElementById("snapshotBody"); if(b) b.style.display="block";
   const i=document.getElementById("snapshotToggleIcon"); if(i) i.textContent="▼";
@@ -4401,7 +4421,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.29 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.33 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
