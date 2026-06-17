@@ -2846,9 +2846,10 @@ function renderSnapshotChart(data, did){
     return `<text x="${px(i)}" y="${H-4}" text-anchor="middle" font-size="9" fill="var(--muted)">${d.getDate()}.${d.getMonth()+1}.</text>`;
   }).join("");
 
-  // Y-Achsen-Labels
+  // Y-Achsen-Labels: gerundet, ohne Nachkommastellen (Platzersparnis)
+  const fmtYAxis = v => new Intl.NumberFormat("de-DE",{maximumFractionDigits:0}).format(Math.round(v)) + " €";
   const yLabels = [minV, (minV+maxV)/2, maxV].map(v =>
-    `<text x="${pad.l-4}" y="${py(v)+4}" text-anchor="end" font-size="9" fill="var(--muted)">${fmtEUR(v)}</text>`
+    `<text x="${pad.l-4}" y="${py(v)+4}" text-anchor="end" font-size="9" fill="var(--muted)">${fmtYAxis(v)}</text>`
   ).join("");
 
   document.getElementById("snapshotChart").innerHTML = `
@@ -4400,7 +4401,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.28 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.29 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
