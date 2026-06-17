@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.5.4"
+VERSION           = "2.5.5"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -1282,7 +1282,7 @@ def parqet_reconnect(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/status", methods=["GET"])
 def parqet_status(depot_id):
-    depots = load_depots(); depot = get_depot(depot_id)
+    depot = get_depot(depot_id)
     if not depot: return jsonify({"error": "Nicht gefunden"}), 404
     pq = depot.get("parqet", {})
     return jsonify({"connected": pq.get("connected", False), "portfolio_id": pq.get("portfolio_id"),
@@ -1298,7 +1298,7 @@ def parqet_status(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/portfolios", methods=["GET"])
 def parqet_portfolios(depot_id):
-    depots = load_depots(); depot = get_depot(depot_id)
+    depot = get_depot(depot_id)
     if not depot or not depot.get("parqet", {}).get("connected"):
         return jsonify({"error": "Nicht verbunden"}), 400
     try:
@@ -1515,7 +1515,7 @@ def parqet_import_stock(depot_id):
 @app.route("/api/depots/<depot_id>/parqet/debug", methods=["GET"])
 def parqet_debug(depot_id):
     """Debug-Endpunkt: zeigt Aktivitätszahl, berechnete Holdings und ISINs im Depot."""
-    depots = load_depots(); depot = get_depot(depot_id)
+    depot = get_depot(depot_id)
     if not depot or not depot.get("parqet", {}).get("connected"):
         return jsonify({"error": "Nicht verbunden"}), 400
     pq = depot.get("parqet", {}); pid = pq.get("portfolio_id", ""); out = {}
