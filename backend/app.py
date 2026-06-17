@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.5.2"
+VERSION           = "2.5.3"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -211,6 +211,46 @@ def migrate_if_needed():
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
+def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
+                      multiplier=1, is_nachkauf=False):
+    """Baut eine HTML-Version des ATH-Alarms für E-Mail-Versand (analog zum Wochenbericht)."""
+    nk_badge = ('<span style="display:inline-block;padding:2px 8px;background:#fef3c7;'
+                'color:#92400e;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
+                '🛒 Nachkauf-Kandidat</span>') if is_nachkauf else ""
+
+    buy_html = ""
+    if buy_budget:
+        qty = calc_buy_quantity(buy_budget, multiplier, new_cur)
+        if qty:
+            eff_budget = buy_budget * multiplier
+            cost       = round(qty * new_cur, 2)
+            buy_html = (f'<tr><td style="padding:4px 8px;color:#64748b">Kaufempfehlung</td>'
+                        f'<td style="padding:4px 8px;font-weight:600;color:#22c55e">'
+                        f'{qty} Stk. (~{cost:.2f} € / Budget {multiplier}×{buy_budget:.0f}={eff_budget:.0f} €)</td></tr>')
+
+    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
+                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+
+    return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
+    <div style="background:#ef4444;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
+      <h2 style="margin:0;font-size:18px">🔔 ATH-Alarm — {label}</h2>
+      <div style="opacity:.85;font-size:13px;margin-top:4px">-{cb}%-Block erreicht</div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
+      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span>{nk_badge}</h3>
+      <table style="width:100%;border-collapse:collapse;margin-top:12px">
+        <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{new_cur:.2f} €</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">ATH</td><td style="padding:4px 8px;font-weight:600">{new_ath:.2f} €</td></tr>
+        <tr><td style="padding:4px 8px;color:#64748b">Abstand</td><td style="padding:4px 8px;font-weight:600;color:#ef4444">-{d:.1f}%</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">-{cb}%-Level bei</td><td style="padding:4px 8px;font-weight:600">{lp:.2f} €</td></tr>
+        {buy_html}
+        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{stock.get('market_time', '—')}</td></tr>
+      </table>
+      {link_html}
+    </div>
+    <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
+    </body></html>"""
+
 def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
@@ -251,7 +291,9 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR\n"
                 f"Kursstand:       {stock.get('market_time', '—')}{link}")
-        send_apprise(title, body, urls or [], mention=mention, depot_id=depot_id)
+        html_body = build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp,
+                                      buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf)
+        send_apprise(title, body, urls or [], mention=mention, html_body=html_body, depot_id=depot_id)
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
         cleared = [lvl for lvl in [20, 30, 40, 50, 60] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
         if cleared:
