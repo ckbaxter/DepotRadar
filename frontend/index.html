@@ -205,7 +205,7 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .sp-set{background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.4);color:#a5b4fc;border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;white-space:nowrap}
 .sp-remove{margin-top:6px;width:100%;font-size:11px;color:var(--muted);background:none;border:1px solid rgba(100,116,139,.2);border-radius:6px;padding:5px;cursor:pointer;transition:all .15s}
 .sp-remove:hover{color:#f87171;border-color:rgba(248,113,113,.3)}
-.badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600}
+.badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;flex-shrink:0;white-space:nowrap}
 .badge-green{background:rgba(34,197,94,.15);color:var(--green)}
 .badge-yellow{background:rgba(234,179,8,.15);color:var(--yellow)}
 .badge-orange{background:rgba(249,115,22,.15);color:var(--orange)}
@@ -232,8 +232,10 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .cards-view{display:none}
 .stock-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
 .stock-card.wl-card{border-color:rgba(168,85,247,.25)}
-.card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
-.card-name{font-weight:700;font-size:15px}
+.card-top{margin-bottom:10px}
+.card-top::after{content:"";display:table;clear:both}
+.card-top .badge{float:right;margin-left:8px;margin-top:1px}
+.card-name{font-weight:700;font-size:15px;white-space:normal;word-break:break-word;overflow-wrap:break-word}
 .card-sub{font-size:11px;color:var(--muted);margin-top:2px}
 .card-prices{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
 .card-price-block{background:var(--bg3);border-radius:7px;padding:8px 10px}
@@ -2162,7 +2164,7 @@ function renderTable(stocks){
   // Desktop table
   document.getElementById("tBody").innerHTML=sorted.map(s=>{
     const d=disc(s),c=dcls(d);
-    const nm=s.name.length>26?s.name.substring(0,25)+"…":s.name;
+    const nm=s.name;
     const moveToWlBtn=watchlistsCache.length>0?`<button class="icon-btn move" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="In Watchlist" style="font-size:11px">&#8594;&#128269;</button>`:"";
       const actions=wl
       ? `<button class="icon-btn" onclick="wlRefreshOne('${s.ticker}',this)" title="Aktualisieren">&#8635;</button>
@@ -2224,6 +2226,7 @@ function renderTable(stocks){
          <button class="icon-btn btn-sm" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')">&#128465;</button>`;
     return `<div class="stock-card ${c.row} ${wl?"wl-card":""}">
       <div class="card-top">
+        <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
         <div>
           <div class="card-name">${s.name}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
           <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
@@ -2231,7 +2234,6 @@ function renderTable(stocks){
           ${weightBarHtml(s, true)}
           ${pnlRow(s)}
         </div>
-        <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
       </div>
       <div class="card-prices">
         <div class="card-price-block">
@@ -4398,7 +4400,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.25 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.28 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
