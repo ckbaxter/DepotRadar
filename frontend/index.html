@@ -1469,7 +1469,7 @@ function switchWatchlist(wl){
   _buyFilterActive=false; _summaryFilter="all";
   clearStockSearch();
   localStorage.setItem("activeView", JSON.stringify(activeView));
-  renderDepotTabs(); renderViewTabs(); loadCurrentStocks();
+  renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
 }
 
 
@@ -1998,10 +1998,11 @@ async function applyAthCorrections(){
 function renderPortfolioStats(stocks){
   // Nur für Bestand-Ansicht, nicht Watchlist
   const wrap = document.getElementById("portfolioSummary");
-  if(isWl()){ wrap.style.display = "none"; return; }
+  const outerWrap = document.getElementById("portfolioSummaryWrap");
+  if(isWl()){ wrap.style.display = "none"; outerWrap.style.display = "none"; return; }
 
   const withCost = stocks.filter(s => s.buy_price_eur && s.shares && s.current_eur > 0);
-  if(!withCost.length){ wrap.style.display = "none"; return; }
+  if(!withCost.length){ wrap.style.display = "none"; outerWrap.style.display = "none"; return; }
 
   // Gesamtwert
   const totalVal  = withCost.reduce((a,s) => a + s.current_eur * s.shares, 0);
@@ -2788,9 +2789,10 @@ window.addEventListener("resize", () => {
 
 function renderSnapshotSection(){
   if(!activeDepot) return;
+  const sec  = document.getElementById("snapshotSection");
+  if(isWl()){ sec.style.display = "none"; return; }
   const did  = activeDepot.id;
   const data = _snapshots.filter(s => s.depots && s.depots[did] && s.depots[did].value);
-  const sec  = document.getElementById("snapshotSection");
   if(!data.length){ sec.style.display="none"; return; }
   sec.style.display = "block";
   renderSnapshotChart(data, did);
@@ -4422,7 +4424,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.36 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.38 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
