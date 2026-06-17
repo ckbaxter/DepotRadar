@@ -169,6 +169,8 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
 .weight-wrap{display:flex;align-items:center;gap:6px;margin-top:3px}
 .snapshot-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+.overview-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+.overview-group>div+div{border-top:1px solid var(--border)}
 /* ── Multi-User ── */
 .user-overlay{position:fixed;inset:0;background:var(--bg);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px}
 .user-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;width:100%;max-width:400px;text-align:center}
@@ -363,7 +365,8 @@ select</style>
 <div class="view-bar" id="viewBar"></div>
 
 <div class="main">
-  <div class="snapshot-section">
+<div class="overview-group">
+  <div>
     <div class="snapshot-header" onclick="toggleAthOverview()">
       <div class="snapshot-header-left">
         <span id="athOverviewIcon">▼</span>
@@ -384,7 +387,7 @@ select</style>
   </div>
 
   <!-- Portfolio-Übersicht (nur wenn Einstandsdaten vorhanden) -->
-  <div id="portfolioSummaryWrap" style="display:none" class="snapshot-section">
+  <div id="portfolioSummaryWrap" style="display:none">
     <div class="snapshot-header" onclick="togglePortfolioSummary()">
       <div class="snapshot-header-left">
         <span id="portfolioToggleIcon">▶</span>
@@ -421,7 +424,7 @@ select</style>
   </div>
 
   <!-- Sektor-Übersicht -->
-  <div id="sectorOverviewWrap" style="display:none" class="snapshot-section">
+  <div id="sectorOverviewWrap" style="display:none">
     <div class="snapshot-header" onclick="toggleSectorOverview()">
       <div class="snapshot-header-left">
         <span id="sectorToggleIcon">▶</span>
@@ -434,14 +437,14 @@ select</style>
   </div>
 
   <!-- Portfolio-Verlauf -->
-  <div class="snapshot-section" id="snapshotSection" style="display:none">
+  <div id="snapshotSection" style="display:none">
     <div class="snapshot-header" onclick="toggleSnapshotSection()">
       <div class="snapshot-header-left">
         <span id="snapshotToggleIcon">▶</span>
         <span>📈 Portfolio-Verlauf</span>
         <span id="snapshotPerf" style="font-size:11px;font-weight:400;color:var(--muted)"></span>
       </div>
-      <div class="snapshot-period" onclick="event.stopPropagation()">
+      <div class="snapshot-period" id="snapshotPeriodBar" onclick="event.stopPropagation()" style="display:none">
         <button onclick="setSnapshotPeriod('1W')" id="sp-1W">1W</button>
         <button onclick="setSnapshotPeriod('1M')" id="sp-1M">1M</button>
         <button onclick="setSnapshotPeriod('3M')" id="sp-3M">3M</button>
@@ -456,6 +459,7 @@ select</style>
       </div>
     </div>
   </div>
+</div>
 
   <div class="table-wrap">
     <div class="table-header">
@@ -2888,10 +2892,12 @@ function toggleSnapshotSection(){
   const body = document.getElementById("snapshotBody");
   const icon = document.getElementById("snapshotToggleIcon");
   const perf = document.getElementById("snapshotPerf");
+  const periodBar = document.getElementById("snapshotPeriodBar");
   const open = body.style.display !== "none";
   body.style.display = open ? "none" : "block";
   icon.textContent  = open ? "▶" : "▼";
   if(perf) perf.style.display = open ? "none" : "";
+  if(periodBar) periodBar.style.display = open ? "none" : "flex";
   localStorage.setItem("snapshotCollapsed", open ? "1" : "0");
   // Beim Aufklappen neu rendern — garantiert korrekte gemessene Breite
   if(!open && activeDepot && _snapshots.length) renderSnapshotSection();
@@ -4408,6 +4414,7 @@ if(localStorage.getItem("snapshotCollapsed") !== "0"){
 } else {
   const b=document.getElementById("snapshotBody"); if(b) b.style.display="block";
   const i=document.getElementById("snapshotToggleIcon"); if(i) i.textContent="▼";
+  const pb=document.getElementById("snapshotPeriodBar"); if(pb) pb.style.display="flex";
 }
 checkParqetCallback();
 fetch(`${API}/health`).then(r=>r.json()).then(d=>{
@@ -4426,7 +4433,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.34 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.35 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
