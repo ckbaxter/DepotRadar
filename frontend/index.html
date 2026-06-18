@@ -2818,26 +2818,47 @@ function setSnapshotPeriod(p){
   renderSnapshotChart(data, did);
 }
 
+function downsampleSnapshots(filtered, maxPoints){
+  const n = filtered.length;
+  if(n <= maxPoints) return filtered;
+  // Bucket-Größe so wählen, dass am Ende ~maxPoints Punkte übrig bleiben.
+  // Letzter Wert je Bucket wird genommen — jeder geplottete Punkt bleibt
+  // ein echter, real gespeicherter Snapshot (kein erfundener Mittelwert).
+  const bucketSize = Math.ceil(n / maxPoints);
+  const out = [];
+  for(let i = 0; i < n; i += bucketSize){
+    out.push(filtered[Math.min(i + bucketSize - 1, n - 1)]);
+  }
+  // Letzten echten Punkt garantieren (falls Bucket-Raster ihn knapp verfehlt)
+  if(out[out.length-1] !== filtered[n-1]) out.push(filtered[n-1]);
+  return out;
+}
+
 function renderSnapshotChart(data, did){
-  const filtered = getSnapshotRange(data);
-  if(filtered.length < 2){
-    document.getElementById("snapshotPerf").textContent = filtered.length < 2 ? "— noch zu wenig Daten" : "";
+  const rawFiltered = getSnapshotRange(data);
+  if(rawFiltered.length < 2){
+    document.getElementById("snapshotPerf").textContent = rawFiltered.length < 2 ? "— noch zu wenig Daten" : "";
     document.getElementById("snapshotChart").innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--muted)" font-size="12">Noch zu wenig Daten für diesen Zeitraum</text>`;
     return;
   }
+  // Performance immer auf Basis ALLER echten Punkte berechnen (nicht downgesampelt)
+  const allValues = rawFiltered.map(s => s.depots[did].value);
+  const perfFirst  = allValues[0]; const perfLast = allValues[allValues.length-1];
+  const perf       = ((perfLast - perfFirst) / perfFirst * 100);
+  const perfSign   = perf >= 0 ? "+" : "";
+  const perfColor  = perf >= 0 ? "var(--green)" : "var(--red)";
+  const perfEl = document.getElementById("snapshotPerf");
+  if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}%</span> · ${fmtEUR(perfLast)}`;
+
+  // Downsampling für die Darstellung — max. ~90 Punkte, damit lange Zeiträume
+  // (1J, Alles) nicht zu dicht/unübersichtlich werden
+  const filtered = downsampleSnapshots(rawFiltered, 90);
   const values = filtered.map(s => s.depots[did].value);
   const dates  = filtered.map(s => s.date);
   const minV   = Math.min(...values);
   const maxV   = Math.max(...values);
   const range  = maxV - minV || 1;
-  const first  = values[0]; const last = values[values.length-1];
-  const perf   = ((last - first) / first * 100);
-  const perfSign = perf >= 0 ? "+" : "";
-  const perfColor = perf >= 0 ? "var(--green)" : "var(--red)";
-
-  // Performance-Anzeige im Header
-  const perfEl = document.getElementById("snapshotPerf");
-  if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}%</span> · ${fmtEUR(last)}`;
+  const lineColor = perf >= 0 ? "#22c55e" : "#ef4444";
 
   // Breite zur Laufzeit messen — am Parent-Container (HTML-Div), nicht am
   // SVG-Element selbst (clientWidth auf <svg> ist in manchen Browsern unzuverlässig,
@@ -2851,13 +2872,12 @@ function renderSnapshotChart(data, did){
   const iW = W - pad.l - pad.r; const iH = H - pad.t - pad.b;
   const n  = values.length;
 
-  const px = i => pad.l + (i / (n-1)) * iW;
+  const px = i => n > 1 ? pad.l + (i / (n-1)) * iW : pad.l + iW/2;
   const py = v => pad.t + iH - ((v - minV) / range) * iH;
 
   // Pfad
   const pts = values.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
   const fillPts = `${px(0)},${py(minV)} L ${pts} L ${px(n-1)},${py(minV)} Z`;
-  const lineColor = perf >= 0 ? "#22c55e" : "#ef4444";
 
   // X-Achsen-Labels (max 5)
   const step  = Math.max(1, Math.floor(n/5));
@@ -2874,7 +2894,8 @@ function renderSnapshotChart(data, did){
   ).join("");
 
   document.getElementById("snapshotChart").innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:160px;display:block">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"
+         style="width:100%;height:160px;display:block;touch-action:none;cursor:crosshair">
       <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.2"/>
         <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
@@ -2882,7 +2903,77 @@ function renderSnapshotChart(data, did){
       <path d="${fillPts}" fill="url(#sg)"/>
       <path d="M ${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
       ${xLabels}${yLabels}
+      <g id="snapCrosshair" style="display:none;pointer-events:none">
+        <line id="snapCrossLine" x1="0" y1="${pad.t}" x2="0" y2="${pad.t+iH}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3,3"/>
+        <circle id="snapCrossDot" r="4" fill="${lineColor}" stroke="var(--bg2)" stroke-width="2"/>
+        <g id="snapTooltipGroup">
+          <rect id="snapTooltipBg" rx="5" ry="5" fill="var(--bg3)" stroke="var(--border)" stroke-width="1"/>
+          <text id="snapTooltipDate" font-size="10" fill="var(--muted)"></text>
+          <text id="snapTooltipVal" font-size="12" font-weight="700" fill="var(--text)"></text>
+        </g>
+      </g>
+      <rect id="snapOverlay" x="${pad.l}" y="0" width="${iW}" height="${H}" fill="transparent"/>
     </svg>`;
+
+  // ── Crosshair-Interaktion: Pointer Events decken Maus + Touch einheitlich ab ──
+  const svgEl     = document.querySelector("#snapshotChart svg");
+  const overlay   = document.getElementById("snapOverlay");
+  const crossG    = document.getElementById("snapCrosshair");
+  const crossLine = document.getElementById("snapCrossLine");
+  const crossDot  = document.getElementById("snapCrossDot");
+  const ttGroup   = document.getElementById("snapTooltipGroup");
+  const ttBg      = document.getElementById("snapTooltipBg");
+  const ttDate    = document.getElementById("snapTooltipDate");
+  const ttVal     = document.getElementById("snapTooltipVal");
+
+  function nearestIndex(svgX){
+    if(n <= 1) return 0;
+    const idx = Math.round(((svgX - pad.l) / iW) * (n - 1));
+    return Math.max(0, Math.min(n - 1, idx));
+  }
+
+  function showCrosshair(clientX){
+    const rect = svgEl.getBoundingClientRect();
+    // viewBox-Breite == gemessene Render-Breite → Skalierung 1:1, daher direkte Umrechnung
+    const svgX = clientX - rect.left;
+    const idx  = nearestIndex(svgX);
+    const x = px(idx), y = py(values[idx]);
+
+    crossLine.setAttribute("x1", x); crossLine.setAttribute("x2", x);
+    crossDot.setAttribute("cx", x);  crossDot.setAttribute("cy", y);
+
+    const d = new Date(dates[idx]+"T00:00:00");
+    const dateStr = `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
+    const valStr  = fmtEUR(values[idx]);
+    ttDate.textContent = dateStr;
+    ttVal.textContent  = valStr;
+
+    // Tooltip-Box vermessen und am oberen Rand positionieren, horizontal geklemmt
+    const textW = Math.max(dateStr.length * 5.5, valStr.length * 7) + 16;
+    const boxW  = Math.max(70, textW);
+    const boxH  = 34;
+    let boxX = x - boxW / 2;
+    boxX = Math.max(pad.l, Math.min(W - pad.r - boxW, boxX));
+    const boxY = pad.t - 2;
+
+    ttBg.setAttribute("x", boxX); ttBg.setAttribute("y", boxY);
+    ttBg.setAttribute("width", boxW); ttBg.setAttribute("height", boxH);
+    ttDate.setAttribute("x", boxX + boxW/2); ttDate.setAttribute("y", boxY + 13);
+    ttDate.setAttribute("text-anchor", "middle");
+    ttVal.setAttribute("x", boxX + boxW/2); ttVal.setAttribute("y", boxY + 27);
+    ttVal.setAttribute("text-anchor", "middle");
+
+    crossG.style.display = "block";
+  }
+  function hideCrosshair(){ crossG.style.display = "none"; }
+
+  // Ein Handler für Maus (echtes Hover, button-unabhängig) UND Touch (nur während
+  // des Drags aktiv) — Pointer Events vereinheitlichen beides automatisch.
+  overlay.addEventListener("pointermove", e => showCrosshair(e.clientX));
+  overlay.addEventListener("pointerdown", e => { showCrosshair(e.clientX); });
+  overlay.addEventListener("pointerleave", hideCrosshair);
+  overlay.addEventListener("pointerup", hideCrosshair);
+  overlay.addEventListener("pointercancel", hideCrosshair);
 }
 
 function toggleSnapshotSection(){
@@ -4424,7 +4515,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.38 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.39 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
