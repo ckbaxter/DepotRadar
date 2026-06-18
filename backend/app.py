@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.5.5"
+VERSION           = "2.5.6"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -1710,6 +1710,31 @@ def create_depot():
     return jsonify(depot), 201
 
 @app.route("/api/depots/<depot_id>", methods=["PUT"])
+def clear_pending_flags(depot_id):
+    """Entfernt alle pending_notify_*-Flags für ein Depot (Bestand + alle Watchlists).
+    Wird beim Umschalten von notifications_enabled aufgerufen, damit ein Flag aus einer
+    früheren Phase (z.B. vor dem Deaktivieren) nicht später fälschlich als 'jetzt gerade
+    bestätigt' interpretiert wird."""
+    PENDING_PREFIX = "pending_notify_"
+    stocks = load_stocks(depot_id)
+    changed = False
+    for s in stocks:
+        for key in [k for k in s if k.startswith(PENDING_PREFIX)]:
+            del s[key]; changed = True
+    if changed:
+        save_stocks(depot_id, stocks)
+
+    depots = load_depots()
+    depot  = next((d for d in depots if d["id"] == depot_id), None)
+    for wl in (depot.get("watchlists", []) if depot else []):
+        wls = load_wl_stocks(depot_id, wl["id"])
+        wl_changed = False
+        for s in wls:
+            for key in [k for k in s if k.startswith(PENDING_PREFIX)]:
+                del s[key]; wl_changed = True
+        if wl_changed:
+            save_wl_stocks(depot_id, wl["id"], wls)
+
 def update_depot(depot_id):
     body = request.get_json(); depots = load_depots()
     for d in depots:
@@ -1729,9 +1754,20 @@ def update_depot(depot_id):
                 d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
             if "weekly_digest" in body:
                 d["weekly_digest"] = bool(body["weekly_digest"])
+            notif_toggled = False
             if "notifications_enabled" in body:
-                d["notifications_enabled"] = bool(body["notifications_enabled"])
-            save_depots(depots); return jsonify(d)
+                old_enabled = d.get("notifications_enabled", True)
+                new_enabled = bool(body["notifications_enabled"])
+                if old_enabled != new_enabled:
+                    notif_toggled = True
+                d["notifications_enabled"] = new_enabled
+            save_depots(depots)
+            if notif_toggled:
+                # Tatsächlicher Wechsel (an↔aus) — alte Pending-Flags verwerfen,
+                # damit keine veraltete "Bestätigung" beim nächsten Refresh entsteht
+                clear_pending_flags(depot_id)
+                log.info(f"notifications_enabled für Depot {depot_id} geändert auf {d['notifications_enabled']} — Pending-Flags zurückgesetzt")
+            return jsonify(d)
     return jsonify({"error": "Nicht gefunden"}), 404
 
 @app.route("/api/depots/<depot_id>", methods=["DELETE"])
