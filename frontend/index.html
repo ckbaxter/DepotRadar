@@ -3593,6 +3593,40 @@ async function loadSchedulerStatus(){
 
 // ── Helpers ───────────────────────────────────────────────────────
 let _scrollY = 0;
+// ── Changelog ────────────────────────────────────────────────────
+// Neueste Einträge oben. Nur größere Änderungen — kleine Fixes werden
+// unter "Kleinere Verbesserungen" je Eintrag zusammengefasst statt
+// einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
+// da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
+const CHANGELOG = [
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.7.25–2.7.41 · Backend v2.5.0–2.5.6",
+    items: [
+      "Neu: Letzte Änderungen — dieser Changelog",
+      "Portfolio-Verlauf: Datenpunkte antippen/hovern zeigt Datum & exakten Wert, lange Zeiträume werden automatisch reduziert",
+      "ATH-, Portfolio-, Sektor-Übersicht und Portfolio-Verlauf zu einer kompakten, gemeinsam einklappbaren Ansicht zusammengeführt",
+      "Benachrichtigungen lassen sich jetzt pro Depot einzeln aktivieren/deaktivieren, unabhängig von der wöchentlichen Zusammenfassung",
+      "ATH-Alarm-E-Mails im selben übersichtlichen Design wie der Wochenbericht",
+      "App-Icon hinzugefügt",
+      "Kleinere Verbesserungen und Bugfixes (u.a. Darstellung auf iPad, Wechsel zwischen Watchlists, Y-Achsen-Skalierung im Chart)"
+    ]
+  }
+];
+
+function openChangelog(){
+  const body = document.getElementById("changelogBody");
+  body.innerHTML = CHANGELOG.map(group => `
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em">${group.label}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${group.versions}</div>
+      <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">
+        ${group.items.map(it => `<li style="font-size:13px;line-height:1.5;color:var(--text)">${it}</li>`).join("")}
+      </ul>
+    </div>`).join("");
+  openModal("changelogModal");
+}
+
 function openModal(id){
   document.getElementById(id).style.display = "flex";
   // Verhindert Layout-Shift durch Scrollbar beim Öffnen
@@ -4515,7 +4549,15 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.40 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.42 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  &nbsp;·&nbsp;
+  <a href="javascript:void(0)" onclick="openChangelog()"
+     style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
+    <svg height="13" width="13" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle">
+      <path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5A6.5 6.5 0 118 1.5a6.5 6.5 0 010 13zM8 4a.75.75 0 00-.75.75v3.5c0 .2.08.39.22.53l2.5 2.5a.75.75 0 101.06-1.06L8.75 8V4.75A.75.75 0 008 4z"/>
+    </svg>
+    Letzte Änderungen
+  </a>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
@@ -4532,6 +4574,20 @@ setInterval(loadSchedulerStatus,30000);
     GitHub
   </a>
 </div>
+<!-- Modal: Letzte Änderungen / Changelog -->
+<div class="overlay" id="changelogModal" style="display:none" onclick="closeIfOverlay(event,'changelogModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:520px">
+    <div class="modal-header">
+      <span class="modal-title">&#128221; Letzte Änderungen</span>
+      <button class="close-btn" onclick="closeModal('changelogModal')">&#215;</button>
+    </div>
+    <div class="modal-body" id="changelogBody" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('changelogModal')">Schließen</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Setup-Overlay (Erstes Öffnen) ── -->
 <div id="setupOverlay" class="user-overlay" style="display:none">
   <div class="user-card">
