@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.5.7-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.7.44-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.6.0-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.7.45-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -39,6 +39,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance (inkl. Watchlist-Aktien); Korrekturen direkt in der App möglich
 - **XETRA-Unterstützung** — automatischer Ticker-Vorschlag für deutsche Handelsplätze
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
+- **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
 - **Verlauf** — vollständiger Aktivitätsverlauf mit Filter nach Benutzer und Eintragstyp
 - **Letzte Änderungen** — Changelog direkt in der App abrufbar (Footer-Link)
@@ -286,6 +287,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.6.0 / 2.7.45 | ATH-Alarm pro Aktie (neues Allzeithoch), individuell aktivierbar |
 | 2.5.x / 2.7.2x–2.7.4x | Interaktiver Portfolio-Verlauf-Chart (antippen/hovern für exakte Werte), kompakte einklappbare Übersichten, Ein/Aus-Schalter pro Depot für Benachrichtigungen, Tastatur-Unterstützung für PIN-Eingabe, App-Icon, In-App-Changelog, atomare Datei-Schreibvorgänge, HTML-Escaping gegen gespeicherten XSS |
 | 2.4.x   | Multi-User mit PIN, Depot/User-Verwaltung via Umgebungsvariablen                |
 | 2.3.x   | Portfolio-Gewichtung, Portfolio-Verlauf (Snapshots), Code-Qualität              |
