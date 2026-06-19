@@ -1384,6 +1384,19 @@ function toast(msg, ok=true){
   document.getElementById("toasts").appendChild(d); setTimeout(()=>d.remove(),3500);
 }
 
+// HTML-Escaping für alle frei editierbaren Felder (Aktien-, Watchlist-, Depot-,
+// Benutzernamen), die in innerHTML-Templates landen. Verhindert gespeicherten
+// XSS falls jemand z.B. über die PATCH-API einen Namen mit HTML/Event-Handlern setzt.
+function esc(str){
+  if(str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function isWl(){ return activeView.type==="watchlist"; }
 
 // ── Depot + Watchlist Tabs ────────────────────────────────────────
@@ -1425,7 +1438,7 @@ function renderDepotTabs(){
   depotsCache.forEach(dc => {
     const tab = document.createElement("div");
     tab.className = "depot-tab" + (activeDepot&&activeDepot.id===dc.id&&activeView.type==="depot" ? " active" : "");
-    tab.innerHTML = dc.name + '<span class="depot-tab-gear" title="Depot-Einstellungen">&#9881;</span>';
+    tab.innerHTML = esc(dc.name) + '<span class="depot-tab-gear" title="Depot-Einstellungen">&#9881;</span>';
     tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openDepotSettings(dc);});
     tab.addEventListener("click", ()=>switchDepot(dc));
     bar.appendChild(tab);
@@ -1438,7 +1451,7 @@ function renderDepotTabs(){
       const isActive = activeView.type==="watchlist" && activeView.id===wl.id;
       tab.className = "depot-tab" + (isActive ? " active" : "");
       tab.style.color = isActive ? "" : "var(--muted)";
-      tab.innerHTML = '📋 ' + wl.name + '<span class="depot-tab-gear" title="Watchlist-Einstellungen">&#9881;</span>';
+      tab.innerHTML = '📋 ' + esc(wl.name) + '<span class="depot-tab-gear" title="Watchlist-Einstellungen">&#9881;</span>';
       tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openWlSettings(wl, dc.id);});
       tab.addEventListener("click", ()=>{ activeDepot=dc; switchWatchlist(wl); });
       bar.appendChild(tab);
@@ -1534,7 +1547,7 @@ async function loadCurrentStocks(){
 function updateViewTitle(){
   const title = document.getElementById("viewTitle");
   if(isWl()){
-    title.innerHTML = `📋 ${activeView.name}`;
+    title.innerHTML = `📋 ${esc(activeView.name)}`;
   } else if(activeDepot){
     title.innerHTML = activeDepot.name;
   } else {
@@ -1941,9 +1954,9 @@ function renderAthCheckResults(){
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;
                 padding:12px 14px;margin-bottom:8px" id="ath-row-${i}">
       <div style="font-weight:600;font-size:13px;margin-bottom:6px">
-        ${s.name}
-        <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px">${s.ticker}</span>
-        ${s.source && s.source !== "Bestand" ? `<span style="font-size:10px;color:var(--accent);margin-left:6px">${s.source}</span>` : ""}
+        ${esc(s.name)}
+        <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px">${esc(s.ticker)}</span>
+        ${s.source && s.source !== "Bestand" ? `<span style="font-size:10px;color:var(--accent);margin-left:6px">${esc(s.source)}</span>` : ""}
       </div>
       <div style="display:flex;gap:16px;font-size:12px;margin-bottom:8px;flex-wrap:wrap">
         <span>Gespeichert: <b>${s.stored_ath.toFixed(2)} EUR</b></span>
@@ -2030,14 +2043,14 @@ function renderPortfolioStats(stocks){
 
   document.getElementById("ps-best").innerHTML = top3.map(s =>
     `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-      <span style="color:var(--green);font-size:12px;font-weight:600">${s.name}</span>
+      <span style="color:var(--green);font-size:12px;font-weight:600">${esc(s.name)}</span>
       <span style="color:var(--green);font-size:11px;margin-left:6px;white-space:nowrap">+${s.pct.toFixed(1)}%</span>
     </div>`
   ).join("");
 
   document.getElementById("ps-worst").innerHTML = flop3.map(s =>
     `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-      <span style="color:var(--red);font-size:12px;font-weight:600">${s.name}</span>
+      <span style="color:var(--red);font-size:12px;font-weight:600">${esc(s.name)}</span>
       <span style="color:var(--red);font-size:11px;margin-left:6px;white-space:nowrap">${s.pct.toFixed(1)}%</span>
     </div>`
   ).join("");
@@ -2181,7 +2194,7 @@ function renderTable(stocks){
          <button class="icon-btn" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')" title="Entfernen">&#128465;</button>`;
     return `<tr class="${c.row}">
       <td>
-        <div class="sn">${nm}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+        <div class="sn">${esc(nm)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
         <div class="ss">${s.ticker} · ${s.exchange}${s.isin?` · <span class="isin-tag">${s.isin}</span>`:""}</div>
         ${sectorBadgeHtml(s, did, wl, wlId)}
         ${weightBarHtml(s)}
@@ -2233,7 +2246,7 @@ function renderTable(stocks){
       <div class="card-top">
         <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
         <div>
-          <div class="card-name">${s.name}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+          <div class="card-name">${esc(s.name)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
           <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
           ${sectorBadgeHtml(s, did, wl, wlId)}
           ${weightBarHtml(s, true)}
@@ -2325,7 +2338,7 @@ async function moveToDepot(ticker){
     await _doMoveToDepot(ticker, depotsCache[0], stock.name);
   } else {
     // Mehrere Depots — Auswahl anzeigen
-    const choice = await showDepotPicker(`"${stock.name}" in welches Depot?`);
+    const choice = await showDepotPicker(`"${esc(stock.name)}" in welches Depot?`);
     if(choice) await _doMoveToDepot(ticker, choice, stock.name);
   }
 }
@@ -2350,7 +2363,7 @@ function showDepotPicker(title){
     overlay.innerHTML = `<div style="background:var(--bg2);border-radius:12px;padding:20px;min-width:240px;max-width:360px">
       <div style="font-size:14px;font-weight:600;margin-bottom:14px">${title}</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${depotsCache.map(d=>`<button class="btn btn-ghost" style="justify-content:flex-start" onclick="depotPickerResolve('${d.id}')">🏛 ${d.name}</button>`).join("")}
+        ${depotsCache.map(d=>`<button class="btn btn-ghost" style="justify-content:flex-start" onclick="depotPickerResolve('${d.id}')">🏛 ${esc(d.name)}</button>`).join("")}
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="depotPickerResolve(null)">Abbrechen</button>
     </div>`;
@@ -2420,7 +2433,7 @@ async function doSearch(q){
   }
     res.innerHTML='<div class="search-results">'+items.map((it,i)=>
       `<div class="search-item" onclick="selectCompany(${i},${JSON.stringify(it).replace(/"/g,'&quot;')})">
-        <span style="font-weight:500;font-size:13px">${it.name}</span>
+        <span style="font-weight:500;font-size:13px">${esc(it.name)}</span>
         <div class="si-right">
           ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
           <span class="exch-tag">${it.exchange}</span>
@@ -2615,7 +2628,7 @@ function openMoveToWlModal(ticker, name){
   list.innerHTML = watchlistsCache.map(wl =>
     `<button class="btn btn-ghost" style="justify-content:flex-start;gap:8px"
              onclick="confirmMoveToWl('${wl.id}','${wl.name.replace(/'/g,"\\'")}')">
-      📋 ${wl.name}
+      📋 ${esc(wl.name)}
     </button>`
   ).join("");
   if(!watchlistsCache.length)
@@ -3223,8 +3236,8 @@ function showLoginScreen(){
   const named = _usersCache.filter(u => u.name);
   grid.innerHTML = named.map(u => `
     <button class="user-btn" onclick="selectLoginUser('${u.id}')">
-      <div class="user-avatar">${u.name.charAt(0).toUpperCase()}</div>
-      <span>${u.name}</span>
+      <div class="user-avatar">${esc(u.name.charAt(0).toUpperCase())}</div>
+      <span>${esc(u.name)}</span>
     </button>`).join("");
   document.getElementById("pinSection").style.display = "none";
   document.getElementById("loginUserGrid").style.display = "grid";
@@ -3306,7 +3319,7 @@ function updateUserChip(){
   if(!chip) return;
   if(activeUser && activeUser.name){
     chip.style.display = "inline-flex";
-    chip.innerHTML = `<span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${activeUser.name.charAt(0).toUpperCase()}</span> ${activeUser.name}`;
+    chip.innerHTML = `<span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${esc(activeUser.name.charAt(0).toUpperCase())}</span> ${esc(activeUser.name)}`;
   } else {
     chip.style.display = "none";
   }
@@ -3342,9 +3355,9 @@ async function openUserModal(isSetup=false){
     <div style="margin-bottom:16px">
       ${named.map(u => `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-          <div style="width:36px;height:36px;border-radius:50%;background:${u.id===activeUser?.id?'var(--accent)':'var(--bg3)'};color:${u.id===activeUser?.id?'#fff':'var(--muted)'};display:flex;align-items:center;justify-content:center;font-weight:700;border:1px solid var(--border)">${u.name.charAt(0).toUpperCase()}</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:${u.id===activeUser?.id?'var(--accent)':'var(--bg3)'};color:${u.id===activeUser?.id?'#fff':'var(--muted)'};display:flex;align-items:center;justify-content:center;font-weight:700;border:1px solid var(--border)">${esc(u.name.charAt(0).toUpperCase())}</div>
           <div style="flex:1">
-            <div style="font-weight:600">${u.name}${u.id===activeUser?.id?' <span style="font-size:10px;color:var(--accent)">● Ich</span>':''}</div>
+            <div style="font-weight:600">${esc(u.name)}${u.id===activeUser?.id?' <span style="font-size:10px;color:var(--accent)">● Ich</span>':''}</div>
             <div style="font-size:11px;color:var(--muted)">${u.depots?.length || 0} Depot(s) · ${u.has_pin ? "PIN gesetzt" : "Kein PIN"}</div>
           </div>
           ${u.id===activeUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">✏️ Bearbeiten</button>` : ""}
@@ -3369,7 +3382,7 @@ async function renderAddUserForm(isFirst=false){
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Depots zuordnen:</div>
       <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
         ${allDepots.map(d => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-          <input type="checkbox" class="new-user-depot" value="${d.id}" ${isFirst?"checked":""}> ${d.name}
+          <input type="checkbox" class="new-user-depot" value="${d.id}" ${isFirst?"checked":""}> ${esc(d.name)}
         </label>`).join("")}
         ${!allDepots.length ? '<div style="color:var(--muted);font-size:12px">Keine Depots vorhanden</div>' : ""}
       </div>
@@ -3413,8 +3426,8 @@ async function editUser(userId){
 
   document.getElementById("userFormArea").innerHTML = `
     <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-top:8px">
-      <div style="font-size:13px;font-weight:600;margin-bottom:10px">✏️ ${user.name} bearbeiten</div>
-      <input class="form-input" id="editUserName" value="${user.name}" style="margin-bottom:8px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">✏️ ${esc(user.name)} bearbeiten</div>
+      <input class="form-input" id="editUserName" value="${esc(user.name)}" style="margin-bottom:8px">
       <input class="form-input" id="editUserPin" placeholder="Neuer PIN (leer = unverändert)" maxlength="4" inputmode="numeric" style="margin-bottom:12px">
 
       <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
@@ -3429,7 +3442,7 @@ async function editUser(userId){
       </div>
 
       <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <input class="form-input" id="editUserMention" value="${mention}"
+        <input class="form-input" id="editUserMention" value="${esc(mention)}"
                placeholder="z.B. @everyone, @here"
                style="flex:1;max-width:220px;font-size:12px;font-family:monospace"/>
         <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
@@ -3522,7 +3535,7 @@ async function openNotifModal(){
     const userChips = namedUsers.map(u =>
         `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfU_${u.id}"
                  onclick="setNotifUserFilter('${u.id}')"
-                 style="font-size:12px">${u.name}</button>`
+                 style="font-size:12px">${esc(u.name)}</button>`
       ).join("");
     userWrap.innerHTML = allChip + userChips;
   } else if(userWrap){
@@ -3601,8 +3614,10 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
-    versions: "Frontend v2.7.25–2.7.41 · Backend v2.5.0–2.5.6",
+    versions: "Frontend v2.7.25–2.7.43 · Backend v2.5.0–2.5.7",
     items: [
+      "Sicherheit: alle Aktien-, Watchlist-, Depot- und Benutzernamen werden jetzt korrekt HTML-escaped (verhindert gespeicherten XSS bei manuell gesetzten Namen)",
+      "Sicherheit: Datenbank-Dateien werden jetzt atomar geschrieben (verhindert Datenverlust bei einem Absturz mitten im Speichern)",
       "Neu: Letzte Änderungen — dieser Changelog",
       "Portfolio-Verlauf: Datenpunkte antippen/hovern zeigt Datum & exakten Wert, lange Zeiträume werden automatisch reduziert",
       "ATH-, Portfolio-, Sektor-Übersicht und Portfolio-Verlauf zu einer kompakten, gemeinsam einklappbaren Ansicht zusammengeführt",
@@ -3757,7 +3772,7 @@ async function loadParqetPortfolios(){
       actions.innerHTML += '<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="doParqetReconnect()">Neu verbinden</button>';
       return;
     }
-    sel.innerHTML = list.map(p => `<option value="${p.id}">${p.name || p.title || p.id}</option>`).join("");
+    sel.innerHTML = list.map(p => `<option value="${p.id}">${esc(p.name || p.title || p.id)}</option>`).join("");
     picker.style.display = "block";
     if(list.length === 1) await confirmParqetPortfolio();
   } catch(e){ toast("Fehler: "+e.message, false); }
@@ -3934,13 +3949,13 @@ async function openParqetImportModal(newStocks){
       const item = _parqetImportItems[i];
       return `
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px" id="pqi-${i}">
-        <div style="font-weight:600;font-size:13px;margin-bottom:2px">${item.name || item.isin}</div>
+        <div style="font-weight:600;font-size:13px;margin-bottom:2px">${esc(item.name || item.isin)}</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
           ISIN: ${item.isin} &nbsp;·&nbsp; ${item.shares} Stk. &nbsp;·&nbsp; Einstand: ${fmtEUR(item.buy_price_eur)}
         </div>
         <div id="pqi-status-${i}" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
         <input class="form-input" placeholder="Ticker suchen …" autocomplete="off" id="pqi-search-${i}"
-               style="margin-bottom:6px" oninput="pqiSearch(${i},this.value)" value="${item.name || ''}"/>
+               style="margin-bottom:6px" oninput="pqiSearch(${i},this.value)" value="${esc(item.name || '')}"/>
         <div id="pqi-results-${i}"></div>
         <div id="pqi-selected-${i}" style="display:none;margin-top:6px">
           <div style="display:flex;align-items:center;gap:6px;background:rgba(78,124,246,.08);
@@ -3998,7 +4013,7 @@ async function pqiAutoSearch(idx, autoImport=true){
     // Wenn nur no_ticker Ergebnisse → manuell
     const tradeable = results.filter(r => !r.no_ticker);
     if(!tradeable.length){
-      if(status) status.innerHTML = `<span style="color:var(--muted)">Gefunden: ${results[0].name.replace(/\s*\[WKN.*?\]/,"").trim()} — bitte Handelsplatz manuell wählen.</span>`;
+      if(status) status.innerHTML = `<span style="color:var(--muted)">Gefunden: ${esc(results[0].name.replace(/\s*\[WKN.*?\]/,"").trim())} — bitte Handelsplatz manuell wählen.</span>`;
       const searchEl = document.getElementById(`pqi-search-${idx}`);
       if(searchEl) searchEl.value = results[0].name.replace(/\s*\[WKN.*?\]/,"").trim();
       return;
@@ -4029,11 +4044,11 @@ async function pqiSearch(idx, q){
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map((it,j) =>
         `<div class="search-item${it.ticker===preferred.ticker?' selected-result':''}"
               onclick="pqiSelect(${idx},${j},${JSON.stringify(it).replace(/"/g,'&quot;')})">
-          <span style="font-size:12px;font-weight:500">${it.name}</span>
+          <span style="font-size:12px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
             ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
-            <span class="exch-tag">${it.exchange}</span>
-            <span class="ticker-tag">${it.ticker}</span>
+            <span class="exch-tag">${esc(it.exchange)}</span>
+            <span class="ticker-tag">${esc(it.ticker)}</span>
           </div>
         </div>`).join("") + '</div>';
     } catch(e){ res.innerHTML=""; }
@@ -4313,11 +4328,11 @@ function openChangeTickerModal(ticker){
       items.sort((a,b) => (b.ticker.endsWith(".DE")?1:0) - (a.ticker.endsWith(".DE")?1:0));
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
         `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
-          <span style="font-size:13px;font-weight:500">${it.name}</span>
+          <span style="font-size:13px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
             ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
-            <span class="exch-tag">${it.exchange}</span>
-            <span class="ticker-tag">${it.ticker}</span>
+            <span class="exch-tag">${esc(it.exchange)}</span>
+            <span class="ticker-tag">${esc(it.ticker)}</span>
           </div>
         </div>`).join("") + '</div>';
     }, 150);
@@ -4358,11 +4373,11 @@ document.addEventListener("DOMContentLoaded", () => {
       items.sort((a,b) => (b.ticker.endsWith(".DE")?1:0) - (a.ticker.endsWith(".DE")?1:0));
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
         `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
-          <span style="font-size:13px;font-weight:500">${it.name}</span>
+          <span style="font-size:13px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
             ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
-            <span class="exch-tag">${it.exchange}</span>
-            <span class="ticker-tag">${it.ticker}</span>
+            <span class="exch-tag">${esc(it.exchange)}</span>
+            <span class="ticker-tag">${esc(it.ticker)}</span>
           </div>
         </div>`).join("") + '</div>';
     }, 300);
@@ -4425,7 +4440,7 @@ async function loadSplitsTable(){
       <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;
                   background:var(--bg3);border-radius:7px;border:1px solid var(--border)">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name||"—"}</div>
+          <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)||"—"}</div>
           <div style="font-size:10px;color:var(--muted);font-family:monospace">${s.isin}</div>
         </div>
         <div style="font-size:12px;color:var(--muted);white-space:nowrap">${s.date}</div>
@@ -4468,9 +4483,9 @@ function onSplitStockSearch(q){
   if(matches.length){
     box.innerHTML = matches.map(s =>
       `<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border)"
-            onmousedown="selectSplitStock('${s.isin}','${s.name.replace(/'/g,"\'")}','${s.ticker}')">
-        <span style="font-weight:500">${s.name}</span>
-        <span style="font-size:11px;color:var(--muted);margin-left:6px">${s.ticker}</span>
+            onmousedown="selectSplitStock('${s.isin}')">
+        <span style="font-weight:500">${esc(s.name)}</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:6px">${esc(s.ticker)}</span>
       </div>`
     ).join("");
     box.style.display = "block";
@@ -4482,9 +4497,15 @@ function onSplitStockSearch(q){
   }
 }
 
-function selectSplitStock(isin, name, ticker){
-  _splitIsin = isin; _splitName = name;
-  document.getElementById("splitStockSearch").value         = `${name} (${ticker})`;
+function selectSplitStock(isin){
+  // Name/Ticker werden bewusst NICHT durch das onmousedown-Attribut geschleust
+  // (frühere Version hatte dort ein fehlerhaftes Escaping von Apostrophen, das
+  // bei entsprechend präparierten Namen JS-Injection erlaubt hätte) — stattdessen
+  // aus dem bereits geladenen _splitStocks-Cache per ISIN nachschlagen.
+  const stock = _splitStocks.find(s => s.isin === isin);
+  if(!stock) return;
+  _splitIsin = isin; _splitName = stock.name;
+  document.getElementById("splitStockSearch").value         = `${stock.name} (${stock.ticker})`;
   document.getElementById("splitStockResults").style.display = "none";
   document.getElementById("splitIsinHint").textContent       = `ISIN: ${isin}`;
 }
@@ -4549,7 +4570,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.42 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.43 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">

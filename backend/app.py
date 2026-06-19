@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.5.6"
+VERSION           = "2.5.7"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -68,8 +68,22 @@ def _load_json(path, default):
         return json.load(f)
 
 def _save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    """Schreibt atomar: erst in eine eindeutige Temp-Datei im selben Verzeichnis
+    (gleiche Filesystem-Partition garantiert atomares os.replace), dann fsync
+    vor dem Rename. Verhindert eine kaputte/halb geschriebene JSON-Datei falls
+    der Prozess mitten im Schreiben abstürzt oder neu startet."""
+    tmp = f"{path}.{secrets.token_hex(4)}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            try: os.remove(tmp)
+            except OSError: pass
+        raise
 
 def load_stocks(d):       return _load_json(depot_file(d), [])
 def save_stocks(d, s):    _save_json(depot_file(d), s)
