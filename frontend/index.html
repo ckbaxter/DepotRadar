@@ -3291,6 +3291,19 @@ function cancelPinEntry(){
   document.getElementById("loginUserGrid").style.display = "grid";
 }
 
+// Physische Tastatur als zusätzlicher Eingabeweg (Desktop) — nutzt dieselbe
+// pinKey()-Funktion wie das Pad, daher keine doppelte Logik. Nur aktiv während
+// die PIN-Eingabe sichtbar ist. Kein eigenes <input>-Feld nötig — die Punkte
+// füllen sich beim Tippen genau wie beim Pad-Klick.
+document.addEventListener("keydown", e => {
+  const pinVisible = document.getElementById("pinSection")?.style.display !== "none";
+  if(!pinVisible) return;
+  if(e.key >= "0" && e.key <= "9"){ e.preventDefault(); pinKey(e.key); }
+  else if(e.key === "Backspace"){ e.preventDefault(); pinKey("⌫"); }
+  else if(e.key === "Enter"){ e.preventDefault(); pinKey("✓"); }
+  else if(e.key === "Escape"){ e.preventDefault(); cancelPinEntry(); }
+});
+
 function loginUser(user){
   const switching = activeUser && activeUser.id !== user.id;
   activeUser = user;
@@ -3614,8 +3627,9 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
-    versions: "Frontend v2.7.25–2.7.43 · Backend v2.5.0–2.5.7",
+    versions: "Frontend v2.7.25–2.7.44 · Backend v2.5.0–2.5.7",
     items: [
+      "PIN-Eingabe beim Login funktioniert jetzt auch über die physische Tastatur (Desktop), zusätzlich zum Zahlenpad",
       "Sicherheit: alle Aktien-, Watchlist-, Depot- und Benutzernamen werden jetzt korrekt HTML-escaped (verhindert gespeicherten XSS bei manuell gesetzten Namen)",
       "Sicherheit: Datenbank-Dateien werden jetzt atomar geschrieben (verhindert Datenverlust bei einem Absturz mitten im Speichern)",
       "Neu: Letzte Änderungen — dieser Changelog",
@@ -4570,7 +4584,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.43 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.44 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
