@@ -331,6 +331,9 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .pnl-row{display:block;margin-top:4px}
 .isin-tag{font-size:10px;color:var(--muted);font-family:monospace}
 .parqet-badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(78,124,246,.15);color:var(--accent);font-weight:600;vertical-align:middle;margin-left:4px}
+.ath-alert-bell{display:inline-block;cursor:pointer;margin-left:5px;font-size:12px;opacity:.3;vertical-align:middle;transition:opacity .15s}
+.ath-alert-bell:hover{opacity:.65}
+.ath-alert-bell.active{opacity:1}
 .last-update{font-size:11px;color:var(--muted)}
 select</style>
 </head>
@@ -974,6 +977,23 @@ select</style>
           entfernt die Markierung. Mehrere Level gleichzeitig können markiert werden.<br><br>
           <b>Beispiel:</b> Du hast bei −30% nachgekauft. Kurs erholt sich auf −10%.
           Fällt er wieder auf −32% siehst du sofort: <i>„Hier hab ich schon mal gekauft."</i>
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">🔔 ATH-Alarm pro Aktie</summary>
+        <div class="help-body">
+          Neben dem ATH-Wert jeder Aktie sitzt ein kleines Glocken-Symbol — danach musst du Ausschau halten:<br><br>
+          <span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border-radius:6px;padding:4px 10px;margin-right:8px">Inaktiv (Standard) <span class="ath-alert-bell" style="opacity:1">🔕</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border-radius:6px;padding:4px 10px">Aktiv <span class="ath-alert-bell active">🔔</span></span><br><br>
+          <i style="font-size:12px;color:var(--muted)">Hinweis: In der Tabelle ist das inaktive Symbol bewusst sehr blass dargestellt, damit es nicht stört — beim Hovern bzw. Antippen wird es deutlicher sichtbar.</i><br><br>
+          Antippen aktiviert eine eigene Benachrichtigung, die genau dann ausgelöst wird, wenn diese Aktie ein
+          <b>neues Allzeithoch</b> erreicht — unabhängig von den normalen Discount-Alarmen.<br><br>
+          Standardmäßig ist der Alarm für jede Aktie <b>deaktiviert</b> — du entscheidest selbst,
+          für welche Aktien er dich interessiert. Funktioniert auch für Watchlist-Aktien, die du
+          noch nicht besitzt. Nochmals antippen schaltet ihn wieder aus.<br><br>
+          Der Alarm respektiert den Benachrichtigungs-Schalter des jeweiligen Depots
+          (siehe Depot-Einstellungen) — ist dieser deaktiviert, bleibt es still.
         </div>
       </details>
 
@@ -2207,7 +2227,7 @@ function renderTable(stocks){
         ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
         ${perfWrap(s)}
       </td>
-      <td style="color:var(--accent)">${fmtEUR(s.ath_eur)}${s.ath_date?`<div style="font-size:9px;opacity:.6;color:var(--muted)">${s.ath_date}</div>`:""}</td>
+      <td style="color:var(--accent)">${fmtEUR(s.ath_eur)}<span class="ath-alert-bell ${s.ath_alert_enabled?"active":""}" onclick="event.stopPropagation();toggleAthAlert('${s.ticker}','${did}','${wlId}')" title="${s.ath_alert_enabled?"ATH-Alarm aktiv — tippen zum Deaktivieren":"ATH-Alarm aktivieren"}">${s.ath_alert_enabled?"🔔":"🔕"}</span>${s.ath_date?`<div style="font-size:9px;opacity:.6;color:var(--muted)">${s.ath_date}</div>`:""}</td>
       <td><span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span></td>
       <td style="white-space:nowrap">${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return '<span style="opacity:.3;font-size:12px">—</span>';return `<span style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</span>`+`<br><span style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</span>`;})()}</td>
       ${levelTd(s.ath_eur,s.current_eur,20,s,did)}${levelTd(s.ath_eur,s.current_eur,30,s,did)}
@@ -2261,7 +2281,7 @@ function renderTable(stocks){
           ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
           ${perfWrap(s)}
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px"><div class="card-price-block" style="flex:1;padding:6px 10px"><div class="card-price-label">ATH</div><div class="card-price-val" style="color:var(--accent);font-size:13px">${fmtEUR(s.ath_eur)}</div>${s.ath_date?`<div style="font-size:9px;color:var(--muted);margin-top:1px;opacity:.7">${s.ath_date}</div>`:""}</div>${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return "";return `<div style="flex:1;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:6px 10px"><div style="font-size:10px;color:var(--muted);margin-bottom:2px">Kaufempfehlung</div><div style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</div><div style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</div></div>`;})()}</div>
+        <div style="display:flex;flex-direction:column;gap:6px"><div class="card-price-block" style="flex:1;padding:6px 10px"><div class="card-price-label">ATH</div><div class="card-price-val" style="color:var(--accent);font-size:13px">${fmtEUR(s.ath_eur)}<span class="ath-alert-bell ${s.ath_alert_enabled?"active":""}" onclick="event.stopPropagation();toggleAthAlert('${s.ticker}','${did}','${wlId}')" title="${s.ath_alert_enabled?"ATH-Alarm aktiv — tippen zum Deaktivieren":"ATH-Alarm aktivieren"}">${s.ath_alert_enabled?"🔔":"🔕"}</span></div>${s.ath_date?`<div style="font-size:9px;color:var(--muted);margin-top:1px;opacity:.7">${s.ath_date}</div>`:""}</div>${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return "";return `<div style="flex:1;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:6px 10px"><div style="font-size:10px;color:var(--muted);margin-bottom:2px">Kaufempfehlung</div><div style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</div><div style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</div></div>`;})()}</div>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Discount-Level:</div>
       <div class="card-levels">${lvls}</div>
@@ -2297,7 +2317,33 @@ async function toggleBoughtLevel(ticker, depotId, level, isWl){
   } catch(e){ toast("Fehler: " + e.message, false); }
 }
 
-// ── Stock actions: Bestand ────────────────────────────────────────
+async function toggleAthAlert(ticker, depotId, wlId){
+  const stock = stocksCache.find(s => s.ticker === ticker);
+  if(!stock) return;
+  const newVal = !stock.ath_alert_enabled;
+  // Im Gegensatz zur Kaufmarkierung gilt das hier auch für Watchlist-Aktien —
+  // man möchte ja gerade bei beobachteten (noch nicht gekauften) Aktien wissen,
+  // wenn sie ein neues Hoch erreichen.
+  const url = wlId
+    ? `${API}/watchlist/${depotId}/${wlId}/stocks/${encodeURIComponent(ticker)}`
+    : `${API}/depots/${depotId}/stocks/${encodeURIComponent(ticker)}`;
+  try {
+    const r = await fetch(url, {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ath_alert_enabled: newVal})
+    });
+    if(r.ok){
+      stock.ath_alert_enabled = newVal;
+      renderTable(stocksCache);
+      toast(newVal ? "ATH-Alarm aktiviert" : "ATH-Alarm deaktiviert");
+    } else {
+      toast("Fehler beim Speichern", false);
+    }
+  } catch(e){ toast("Fehler: " + e.message, false); }
+}
+
+
 async function refreshOne(ticker, depotId, btn){
   const orig=btn.innerHTML; btn.innerHTML='<span class="spinning">&#8635;</span>'; btn.disabled=true;
   try {
@@ -3627,8 +3673,9 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
-    versions: "Frontend v2.7.25–2.7.44 · Backend v2.5.0–2.5.7",
+    versions: "Frontend v2.7.25–2.7.45 · Backend v2.5.0–2.6.0",
     items: [
+      "Neu: Benachrichtigung bei neuem Allzeithoch — pro Aktie aktivierbar über das 🔔-Symbol neben dem ATH-Wert (auch für Watchlist-Aktien)",
       "PIN-Eingabe beim Login funktioniert jetzt auch über die physische Tastatur (Desktop), zusätzlich zum Zahlenpad",
       "Sicherheit: alle Aktien-, Watchlist-, Depot- und Benutzernamen werden jetzt korrekt HTML-escaped (verhindert gespeicherten XSS bei manuell gesetzten Namen)",
       "Sicherheit: Datenbank-Dateien werden jetzt atomar geschrieben (verhindert Datenverlust bei einem Absturz mitten im Speichern)",
@@ -4584,7 +4631,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.44 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.7.46 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
