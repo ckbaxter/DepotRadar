@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.4.7-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.7.16-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.5.7-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.7.44-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -22,12 +22,13 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 
 ## Features
 
-- **Multi-User** — mehrere Benutzerprofile mit optionalem PIN; jeder User sieht nur seine eigenen Depots und Watchlists
+- **Multi-User** — mehrere Benutzerprofile mit optionalem PIN (per Zahlenpad oder Tastatur eingebbar); jeder User sieht nur seine eigenen Depots und Watchlists
 - **Multi-Depot** — mehrere Depots pro Benutzer, jedes unabhängig konfigurierbar
 - **Watchlists** — Beobachtungslisten pro Depot, direkt in der Tab-Leiste neben den Depots
 - **ATH-Discount** — farbcodierte Badges: grün (<20%), gelb (20–39%), orange (40–59%), rot (>60%) mit Multiplikator (1×/2×/3×)
+- **Kompakte Übersichten** — ATH-, Portfolio- und Sektor-Übersicht sowie Portfolio-Verlauf in einer gemeinsam einklappbaren Ansicht, jede Sektion unabhängig auf-/zuklappbar
 - **Portfolio-Gewichtung** — Balken und %-Wert pro Aktie zeigen die relative Gewichtung im Depot; sortierbar
-- **Portfolio-Verlauf** — täglicher Snapshot des Gesamtwerts; Liniendiagramm mit Zeitraum-Filter (1W/1M/3M/6M/1J/Alles)
+- **Portfolio-Verlauf** — täglicher Snapshot des Gesamtwerts; interaktives Liniendiagramm mit Zeitraum-Filter (1W/1M/3M/6M/1J/Alles); Datenpunkte per Antippen/Hovern abrufbar (Datum + exakter Wert), lange Zeiträume werden automatisch reduziert
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
 - **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
@@ -37,11 +38,13 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance (inkl. Watchlist-Aktien); Korrekturen direkt in der App möglich
 - **XETRA-Unterstützung** — automatischer Ticker-Vorschlag für deutsche Handelsplätze
-- **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Konfiguration pro Benutzer
+- **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
 - **Verlauf** — vollständiger Aktivitätsverlauf mit Filter nach Benutzer und Eintragstyp
-- **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten, Benachrichtigungen und Wochenbericht direkt in der App konfigurierbar
+- **Letzte Änderungen** — Changelog direkt in der App abrufbar (Footer-Link)
+- **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten und Wochenbericht direkt in der App konfigurierbar
 - **Dark / Light Mode**
+- **Eigenes App-Icon** — inkl. iOS-Homescreen-Unterstützung
 - **Mobile-optimiert** — Touch-freundlich für iPad und Smartphone
 
 -----
@@ -74,7 +77,13 @@ DepotRadar/
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   └── index.html
+│   ├── index.html
+│   └── icons/
+│       ├── favicon.svg
+│       ├── favicon.ico
+│       ├── favicon-16x16.png
+│       ├── favicon-32x32.png
+│       └── apple-touch-icon.png
 ├── nginx/
 │   └── nginx.conf
 ├── data/                      # Wird automatisch angelegt
@@ -150,8 +159,8 @@ Beim ersten Start erscheint ein Setup-Screen mit zwei Optionen:
 
 - Jeder Benutzer hat einen optionalen 4-stelligen PIN
 - Nach dem Login sieht man nur die eigenen Depots und Watchlists
-- Benachrichtigungs-Einstellungen (Apprise-URLs, Mention, Bestätigungsmodus) werden pro Benutzer konfiguriert
-- Die Wöchentliche Zusammenfassung bleibt pro Depot konfigurierbar
+- Benachrichtigungs-Einstellungen (Apprise-URLs, Mention, Bestätigungsmodus) werden pro Benutzer konfiguriert und haben Vorrang vor der Depot-Einstellung
+- Ein/Aus-Schalter und Wochenbericht bleiben pro Depot konfigurierbar
 - Neue Depots werden automatisch dem eingeloggten Benutzer zugeordnet
 - Jeder Benutzer kann neue Benutzer anlegen; eigene Einstellungen und PIN kann jeder selbst verwalten
 
@@ -165,16 +174,17 @@ Multi-User kann jederzeit deaktiviert werden indem `data/users.json` gelöscht w
 
 Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
 
-|Einstellung                 |Beschreibung                                       |
-|----------------------------|---------------------------------------------------|
-|Automatischer Refresh       |Intervall der Kursabfragen                         |
-|Zeitzone                    |Für korrekte Handelszeiten-Berechnung              |
-|Handelstage                 |An welchen Tagen aktualisiert wird                 |
-|Handelszeiten               |Zwischen welchen Uhrzeiten aktualisiert wird       |
-|Benachrichtigungen          |Global ein/aus                                     |
-|Wöchentliche Zusammenfassung|Wochentag, Uhrzeit und globaler Ein/Aus-Schalter   |
-|Verlaufsbereinigung         |Aufbewahrungszeitraum für Benachrichtigungshistorie|
-|Aktiensplits                |Splits hinzufügen und verwalten                    |
+| Einstellung                   | Beschreibung                                              |
+|-------------------------------|-----------------------------------------------------------|
+| Automatischer Refresh         | Intervall der Kursabfragen                                |
+| Zeitzone                      | Für korrekte Handelszeiten-Berechnung                     |
+| Handelstage                   | An welchen Tagen aktualisiert wird                        |
+| Handelszeiten                 | Zwischen welchen Uhrzeiten aktualisiert wird              |
+| Wöchentliche Zusammenfassung  | Wochentag und Uhrzeit (Ein/Aus läuft pro Depot, siehe unten) |
+| Verlaufsbereinigung           | Aufbewahrungszeitraum für Benachrichtigungshistorie       |
+| Aktiensplits                  | Splits hinzufügen und verwalten                           |
+
+Benachrichtigungen selbst werden **nicht** global geschaltet, sondern zweistufig: Apprise-URLs, Mention und Bestätigungsmodus pro Benutzer (Benutzer-Icon oben rechts, hat Vorrang), Ein/Aus sowie Wochenbericht-Teilnahme pro Depot (Depot-Einstellungen → ⚙); der Depot-Bestätigungsmodus dient als Fallback.
 
 -----
 
@@ -182,11 +192,11 @@ Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
 
 Pro Depot kann ein optionales **Kaufbudget** in EUR hinterlegt werden (Depot-Einstellungen → ⚙).
 
-|Discount-Block|Multiplikator|Beispiel bei 200 € Budget|
-|--------------|-------------|-------------------------|
-|20–39%        |1×           |200 €                    |
-|40–59%        |2×           |400 €                    |
-|≥60%          |3×           |600 €                    |
+| Discount-Block | Multiplikator | Beispiel bei 200 € Budget |
+|----------------|---------------|---------------------------|
+| 20–39%         | 1×            | 200 €                     |
+| 40–59%         | 2×            | 400 €                     |
+| ≥60%           | 3×            | 600 €                     |
 
 **Beispiel** — Budget 200 €, Aktie kostet 19 €, Abstand −20%:
 → **11 Stk. für ~209 €** (liegt innerhalb der 20% Toleranz über 200 €)
@@ -217,11 +227,10 @@ Jede Aktie kann einem Sektor zugeordnet werden. 16 vordefinierte Sektoren stehen
 Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen → Aktiensplits** verwaltet.
 
 **Split hinzufügen:**
-
-1. Einstellungen öffnen → „+ Split hinzufügen”
-1. Aktie aus dem eigenen Bestand suchen und auswählen
-1. Datum und Faktor (z.B. `10` für 10:1) eingeben
-1. Speichern
+1. Einstellungen öffnen → „+ Split hinzufügen"
+2. Aktie aus dem eigenen Bestand suchen und auswählen
+3. Datum und Faktor (z.B. `10` für 10:1) eingeben
+4. Speichern
 
 -----
 
@@ -232,9 +241,9 @@ DepotRadar verbindet sich mit [Parqet](https://parqet.com) um Einstandskurse und
 ### Einrichtung
 
 1. [developer.parqet.com/console/integrations](https://developer.parqet.com/console/integrations) → **+ New Integration**
-1. Scope: nur **read portfolio** ankreuzen
-1. Redirect URI: `http://DEINE-APP-URL/api/parqet/callback`
-1. Client ID kopieren → in DepotRadar: Depot-Einstellungen → Client ID eintragen → Verbinden
+2. Scope: nur **read portfolio** ankreuzen
+3. Redirect URI: `http://DEINE-APP-URL/api/parqet/callback`
+4. Client ID kopieren → in DepotRadar: Depot-Einstellungen → Client ID eintragen → Verbinden
 
 ### Backup & Rückgängig
 
@@ -244,18 +253,23 @@ Vor jedem Sync wird automatisch ein Backup der Depot-Datei angelegt. Rückgängi
 
 ## Benachrichtigungen (Apprise)
 
-Konfigurierbar pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten). Unterstützte Dienste (Auswahl):
+Zweistufig konfigurierbar:
 
-|Dienst     |URL-Format                                  |
-|-----------|--------------------------------------------|
-|Telegram   |`tgram://TOKEN/CHATID`                      |
-|Gotify     |`gotify://host/token`                       |
-|ntfy       |`ntfy://host/topic`                         |
-|Discord    |`discord://WEBHOOK_ID/TOKEN`                |
-|E-Mail     |`mailto://user:pass@gmail.com` (HTML-Format)|
-|Apprise API|`http://apprise.host/notify/tag`            |
+- **Apprise-URLs, Mention, Bestätigungsmodus** — pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten); hat Vorrang sobald explizit gesetzt
+- **Ein/Aus, Wochenbericht-Teilnahme, Bestätigungsmodus (Fallback)** — pro Depot (Depot-Einstellungen → ⚙); greift wenn kein Benutzer eingeloggt ist oder dieser noch keine eigene Einstellung gesetzt hat
 
-**Bestätigungsmodus** (pro Benutzer aktivierbar): Eine Aktie muss zwei aufeinanderfolgende Refreshes unter dem ATH-Level liegen bevor ein Alarm ausgelöst wird.
+Unterstützte Dienste (Auswahl):
+
+| Dienst      | URL-Format                                    |
+|-------------|-----------------------------------------------|
+| Telegram    | `tgram://TOKEN/CHATID`                        |
+| Gotify      | `gotify://host/token`                         |
+| ntfy        | `ntfy://host/topic`                           |
+| Discord     | `discord://WEBHOOK_ID/TOKEN`                  |
+| E-Mail      | `mailto://user:pass@gmail.com` (HTML-Format)  |
+| Apprise API | `http://apprise.host/notify/tag`              |
+
+**Bestätigungsmodus:** Eine Aktie muss zwei aufeinanderfolgende Refreshes unter dem ATH-Level liegen bevor ein Alarm ausgelöst wird. Einstellbar sowohl pro Benutzer als auch pro Depot (Benutzer-Einstellung hat Vorrang). Beim Umschalten des Depot-Toggles für Benachrichtigungen (ein/aus) werden offene Bestätigungen automatisch zurückgesetzt, damit kein veralteter Zustand fälschlich als „bestätigt" gewertet wird.
 
 -----
 
@@ -270,23 +284,24 @@ Konfigurierbar pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten). Unterst�
 
 ## Versionshistorie
 
-|Version|Beschreibung                                                              |
-|-------|--------------------------------------------------------------------------|
-|2.4.x  |Multi-User mit PIN, Depot/User-Verwaltung via Umgebungsvariablen          |
-|2.3.x  |Portfolio-Gewichtung, Portfolio-Verlauf (Snapshots), Code-Qualität        |
-|2.2.x  |Sektor-Tags mit Auto-Fetch, Sektor-Übersicht, Sektor-Filter               |
-|2.1.x  |Wöchentliche Zusammenfassung (Apprise + HTML-E-Mail), Verlaufsbereinigung |
-|2.0.x  |Bestätigungsmodus, Kursstand in Benachrichtigungen, Verlauf-Verbesserungen|
-|1.9.x  |Nachkauf-Kandidaten in Benachrichtigungen (🛒), Nachkauf-Schwelle pro Depot|
-|1.8.0  |Parqet-Sync Backup mit Rückgängig-Funktion                                |
-|1.7.x  |Aktiensplits über UI verwaltbar                                           |
-|1.6.x  |Kaufempfehlung in Benachrichtigungen, App und Tabelle                     |
-|1.5.0  |Zeitzone und Handelszeiten über UI einstellbar                            |
-|1.4.x  |Parqet Client ID pro Depot                                                |
-|1.3.0  |Nachkauf-Kandidaten Filter                                                |
-|1.2.0  |Parqet OAuth PKCE Integration                                             |
-|1.1.0  |XETRA-Ticker-Unterstützung                                                |
-|1.0.0  |Erstes Release                                                            |
+| Version | Beschreibung                                                                    |
+|---------|---------------------------------------------------------------------------------|
+| 2.5.x / 2.7.2x–2.7.4x | Interaktiver Portfolio-Verlauf-Chart (antippen/hovern für exakte Werte), kompakte einklappbare Übersichten, Ein/Aus-Schalter pro Depot für Benachrichtigungen, Tastatur-Unterstützung für PIN-Eingabe, App-Icon, In-App-Changelog, atomare Datei-Schreibvorgänge, HTML-Escaping gegen gespeicherten XSS |
+| 2.4.x   | Multi-User mit PIN, Depot/User-Verwaltung via Umgebungsvariablen                |
+| 2.3.x   | Portfolio-Gewichtung, Portfolio-Verlauf (Snapshots), Code-Qualität              |
+| 2.2.x   | Sektor-Tags mit Auto-Fetch, Sektor-Übersicht, Sektor-Filter                     |
+| 2.1.x   | Wöchentliche Zusammenfassung (Apprise + HTML-E-Mail), Verlaufsbereinigung       |
+| 2.0.x   | Bestätigungsmodus, Kursstand in Benachrichtigungen, Verlauf-Verbesserungen      |
+| 1.9.x   | Nachkauf-Kandidaten in Benachrichtigungen (🛒), Nachkauf-Schwelle pro Depot     |
+| 1.8.0   | Parqet-Sync Backup mit Rückgängig-Funktion                                      |
+| 1.7.x   | Aktiensplits über UI verwaltbar                                                  |
+| 1.6.x   | Kaufempfehlung in Benachrichtigungen, App und Tabelle                           |
+| 1.5.0   | Zeitzone und Handelszeiten über UI einstellbar                                  |
+| 1.4.x   | Parqet Client ID pro Depot                                                       |
+| 1.3.0   | Nachkauf-Kandidaten Filter                                                       |
+| 1.2.0   | Parqet OAuth PKCE Integration                                                    |
+| 1.1.0   | XETRA-Ticker-Unterstützung                                                       |
+| 1.0.0   | Erstes Release                                                                   |
 
 -----
 
