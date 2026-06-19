@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.5.7"
+VERSION           = "2.6.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -575,12 +575,21 @@ def _make_stock(data, old=None):
     }
 
 def _fetch_prices(stocks):
-    """Phase 1: Kurse holen und Stocks aktualisieren — noch keine Benachrichtigungen."""
-    ok_list, err_list = [], []
+    """Phase 1: Kurse holen und Stocks aktualisieren — noch keine Benachrichtigungen.
+    Sammelt nebenbei Aktien, die in diesem Durchlauf ein NEUES ATH erreicht haben
+    UND dafür den ATH-Alarm aktiviert haben (ath_alert_enabled)."""
+    ok_list, err_list, ath_hits = [], [], []
     for i, s in enumerate(stocks):
         try:
+            old_ath   = float(s.get("ath_eur") or 0)
             data      = fetch_stock_data(s["ticker"])
             stocks[i] = _make_stock(data, s)
+            new_ath   = float(stocks[i].get("ath_eur") or 0)
+            # old_ath > 0 verhindert einen Fehlalarm beim allerersten Refresh
+            # einer neu hinzugefügten Aktie (da hätte sie ja noch gar kein
+            # "bisheriges" ATH zum Vergleich)
+            if stocks[i].get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001:
+                ath_hits.append({**stocks[i], "_prev_ath": old_ath})
             # Sektor auto-holen wenn noch nicht gesetzt
             if not stocks[i].get("sector"):
                 sec = fetch_sector_from_yahoo(s["ticker"])
@@ -591,7 +600,47 @@ def _fetch_prices(stocks):
         except Exception as e:
             log.error(f"{s['name']}: {e}")
             err_list.append(f"{s['name']}: {e}")
-    return stocks, ok_list, err_list
+    return stocks, ok_list, err_list, ath_hits
+
+def build_ath_reached_html(stock, prev_ath):
+    """HTML-Version der Neues-ATH-Benachrichtigung, im Stil der anderen Alarm-Mails
+    (analog build_alert_html), aber positiv/grün statt rot."""
+    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
+                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+    return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
+    <div style="background:#22c55e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
+      <h2 style="margin:0;font-size:18px">🎉 Neues Allzeithoch</h2>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
+      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span></h3>
+      <table style="width:100%;border-collapse:collapse;margin-top:12px">
+        <tr><td style="padding:4px 8px;color:#64748b">Neues ATH</td><td style="padding:4px 8px;font-weight:600;color:#22c55e">{stock['ath_eur']:.2f} €</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">Bisheriges ATH</td><td style="padding:4px 8px;font-weight:600">{prev_ath:.2f} €</td></tr>
+        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{stock.get('market_time', '—')}</td></tr>
+      </table>
+      {link_html}
+    </div>
+    <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
+    </body></html>"""
+
+def send_ath_alerts(hits, label, urls, mention="", depot_id=None):
+    """Sendet für jede Aktie in hits (neues ATH + ath_alert_enabled) eine eigene
+    Benachrichtigung. Anders als die Discount-Alarme braucht das keinen
+    Bestätigungsmodus — ein neues ATH ist ein eindeutiges, einmaliges Ereignis."""
+    if not urls: return
+    for s in hits:
+        prev_ath = s.get("_prev_ath", 0)
+        title = f"🎉 Neues ATH — {s['name']}"
+        body  = (f"{s['name']} ({s['ticker']}) — {label}\n\n"
+                 f"Neues ATH:      {s['ath_eur']:.2f} EUR\n"
+                 f"Bisheriges ATH: {prev_ath:.2f} EUR\n"
+                 f"Kursstand:      {s.get('market_time', '—')}")
+        html_body = build_ath_reached_html(s, prev_ath)
+        try:
+            send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=depot_id)
+        except Exception as e:
+            log.error(f"ATH-Alarm {s.get('name','?')}: {e}")
+
 
 def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="", confirm=False, depot_id=None):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
@@ -618,29 +667,31 @@ def _refresh_depot(depot, trigger="auto"):
 
     # ── Phase 1: Alle Kurse holen ─────────────────────────────────
     stocks = load_stocks(did)
-    stocks, ok, err = _fetch_prices(stocks)
+    stocks, ok, err, ath_hits = _fetch_prices(stocks)
 
     # Watchlist-Preise holen
     wl_data = {}
     for wl in depot.get("watchlists", []):
-        wls, wok, werr = _fetch_prices(load_wl_stocks(did, wl["id"]))
-        wl_data[wl["id"]] = (wl, wls, wok, werr)
+        wls, wok, werr, wl_ath_hits = _fetch_prices(load_wl_stocks(did, wl["id"]))
+        wl_data[wl["id"]] = (wl, wls, wok, werr, wl_ath_hits)
         ok += wok; err += werr
 
     # Nachkauf-Sets berechnen
     nachkauf_set = calc_nachkauf_set(stocks, threshold)
     wl_nachkauf  = {wl_id: calc_nachkauf_set(wls, threshold)
-                    for wl_id, (_, wls, _, _) in wl_data.items()}
+                    for wl_id, (_, wls, _, _, _) in wl_data.items()}
 
     # Benachrichtigungen — nur wenn für dieses Depot aktiviert
     if depot.get("notifications_enabled", True):
         stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, mention, confirm, depot_id=did)
-        for wl_id, (wl, wls, _, _) in wl_data.items():
+        send_ath_alerts(ath_hits, f"Bestand: {dname}", urls, mention, depot_id=did)
+        for wl_id, (wl, wls, _, _, wl_ath_hits) in wl_data.items():
             wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
                                       urls, budget, wl_nachkauf[wl_id], mention, confirm, depot_id=did)
+            send_ath_alerts(wl_ath_hits, f"Beobachtung: {wl['name']} ({dname})", urls, mention, depot_id=did)
             save_wl_stocks(did, wl_id, wls)
     else:
-        for wl_id, (wl, wls, _, _) in wl_data.items():
+        for wl_id, (wl, wls, _, _, _) in wl_data.items():
             save_wl_stocks(did, wl_id, wls)
 
     save_stocks(did, stocks)
@@ -1880,6 +1931,7 @@ def api_refresh_stock(ticker):
     if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
     try:
         data    = fetch_stock_data(ticker); s = stocks[idx]
+        old_ath = float(s.get("ath_eur") or 0)
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
         user    = get_depot_user(did)
         u_urls  = user["apprise_urls"]          if user and user.get("apprise_urls")                      else depot.get("apprise_urls", [])
@@ -1889,6 +1941,10 @@ def api_refresh_stock(ticker):
                                    f"Bestand: {depot['name']}", u_urls,
                                    mention=u_ment, confirm=u_conf)
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
+        if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
+                and depot.get("notifications_enabled", True)):
+            send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
+                             f"Bestand: {depot['name']}", u_urls, u_ment, depot_id=did)
         save_stocks(did, stocks)
         add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True, depot_id=did)
         return jsonify(stocks[idx])
@@ -1934,7 +1990,7 @@ def patch_stock(depot_id, ticker):
     stock  = next((s for s in stocks if s["ticker"] == ticker), None)
     if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
     # Erlaubte Felder die per PATCH gesetzt werden dürfen
-    ALLOWED = {"bought_levels", "notes", "sector"}
+    ALLOWED = {"bought_levels", "notes", "sector", "ath_alert_enabled"}
     for key, val in body.items():
         if key in ALLOWED:
             stock[key] = val
@@ -1982,7 +2038,7 @@ def wl_patch_stock(depot_id, wl_id, ticker):
     stocks = load_wl_stocks(depot_id, wl_id)
     stock  = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
     if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
-    ALLOWED = {"sector", "notes"}
+    ALLOWED = {"sector", "notes", "ath_alert_enabled"}
     for key, val in body.items():
         if key in ALLOWED:
             stock[key] = val
@@ -2003,6 +2059,7 @@ def wl_refresh_stock(depot_id, wl_id, ticker):
     if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
     try:
         data    = fetch_stock_data(ticker); s = stocks[idx]
+        old_ath = float(s.get("ath_eur") or 0)
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
         user    = get_depot_user(depot_id)
         u_urls  = user["apprise_urls"]         if user and user.get("apprise_urls")                      else depot.get("apprise_urls", [])
@@ -2012,6 +2069,10 @@ def wl_refresh_stock(depot_id, wl_id, ticker):
                                    f"Beobachtung: {wl_name}", u_urls,
                                    mention=u_ment, confirm=u_conf)
         stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
+        if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
+                and depot.get("notifications_enabled", True)):
+            send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
+                             f"Beobachtung: {wl_name}", u_urls, u_ment, depot_id=depot_id)
         save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stocks[idx])
     except Exception as e: return jsonify({"error": str(e)}), 502
 
