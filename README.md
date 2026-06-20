@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.6.0-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.7.45-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.7.0-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.8.0-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -147,27 +147,22 @@ docker compose up -d --force-recreate backend
 
 ## Multi-User
 
-DepotRadar unterstützt mehrere Benutzerprofile — ideal wenn mehrere Personen die App gemeinsam nutzen.
+DepotRadar setzt mindestens ein Benutzerprofil voraus und unterstützt zusätzlich mehrere Profile, wenn mehrere Personen die App gemeinsam nutzen.
 
 ### Einrichtung
 
-Beim ersten Start erscheint ein Setup-Screen mit zwei Optionen:
-
-- **Ohne Benutzer starten** — App verhält sich wie eine Einzelbenutzer-Anwendung, kein Login erforderlich
-- **Benutzer anlegen** — Wizard zum Anlegen des ersten Benutzerprofils
+Beim ersten Start wird das erste Benutzerprofil angelegt — ein PIN ist dabei optional.
 
 ### Funktionsweise
 
 - Jeder Benutzer hat einen optionalen 4-stelligen PIN
+- Gibt es nur einen Benutzer ohne PIN, loggt die App ihn beim Öffnen automatisch ein — ganz ohne Auswahl-Screen
+- Sobald ein PIN gesetzt ist oder mehrere Benutzer existieren, erscheint die Benutzerauswahl
 - Nach dem Login sieht man nur die eigenen Depots und Watchlists
-- Benachrichtigungs-Einstellungen (Apprise-URLs, Mention, Bestätigungsmodus) werden pro Benutzer konfiguriert und haben Vorrang vor der Depot-Einstellung
-- Ein/Aus-Schalter und Wochenbericht bleiben pro Depot konfigurierbar
+- Benachrichtigungs-Einstellungen (Apprise-URLs, Mention, Bestätigungsmodus) werden ausschließlich pro Benutzer konfiguriert — es gibt keine separate Depot-Ebene dafür
+- Ein/Aus-Schalter und Wochenbericht-Teilnahme bleiben pro Depot konfigurierbar (unabhängig vom Benutzer-Modell, da ein Benutzer mehrere Depots mit unterschiedlichem Bedarf haben kann)
 - Neue Depots werden automatisch dem eingeloggten Benutzer zugeordnet
 - Jeder Benutzer kann neue Benutzer anlegen; eigene Einstellungen und PIN kann jeder selbst verwalten
-
-### Rollback
-
-Multi-User kann jederzeit deaktiviert werden indem `data/users.json` gelöscht wird — alle Depots und Daten bleiben unberührt.
 
 -----
 
@@ -185,7 +180,7 @@ Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
 | Verlaufsbereinigung           | Aufbewahrungszeitraum für Benachrichtigungshistorie       |
 | Aktiensplits                  | Splits hinzufügen und verwalten                           |
 
-Benachrichtigungen selbst werden **nicht** global geschaltet, sondern zweistufig: Apprise-URLs, Mention und Bestätigungsmodus pro Benutzer (Benutzer-Icon oben rechts, hat Vorrang), Ein/Aus sowie Wochenbericht-Teilnahme pro Depot (Depot-Einstellungen → ⚙); der Depot-Bestätigungsmodus dient als Fallback.
+Benachrichtigungen selbst werden **nicht** global geschaltet: Apprise-URLs, Mention und Bestätigungsmodus liegen ausschließlich beim Benutzer (Benutzer-Icon oben rechts), Ein/Aus sowie Wochenbericht-Teilnahme bleiben pro Depot (Depot-Einstellungen → ⚙).
 
 -----
 
@@ -254,10 +249,8 @@ Vor jedem Sync wird automatisch ein Backup der Depot-Datei angelegt. Rückgängi
 
 ## Benachrichtigungen (Apprise)
 
-Zweistufig konfigurierbar:
-
-- **Apprise-URLs, Mention, Bestätigungsmodus** — pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten); hat Vorrang sobald explizit gesetzt
-- **Ein/Aus, Wochenbericht-Teilnahme, Bestätigungsmodus (Fallback)** — pro Depot (Depot-Einstellungen → ⚙); greift wenn kein Benutzer eingeloggt ist oder dieser noch keine eigene Einstellung gesetzt hat
+- **Apprise-URLs, Mention, Bestätigungsmodus** — ausschließlich pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten)
+- **Ein/Aus, Wochenbericht-Teilnahme** — pro Depot (Depot-Einstellungen → ⚙)
 
 Unterstützte Dienste (Auswahl):
 
@@ -270,7 +263,7 @@ Unterstützte Dienste (Auswahl):
 | E-Mail      | `mailto://user:pass@gmail.com` (HTML-Format)  |
 | Apprise API | `http://apprise.host/notify/tag`              |
 
-**Bestätigungsmodus:** Eine Aktie muss zwei aufeinanderfolgende Refreshes unter dem ATH-Level liegen bevor ein Alarm ausgelöst wird. Einstellbar sowohl pro Benutzer als auch pro Depot (Benutzer-Einstellung hat Vorrang). Beim Umschalten des Depot-Toggles für Benachrichtigungen (ein/aus) werden offene Bestätigungen automatisch zurückgesetzt, damit kein veralteter Zustand fälschlich als „bestätigt" gewertet wird.
+**Bestätigungsmodus:** Eine Aktie muss zwei aufeinanderfolgende Refreshes unter dem ATH-Level liegen bevor ein Alarm ausgelöst wird. Beim Umschalten des Depot-Toggles für Benachrichtigungen (ein/aus) werden offene Bestätigungen automatisch zurückgesetzt, damit kein veralteter Zustand fälschlich als „bestätigt" gewertet wird.
 
 -----
 
@@ -287,6 +280,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.7.0 / 2.8.0 | Benutzerprofil ist jetzt Pflicht, Single-User-ohne-PIN loggt automatisch ein, Benachrichtigungseinstellungen nur noch pro Benutzer (keine doppelte Depot-Ebene mehr), Bugfixes (Depot-Speichern, Wochenbericht-Quelle) |
 | 2.6.0 / 2.7.45 | ATH-Alarm pro Aktie (neues Allzeithoch), individuell aktivierbar |
 | 2.5.x / 2.7.2x–2.7.4x | Interaktiver Portfolio-Verlauf-Chart (antippen/hovern für exakte Werte), kompakte einklappbare Übersichten, Ein/Aus-Schalter pro Depot für Benachrichtigungen, Tastatur-Unterstützung für PIN-Eingabe, App-Icon, In-App-Changelog, atomare Datei-Schreibvorgänge, HTML-Escaping gegen gespeicherten XSS |
 | 2.4.x   | Multi-User mit PIN, Depot/User-Verwaltung via Umgebungsvariablen                |
