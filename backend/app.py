@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.6.0"
+VERSION           = "2.7.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -109,10 +109,18 @@ def get_depot_user(depot_id):
             return u
     return None
 
-def users_active():
-    users = load_users()
-    if not users: return False
-    return any(u.get("name") for u in users)
+def resolve_notification_settings(depot_id):
+    """Liefert (urls, mention, confirm) für ein Depot. Da jedes Depot immer genau
+    einem Benutzer gehört (Benutzer sind jetzt Pflicht), kommen diese Werte
+    ausschließlich vom zugeordneten User — kein Depot-Fallback mehr nötig.
+    Die leeren Defaults greifen nur defensiv falls ein Depot wider Erwarten
+    keinem Benutzer zugeordnet ist."""
+    user = get_depot_user(depot_id)
+    if not user:
+        return [], "", False
+    return (user.get("apprise_urls", []),
+            user.get("notification_mention", ""),
+            user.get("notification_confirm", False))
 
 def load_settings():
     """Einstellungen mit Priorität: settings.json > _CFG_DEF"""
@@ -658,10 +666,7 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="
 
 def _refresh_depot(depot, trigger="auto"):
     did       = depot["id"]; dname = depot["name"]
-    user      = get_depot_user(did)
-    urls      = user["apprise_urls"]           if user and user.get("apprise_urls")                        else depot.get("apprise_urls", [])
-    mention   = user["notification_mention"]   if user and user.get("notification_mention") is not None   else depot.get("notification_mention", "")
-    confirm   = user["notification_confirm"]   if user and user.get("notification_confirm") is not None   else depot.get("notification_confirm", False)
+    urls, mention, confirm = resolve_notification_settings(did)
     budget    = depot.get("buy_budget") or None
     raw_t = depot.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else 30
 
@@ -1077,11 +1082,10 @@ def send_weekly_digests():
     kw     = datetime.now().isocalendar()[1]
     for dc in depots:
         if not dc.get("weekly_digest", False): continue
-        urls    = dc.get("apprise_urls", [])
+        did = dc["id"]
+        urls, mention, _confirm = resolve_notification_settings(did)
         if not urls: continue
-        did     = dc["id"]
         stocks  = load_stocks(did)
-        mention = dc.get("notification_mention", "")
         title, body = build_digest_body(dc, stocks)
         if title:
             html_body = build_digest_html(dc, stocks, kw)
@@ -1762,7 +1766,7 @@ def create_depot():
     if any(d["name"].lower() == name.lower() for d in depots):
         return jsonify({"error": "Name existiert bereits"}), 409
     did = gen_id(name); save_stocks(did, [])
-    depot = {"id": did, "name": name, "apprise_urls": [], "watchlists": []}
+    depot = {"id": did, "name": name, "watchlists": []}
     depots.append(depot); save_depots(depots)
     # Depot dem aktuellen User zuordnen
     user_id = body.get("user_id")
@@ -1774,7 +1778,6 @@ def create_depot():
             save_users(users)
     return jsonify(depot), 201
 
-@app.route("/api/depots/<depot_id>", methods=["PUT"])
 def clear_pending_flags(depot_id):
     """Entfernt alle pending_notify_*-Flags für ein Depot (Bestand + alle Watchlists).
     Wird beim Umschalten von notifications_enabled aufgerufen, damit ein Flag aus einer
@@ -1800,20 +1803,16 @@ def clear_pending_flags(depot_id):
         if wl_changed:
             save_wl_stocks(depot_id, wl["id"], wls)
 
+@app.route("/api/depots/<depot_id>", methods=["PUT"])
 def update_depot(depot_id):
     body = request.get_json(); depots = load_depots()
     for d in depots:
         if d["id"] == depot_id:
             if "name" in body and body["name"].strip(): d["name"] = body["name"].strip()
-            if "apprise_urls" in body: d["apprise_urls"] = body["apprise_urls"]
             if "parqet_client_id" in body: d["parqet_client_id"] = body["parqet_client_id"].strip()
             if "buy_budget" in body:
                 raw = body["buy_budget"]
                 d["buy_budget"] = float(raw) if raw else None
-            if "notification_mention" in body:
-                d["notification_mention"] = body["notification_mention"].strip()
-            if "notification_confirm" in body:
-                d["notification_confirm"] = bool(body["notification_confirm"])
             if "nachkauf_threshold" in body:
                 raw = body["nachkauf_threshold"]
                 d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
@@ -1925,7 +1924,7 @@ def api_delete_stock(ticker):
 @app.route("/api/stocks/<ticker>/refresh", methods=["POST"])
 def api_refresh_stock(ticker):
     did    = request.args.get("depot", ""); depots = load_depots()
-    depot  = next((d for d in depots if d["id"] == did), {"id": did, "name": did, "apprise_urls": []})
+    depot  = next((d for d in depots if d["id"] == did), {"id": did, "name": did})
     stocks = load_stocks(did)
     idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
     if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
@@ -1933,10 +1932,7 @@ def api_refresh_stock(ticker):
         data    = fetch_stock_data(ticker); s = stocks[idx]
         old_ath = float(s.get("ath_eur") or 0)
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-        user    = get_depot_user(did)
-        u_urls  = user["apprise_urls"]          if user and user.get("apprise_urls")                      else depot.get("apprise_urls", [])
-        u_ment  = user["notification_mention"]  if user and user.get("notification_mention") is not None  else depot.get("notification_mention", "")
-        u_conf  = user["notification_confirm"]  if user and user.get("notification_confirm") is not None  else depot.get("notification_confirm", False)
+        u_urls, u_ment, u_conf = resolve_notification_settings(did)
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
                                    f"Bestand: {depot['name']}", u_urls,
                                    mention=u_ment, confirm=u_conf)
@@ -2052,7 +2048,7 @@ def wl_delete_stock(depot_id, wl_id, ticker):
 
 @app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>/refresh", methods=["POST"])
 def wl_refresh_stock(depot_id, wl_id, ticker):
-    depots  = load_depots(); depot = next((d for d in depots if d["id"] == depot_id), {"name": depot_id, "apprise_urls": []})
+    depots  = load_depots(); depot = next((d for d in depots if d["id"] == depot_id), {"name": depot_id})
     wl_name = next((w["name"] for w in depot.get("watchlists", []) if w["id"] == wl_id), wl_id)
     stocks  = load_wl_stocks(depot_id, wl_id)
     idx     = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
@@ -2061,10 +2057,7 @@ def wl_refresh_stock(depot_id, wl_id, ticker):
         data    = fetch_stock_data(ticker); s = stocks[idx]
         old_ath = float(s.get("ath_eur") or 0)
         new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-        user    = get_depot_user(depot_id)
-        u_urls  = user["apprise_urls"]         if user and user.get("apprise_urls")                      else depot.get("apprise_urls", [])
-        u_ment  = user["notification_mention"] if user and user.get("notification_mention") is not None  else depot.get("notification_mention", "")
-        u_conf  = user["notification_confirm"] if user and user.get("notification_confirm") is not None  else depot.get("notification_confirm", False)
+        u_urls, u_ment, u_conf = resolve_notification_settings(depot_id)
         new_blk = check_and_notify(s, data["current_eur"], new_ath,
                                    f"Beobachtung: {wl_name}", u_urls,
                                    mention=u_ment, confirm=u_conf)
@@ -2215,7 +2208,6 @@ def api_create_user():
         "id":                    str(_uuid.uuid4())[:8],
         "name":                  body.get("name", "").strip(),
         "pin_hash":              hash_pin(body.get("pin")),
-        "is_default":            bool(body.get("is_default", False)),
         "depots":                body.get("depots", []),
         "apprise_urls":          body.get("apprise_urls", []),
         "notification_mention":  body.get("notification_mention", ""),
