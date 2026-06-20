@@ -12,7 +12,7 @@ services:
       - TZ=Europe/Berlin
       - APP_URL=http://depotradar.lan   # Anpassen auf eigene URL
     networks:
-      - ath-net
+      - depotradar-net
 
   nginx:
     image: nginx:alpine
