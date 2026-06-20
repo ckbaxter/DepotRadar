@@ -623,36 +623,7 @@ select</style>
         </details>
       </div>
       <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 12px">
-      <!-- Benachrichtigungen: user-aware -->
-      <div id="depotNotifSection">
-        <div class="form-group">
-          <label class="form-label">Apprise-URLs (für dieses Depot)</label>
-          <div class="form-hint" style="margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
-          <div class="url-list" id="depotUrlList"></div>
-          <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
-            <input class="form-input" id="newDepotUrlInput" placeholder="Neue Apprise-URL …"
-                   style="flex:1" oninput="toggleAddUrlBtn(this)"/>
-            <button class="btn btn-ghost btn-sm" id="addUrlBtn" onclick="addDepotUrl()"
-                    style="display:none;white-space:nowrap">+ Hinzufügen</button>
-          </div>
-          <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <input class="form-input" id="depotMentionInput" placeholder="z.B. @everyone, @here"
-                   style="flex:1;max-width:220px;font-size:12px;font-family:monospace"
-                   title="Discord Mention — wird vor jede Benachrichtigung gestellt"/>
-            <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
-          </div>
-          <div style="margin-top:12px">
-            <div style="display:flex;align-items:center;gap:10px">
-              <label class="toggle-switch">
-                <input type="checkbox" id="depotConfirmToggle" onchange="onDepotConfirmChange()"/>
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
-              </label>
-              <span style="font-size:13px">Bestätigung beim nächsten Refresh</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div id="depotNotifUserHint" style="display:none;background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:12px">
+      <div id="depotNotifUserHint" style="background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:12px">
         🔔 Apprise-URLs werden pro Benutzer konfiguriert.<br>
         <span style="font-size:11px">Klicke oben rechts auf deinen Namen um sie zu bearbeiten.</span>
       </div>
@@ -685,12 +656,6 @@ select</style>
               Zeitpunkt global einstellbar unter <b style="color:var(--text)">⚙ Einstellungen → Wöchentliche Zusammenfassung</b>.
             </div>
           </details>
-        </div>
-        <!-- Test Button — versteckt wenn User-Benachrichtigungen aktiv -->
-        <div style="margin-top:10px" id="depotTestBtnWrap">
-          <button class="btn btn-ghost btn-sm" id="depotTestBtn"
-                  onclick="testDepotNotification()" disabled
-                  style="opacity:0.4">🔔 Benachrichtigung testen</button>
         </div>
       <!-- Parqet Integration -->
       <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
@@ -1048,19 +1013,17 @@ http://depotradar.example.lan</div>
       <details class="help-section">
         <summary class="help-summary">👤 Benutzer & Multi-User</summary>
         <div class="help-body">
-          DepotRadar unterstützt mehrere Benutzerprofile — ideal wenn mehrere Personen die App gemeinsam nutzen.<br><br>
+          DepotRadar setzt mindestens ein Benutzerprofil voraus — ideal auch wenn nur eine Person die App nutzt, und unterstützt zusätzlich mehrere Profile wenn mehrere Personen sie gemeinsam verwenden.<br><br>
           <b>Einrichtung:</b><br>
-          Beim ersten Start erscheint ein Setup-Screen. Wähle „Benutzer anlegen" um Profile einzurichten, oder „Ohne Benutzer starten" um die App wie gewohnt ohne Login zu nutzen.<br><br>
+          Beim ersten Start wirst du gebeten, dein Profil anzulegen — ein PIN ist dabei optional.<br><br>
           <b>Login:</b><br>
-          Jeder Benutzer kann einen optionalen 4-stelligen PIN schützen. Ohne PIN reicht ein Klick auf den Namen. Nach dem Login sieht man nur die eigenen Depots und Watchlists.<br><br>
+          Gibt es nur einen Benutzer ohne PIN, wirst du beim Öffnen der App automatisch eingeloggt — ganz ohne Login-Screen. Sobald ein PIN gesetzt ist oder mehrere Benutzer existieren, erscheint die Benutzerauswahl; ohne PIN reicht dort ein Klick auf den Namen.<br><br>
           <b>Benutzer verwalten:</b><br>
-          Über den Benutzer-Chip oben rechts im Header öffnet sich die Benutzerverwaltung. Dort können eigene Einstellungen und PIN geändert sowie neue Benutzer angelegt werden.<br><br>
+          Über den Benutzer-Chip oben rechts im Header öffnet sich die Benutzerverwaltung. Dort können eigene Einstellungen und PIN geändert sowie weitere Benutzer angelegt werden.<br><br>
           <b>Benachrichtigungen:</b><br>
-          Apprise-URLs und Benachrichtigungseinstellungen werden pro Benutzer hinterlegt (in der Benutzerverwaltung). Diese haben Vorrang über die depot-spezifischen Einstellungen.<br><br>
+          Apprise-URLs und Benachrichtigungseinstellungen werden ausschließlich pro Benutzer hinterlegt (in der Benutzerverwaltung) — es gibt keine separate Depot-Ebene dafür mehr.<br><br>
           <b>Verlauf:</b><br>
-          Der Verlauf zeigt standardmäßig nur Einträge des eingeloggten Benutzers. Mit dem User-Filter kann auf alle Benutzer oder einen bestimmten Benutzer gewechselt werden. System-Einträge (Auto-Refresh etc.) erscheinen nur unter „Alle".<br><br>
-          <b>Rollback:</b><br>
-          Die Multi-User-Funktion kann jederzeit deaktiviert werden indem die Datei <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">data/users.json</code> gelöscht wird — alle Depots und Daten bleiben dabei unberührt.
+          Der Verlauf zeigt standardmäßig nur Einträge des eingeloggten Benutzers. Mit dem User-Filter kann auf alle Benutzer oder einen bestimmten Benutzer gewechselt werden. System-Einträge (Auto-Refresh etc.) erscheinen nur unter „Alle".
         </div>
       </details>
 
@@ -1371,7 +1334,6 @@ let activeDepot      = null;
 let activeView       = {type:"depot", id:null, name:""}; // type: depot | watchlist
 let stocksCache   = [];
 let selectedCompany = null;
-let depotUrls     = [];
 let userUrls      = [];
 let editingDepot  = null;
 let editingWl     = null;
@@ -1768,19 +1730,6 @@ function initTheme(){
   });
 }
 
-// ── Depot Confirm Toggle ─────────────────────────────────────────
-function onDepotConfirmChange(){
-  const val = document.getElementById("depotConfirmToggle")?.checked || false;
-  if(!editingDepot) return;
-  fetch(`${API}/depots/${editingDepot.id}`, {
-    method:"PUT", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      name: editingDepot.name,
-      apprise_urls: depotUrls,
-      notification_confirm: val
-    })
-  });
-}
 
 // ── Client ID Toggle ─────────────────────────────────────────────
 function showClientIdInput(){
@@ -2534,7 +2483,7 @@ async function createDepot(){
 }
 
 function openDepotSettings(depot){
-  editingDepot=depot; depotUrls=[...(depot.apprise_urls||[])];
+  editingDepot=depot;
   document.getElementById("editDepotName").value = depot.name;
   const hasClientId = !!(depot.parqet_client_id);
   document.getElementById("parqetClientIdInput").value = depot.parqet_client_id || "";
@@ -2568,8 +2517,6 @@ function openDepotSettings(depot){
   // Dynamische Callback-URL anzeigen
   const cbEl = document.getElementById("callbackUrlDisplay");
   if(cbEl) cbEl.value = window.location.origin + "/api/parqet/callback";
-  document.getElementById("depotMentionInput").value = depot.notification_mention || "";
-  document.getElementById("depotConfirmToggle").checked = !!depot.notification_confirm;
   document.getElementById("depotNotifsEnabled").checked = depot.notifications_enabled !== false;
   document.getElementById("depotDigestToggle").checked  = !!depot.weekly_digest;
   // Digest-Zeile nur zeigen wenn global aktiviert
@@ -2577,26 +2524,10 @@ function openDepotSettings(depot){
     const row = document.getElementById("depotDigestRow");
     if(row) row.style.display = s.digest_enabled ? "block" : "none";
   });
-  // Benachrichtigungssektion: bei eingeloggtem User ausblenden
-  const hasNamedUser = activeUser && activeUser.name;
-  const notifSection = document.getElementById("depotNotifSection");
-  const notifHint    = document.getElementById("depotNotifUserHint");
-  const testWrap     = document.getElementById("depotTestBtnWrap");
-  if(notifSection) notifSection.style.display = hasNamedUser ? "none" : "block";
-  if(notifHint)    notifHint.style.display    = hasNamedUser ? "block" : "none";
-  if(testWrap)     testWrap.style.display     = hasNamedUser ? "none"  : "block";
-  renderDepotUrlList(); openModal("depotSettingsModal");
+  openModal("depotSettingsModal");
   setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
 }
-function renderDepotUrlList(){
-  document.getElementById("depotUrlList").innerHTML=depotUrls.length===0
-    ?'<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
-    :depotUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeDepotUrl(${i})">&#215;</button></div>`).join("");
-  const testBtn = document.getElementById("depotTestBtn");
-  if(testBtn){ testBtn.disabled = depotUrls.length === 0; testBtn.style.opacity = depotUrls.length ? "1" : "0.4"; }
-}
-
 function renderUserUrlList(){
   const el = document.getElementById("userUrlList"); if(!el) return;
   el.innerHTML = userUrls.length===0
@@ -2616,27 +2547,19 @@ function toggleUserAddUrlBtn(input){
   if(btn) btn.style.display=input.value.trim()?"block":"none";
 }
 
-function toggleAddUrlBtn(input){
-  const btn = document.getElementById("addUrlBtn");
-  if(btn) btn.style.display = input.value.trim() ? "block" : "none";
-}
-function addDepotUrl(){const v=document.getElementById("newDepotUrlInput").value.trim();if(!v)return;depotUrls.push(v);document.getElementById("newDepotUrlInput").value="";const btn=document.getElementById("addUrlBtn");if(btn)btn.style.display="none";renderDepotUrlList();}
-function removeDepotUrl(i){depotUrls.splice(i,1);renderDepotUrlList();}
 async function saveDepotSettings(){
   if(!editingDepot) return;
   const name       = document.getElementById("editDepotName").value.trim(); if(!name) return;
   const budgetVal  = document.getElementById("depotBuyBudget").value;
   const buy_budget = budgetVal ? parseFloat(budgetVal) : null;
   const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name, apprise_urls:depotUrls, buy_budget,
-      notification_mention:(document.getElementById("depotMentionInput")?.value||"").trim(),
-      notification_confirm:document.getElementById("depotConfirmToggle")?.checked||false,
+    body:JSON.stringify({name, buy_budget,
       notifications_enabled:document.getElementById("depotNotifsEnabled")?.checked!==false,
       weekly_digest:document.getElementById("depotDigestToggle")?.checked||false})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
   if(activeDepot&&activeDepot.id===editingDepot.id){
-    activeDepot.name=name; activeDepot.apprise_urls=depotUrls;
+    activeDepot.name=name;
     activeDepot.buy_budget=buy_budget;
   }
   loadDepots();
@@ -2649,11 +2572,6 @@ async function deleteCurrentDepot(){
   closeModal("depotSettingsModal");
   if(activeDepot&&activeDepot.id===editingDepot.id) activeDepot=null;
   toast("Depot gelöscht"); loadDepots();
-}
-async function testDepotNotification(){
-  if(!depotUrls.length){toast("Keine URLs konfiguriert",false);return;}
-  const r=await fetch(`${API}/notifications/test`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({urls:depotUrls, mention:(document.getElementById("depotMentionInput")?.value||"").trim()})});
-  const d=await r.json(); toast(d.ok?"Test gesendet!":"Fehlgeschlagen",d.ok);
 }
 
 async function testUserNotification(){
@@ -3249,17 +3167,14 @@ async function initUsers(){
   } catch(e){ _usersCache = []; }
 
   if(_usersCache.length === 0){
-    // Noch keine users.json — Setup-Screen zeigen
+    // Noch keine users.json — Ersteinrichtung zeigen (Benutzer ist jetzt Pflicht)
     document.getElementById("setupOverlay").style.display = "flex";
     return false;
   }
 
-  const defaults = _usersCache.filter(u => u.is_default);
-  const named    = _usersCache.filter(u => u.name);
-
-  if(defaults.length > 0 && named.length === 0){
-    // Nur Default-User → direkt einloggen, kein Screen
-    activeUser = defaults[0];
+  if(_usersCache.length === 1 && !_usersCache[0].has_pin){
+    // Einziger Benutzer, kein PIN gesetzt → direkt einloggen, kein Auswahl-Screen nötig
+    activeUser = _usersCache[0];
     updateUserChip();
     return true;
   }
@@ -3279,8 +3194,7 @@ async function initUsers(){
 
 function showLoginScreen(){
   const grid = document.getElementById("loginUserGrid");
-  const named = _usersCache.filter(u => u.name);
-  grid.innerHTML = named.map(u => `
+  grid.innerHTML = _usersCache.map(u => `
     <button class="user-btn" onclick="selectLoginUser('${u.id}')">
       <div class="user-avatar">${esc(u.name.charAt(0).toUpperCase())}</div>
       <span>${esc(u.name)}</span>
@@ -3385,19 +3299,6 @@ function updateUserChip(){
 }
 
 // Setup-Screen Handler
-async function setupWithoutUser(){
-  // Default-User erstellen
-  const r = await fetch(`${API}/users`, {method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({name:"", is_default:true, depots:[], apprise_urls:[], notification_mention:"", notification_confirm:false})});
-  const u = await r.json();
-  _usersCache = [u];
-  activeUser  = u;
-  document.getElementById("setupOverlay").style.display = "none";
-  updateUserChip();
-  loadDepots();
-}
-
 async function setupWithUser(){
   document.getElementById("setupOverlay").style.display = "none";
   openUserModal(true);
@@ -3471,17 +3372,9 @@ async function saveNewUser(isFirst=false){
 async function editUser(userId){
   const user = _usersCache.find(u=>u.id===userId);
   if(!user) return;
-  const allDepots = await fetch(`${API}/depots`).then(r=>r.json()).catch(()=>[]);
-  // Bestehende URLs vorausfüllen — bei leerem User aus erstem eigenen Depot migrieren
   userUrls = [...(user.apprise_urls||[])];
-  if(!userUrls.length){
-    const firstDepot = allDepots.find(d => user.depots?.includes(d.id));
-    if(firstDepot?.apprise_urls?.length) userUrls = [...firstDepot.apprise_urls];
-  }
-  const mention = user.notification_mention
-    || allDepots.find(d=>user.depots?.includes(d.id))?.notification_mention || "";
-  const confirmChk = user.notification_confirm
-    ?? allDepots.find(d=>user.depots?.includes(d.id))?.notification_confirm ?? false;
+  const mention    = user.notification_mention || "";
+  const confirmChk = !!user.notification_confirm;
 
   document.getElementById("userFormArea").innerHTML = `
     <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-top:8px">
@@ -3560,7 +3453,7 @@ async function saveEditUser(userId){
 
 // Depot-Filterung nach aktivem User
 function getUserDepotIds(){
-  if(!activeUser || activeUser.is_default || !activeUser.depots?.length) return null; // null = alle
+  if(!activeUser || !activeUser.depots?.length) return null; // null = alle
   return activeUser.depots;
 }
 
@@ -3671,6 +3564,16 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.8.0 · Backend v2.7.0",
+    items: [
+      "Umbau: Benutzerprofil ist jetzt Pflicht — vereinfacht den Code erheblich, da Benachrichtigungseinstellungen nicht mehr doppelt (Depot- und Benutzer-Ebene) gepflegt werden müssen",
+      "Gibt es nur einen Benutzer ohne PIN, wirst du jetzt automatisch eingeloggt — kein Auswahl-Screen mehr nötig",
+      "Bugfix: Depot-Einstellungen speichern (PUT) war durch einen falsch zugeordneten Decorator unbeabsichtigt nicht erreichbar — behoben",
+      "Bugfix: Wöchentliche Zusammenfassung berücksichtigte Benutzer-Apprise-URLs nicht — las bisher ausschließlich vom Depot",
+    ]
+  },
   {
     label: "Juni 2026",
     versions: "Frontend v2.7.25–2.7.45 · Backend v2.5.0–2.6.0",
@@ -4631,7 +4534,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.7.46 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.8.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
@@ -4674,9 +4577,8 @@ setInterval(loadSchedulerStatus,30000);
 <div id="setupOverlay" class="user-overlay" style="display:none">
   <div class="user-card">
     <h2>👋 Willkommen bei DepotRadar</h2>
-    <p>Möchtest du Benutzerprofile anlegen oder direkt starten?</p>
-    <button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="setupWithUser()">👤 Benutzer anlegen</button>
-    <button class="btn btn-ghost" style="width:100%" onclick="setupWithoutUser()">Ohne Benutzer starten</button>
+    <p>Lege zunächst dein Benutzerprofil an — ein PIN ist dabei optional.</p>
+    <button class="btn btn-primary" style="width:100%" onclick="setupWithUser()">👤 Profil anlegen</button>
   </div>
 </div>
 
