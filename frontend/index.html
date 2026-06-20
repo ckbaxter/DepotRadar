@@ -30,7 +30,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
 /* Topbar */
 .topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:8px}
-.logo{font-size:17px;font-weight:700;color:var(--accent);white-space:nowrap;line-height:1.2}
+.logo{font-size:17px;font-weight:700;color:var(--accent);white-space:nowrap;line-height:1.2;cursor:pointer}
 .logo span{color:var(--text)}
 .topbar-right{display:flex;gap:6px;flex-shrink:0}
 
@@ -342,7 +342,7 @@ select</style>
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:10px">
     <div style="display:flex;flex-direction:column;line-height:1.2">
-      <div class="logo">Depot<span>Radar</span></div>
+      <div class="logo" onclick="location.reload()" title="Seite neu laden">Depot<span>Radar</span></div>
       <div style="font-size:9px;color:var(--muted);font-weight:400;
                   letter-spacing:0.02em;white-space:nowrap;margin-top:1px">
         Portfolio &amp; ATH-Überwachung
@@ -3566,6 +3566,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.8.1",
+    items: [
+      "Logo oben links ist jetzt anklickbar und lädt die Seite neu",
+    ]
+  },
+  {
+    label: "Juni 2026",
     versions: "Frontend v2.8.0 · Backend v2.7.0",
     items: [
       "Umbau: Benutzerprofil ist jetzt Pflicht — vereinfacht den Code erheblich, da Benachrichtigungseinstellungen nicht mehr doppelt (Depot- und Benutzer-Ebene) gepflegt werden müssen",
@@ -4534,7 +4541,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.8.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.8.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
