@@ -1,4 +1,5 @@
 import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, shutil, uuid as _uuid
+from collections import Counter
 from datetime import datetime, timedelta
 from urllib.parse import quote as urlquote
 
@@ -20,7 +21,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.1"
+VERSION           = "2.7.2"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -234,11 +235,14 @@ def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
 def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
-                      multiplier=1, is_nachkauf=False):
+                      multiplier=1, is_nachkauf=False, is_sector_gap=False):
     """Baut eine HTML-Version des ATH-Alarms für E-Mail-Versand (analog zum Wochenbericht)."""
     nk_badge = ('<span style="display:inline-block;padding:2px 8px;background:#fef3c7;'
                 'color:#92400e;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
                 '🛒 Nachkauf-Kandidat</span>') if is_nachkauf else ""
+    gap_badge = ('<span style="display:inline-block;padding:2px 8px;background:#e0e7ff;'
+                 'color:#3730a3;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
+                 '⚖️ Sektor unterrepräsentiert</span>') if is_sector_gap else ""
 
     buy_html = ""
     if buy_budget:
@@ -259,7 +263,7 @@ def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budge
       <div style="opacity:.85;font-size:13px;margin-top:4px">-{cb}%-Block erreicht</div>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
-      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span>{nk_badge}</h3>
+      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span>{nk_badge}{gap_badge}</h3>
       <table style="width:100%;border-collapse:collapse;margin-top:12px">
         <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{new_cur:.2f} €</td></tr>
         <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">ATH</td><td style="padding:4px 8px;font-weight:600">{new_ath:.2f} €</td></tr>
@@ -273,7 +277,7 @@ def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budge
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
-def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None):
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None, is_sector_gap=False):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
@@ -296,7 +300,8 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         link       = f"\n\n{APP_URL}" if APP_URL else ""
         multiplier = 3 if cb >= 60 else (2 if cb >= 40 else 1)
         nk_icon    = "🛒 " if is_nachkauf else ""
-        title      = f"ATH-Alarm [{label}]: {nk_icon}{stock['name']} -{cb}%-Block"
+        gap_icon   = "⚖️ " if is_sector_gap else ""
+        title      = f"ATH-Alarm [{label}]: {nk_icon}{gap_icon}{stock['name']} -{cb}%-Block"
         # Kaufempfehlung wenn Budget definiert
         buy_line = ""
         if buy_budget:
@@ -306,15 +311,17 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 cost       = round(qty * new_cur, 2)
                 buy_line   = (f"\nKaufempfehlung:  {qty} Stk. "
                               f"(~{cost:.2f} EUR / Budget {multiplier}×{buy_budget:.0f}={eff_budget:.0f} EUR)")
-        nk_line = "\n🛒 Nachkauf-Kandidat" if is_nachkauf else ""
-        body = (f"{stock['name']} ({stock['ticker']}) — {label}{nk_line}\n\n"
+        nk_line  = "\n🛒 Nachkauf-Kandidat" if is_nachkauf else ""
+        gap_line = "\n⚖️ Sektor unterrepräsentiert" if is_sector_gap else ""
+        body = (f"{stock['name']} ({stock['ticker']}) — {label}{nk_line}{gap_line}\n\n"
                 f"Aktueller Kurs:  {new_cur:.2f} EUR\n"
                 f"ATH:             {new_ath:.2f} EUR\n"
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR\n"
                 f"Kursstand:       {stock.get('market_time', '—')}{link}")
         html_body = build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp,
-                                      buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf)
+                                      buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf,
+                                      is_sector_gap=is_sector_gap)
         send_apprise(title, body, urls or [], mention=mention, html_body=html_body, depot_id=depot_id)
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
         cleared = [lvl for lvl in [20, 30, 40, 50, 60] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
@@ -656,14 +663,16 @@ def send_ath_alerts(hits, label, urls, mention="", depot_id=None):
             log.error(f"ATH-Alarm {s.get('name','?')}: {e}")
 
 
-def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, mention="", confirm=False, depot_id=None):
+def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_gap_set=None, mention="", confirm=False, depot_id=None):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
+    sector_gap_set = sector_gap_set or set()
     for i, s in enumerate(stocks):
         try:
             is_nk   = s["ticker"] in nachkauf_set
+            is_gap  = s["ticker"] in sector_gap_set
             new_blk = check_and_notify(
                 s, s["current_eur"], s["ath_eur"],
-                label, urls, buy_budget, is_nk, mention, confirm=confirm, depot_id=depot_id
+                label, urls, buy_budget, is_nk, mention, confirm=confirm, depot_id=depot_id, is_sector_gap=is_gap
             )
             stocks[i]["last_notified_block"] = new_blk
         except Exception as e:
@@ -692,13 +701,22 @@ def _refresh_depot(depot, trigger="auto"):
     wl_nachkauf  = {wl_id: calc_nachkauf_set(wls, threshold)
                     for wl_id, (_, wls, _, _, _) in wl_data.items()}
 
+    # Sektor-Lücke berechnen — Basis ist immer der echte Bestand, auch für Watchlists
+    # (eine Watchlist-Aktie kann eine Lücke im Bestand füllen, auch wenn ihr Sektor
+    # innerhalb der Watchlist selbst nicht knapp ist)
+    sector_gap_set = calc_sector_gap_set(stocks)
+    wl_sector_gap  = {wl_id: calc_sector_gap_set(stocks, wls)
+                      for wl_id, (_, wls, _, _, _) in wl_data.items()}
+
     # Benachrichtigungen — nur wenn für dieses Depot aktiviert
     if depot.get("notifications_enabled", True):
-        stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set, mention, confirm, depot_id=did)
+        stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set,
+                                      sector_gap_set, mention, confirm, depot_id=did)
         send_ath_alerts(ath_hits, f"Bestand: {dname}", urls, mention, depot_id=did)
         for wl_id, (wl, wls, _, _, wl_ath_hits) in wl_data.items():
             wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
-                                      urls, budget, wl_nachkauf[wl_id], mention, confirm, depot_id=did)
+                                      urls, budget, wl_nachkauf[wl_id], wl_sector_gap[wl_id],
+                                      mention, confirm, depot_id=did)
             send_ath_alerts(wl_ath_hits, f"Beobachtung: {wl['name']} ({dname})", urls, mention, depot_id=did)
             save_wl_stocks(did, wl_id, wls)
     else:
@@ -1154,6 +1172,30 @@ def calc_nachkauf_set(stocks, threshold=30):
         if discount >= 20 and pos_val <= cutoff:
             result.add(s["ticker"])
     return result
+
+def calc_sector_gap_set(basis_stocks, target_stocks=None, factor=0.5):
+    """
+    Diversifikations-Lücke: ermittelt anhand von basis_stocks (immer der tatsächliche
+    Bestand, nie eine Watchlist) welche Sektoren unterrepräsentiert sind, und gibt die
+    Ticker aus target_stocks zurück, deren Sektor betroffen ist. Ohne target_stocks wird
+    das Ergebnis auf basis_stocks selbst angewendet (für den Bestand gegen sich selbst).
+    So kann z.B. eine Watchlist-Aktie als Lücken-Kandidat markiert werden, auch wenn der
+    Sektor in der Watchlist selbst gar nicht knapp ist — entscheidend ist immer der
+    echte Bestand.
+    Ein Sektor gilt als unterrepräsentiert wenn seine Positionsanzahl im Bestand unter
+    factor (Standard 50%) des Durchschnitts liegt. Aktien ohne Sektor werden bei der
+    Durchschnittsberechnung ignoriert. Gibt ein Set von Tickern zurück.
+    """
+    target  = target_stocks if target_stocks is not None else basis_stocks
+    sectors = [s.get("sector") for s in basis_stocks if s.get("sector")]
+    if len(sectors) < 2:
+        return set()
+    counts    = Counter(sectors)
+    avg       = len(sectors) / len(counts)
+    underrep  = {sec for sec, cnt in counts.items() if cnt < avg * factor}
+    if not underrep:
+        return set()
+    return {s["ticker"] for s in target if s.get("sector") in underrep}
 
 def calc_buy_quantity(budget, multiplier, price):
     """
