@@ -20,7 +20,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.0"
+VERSION           = "2.7.1"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -495,10 +495,12 @@ def fetch_stock_data(ticker):
             "market_time": mt_str, **perfs}
 
 def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
-    """Berechnet 1T/1W/1M/3M Performance. Behandelt GBp korrekt."""
+    """Berechnet 1T/1W/1M/3M/1J/3J Performance. perf_1w wird nur noch intern für die
+    Wochenzusammenfassung ("Beste/schlechteste Woche") berechnet, ist aber kein
+    Badge mehr im Frontend (siehe perfWrap in index.html). Behandelt GBp korrekt."""
     try:
         enc = urlquote(ticker)
-        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=3mo&interval=1d&includePrePost=false"
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false"
         r   = requests.get(url, headers=YH, timeout=10); r.raise_for_status()
         res = r.json()["chart"]["result"][0]
         # GBp-Kurse auf GBP normalisieren (sonst 100x zu hoch)
@@ -508,10 +510,12 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
         closes = res["indicators"]["quote"][0].get("close", [])
         now    = time_mod.time()
         targets = {
-            "perf_1d": now -  1 * 86400,
-            "perf_1w": now -  7 * 86400,
-            "perf_1m": now - 30 * 86400,
-            "perf_3m": now - 90 * 86400,
+            "perf_1d": now -   1 * 86400,
+            "perf_1w": now -   7 * 86400,
+            "perf_1m": now -  30 * 86400,
+            "perf_3m": now -  90 * 86400,
+            "perf_1y": now - 365 * 86400,
+            "perf_3y": now - 3 * 365 * 86400,
         }
         result = {}
         for key, target_ts in targets.items():
@@ -526,7 +530,7 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
         return result
     except Exception as e:
         log.warning(f"Performance {ticker}: {e}")
-        return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None}
+        return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
 EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "postmark://", "ses://")
@@ -574,6 +578,8 @@ def _make_stock(data, old=None):
         "perf_1w":       data.get("perf_1w"),
         "perf_1m":       data.get("perf_1m"),
         "perf_3m":       data.get("perf_3m"),
+        "perf_1y":       data.get("perf_1y"),
+        "perf_3y":       data.get("perf_3y"),
         # Parqet-Felder explizit beibehalten (nicht durch **base überschreiben lassen)
         "isin":          base.get("isin"),
         "buy_price_eur": base.get("buy_price_eur"),
