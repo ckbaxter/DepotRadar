@@ -876,6 +876,24 @@ select</style>
       </details>
 
       <details class="help-section">
+        <summary class="help-summary">⚖️ Diversifikations-Lücke</summary>
+        <div class="help-body">
+          Markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind — als
+          Orientierung für eine ausgewogenere Streuung über die Sektoren.<br><br>
+          Berechnung: Ø Positionen pro Sektor = Gesamtzahl Aktien im Bestand ÷ Anzahl
+          genutzter Sektoren. Ein Sektor gilt als unterrepräsentiert, wenn er weniger als
+          die Hälfte dieses Durchschnitts erreicht. Aktien ohne zugewiesenen Sektor werden
+          dabei nicht mitgezählt. Der Schwellenwert ist aktuell fest auf 50% gesetzt.<br><br>
+          <b>Watchlist-Aktien</b> werden immer gegen den echten Bestand bewertet, nicht
+          gegen die Watchlist selbst — so siehst du direkt, welche Watchlist-Titel eine
+          tatsächliche Lücke in deinem Depot füllen würden.<br><br>
+          ⚖️ erscheint am Sektor-Tag in Tabelle/Karten, als Hinweis in der Sektor-Übersicht
+          und zusätzlich in der ATH-Discount-Benachrichtigung (nicht beim separaten
+          Neues-ATH-Alarm).
+        </div>
+      </details>
+
+      <details class="help-section">
         <summary class="help-summary">🔍 Suchfeld</summary>
         <div class="help-body">
           Filtert die Tabelle live nach Name oder Ticker. Kombinierbar mit allen anderen Filtern.
@@ -986,12 +1004,14 @@ select</style>
           Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.<br><br>
           Ohne Multi-User können Apprise-URLs weiterhin direkt in den Depot-Einstellungen hinterlegt werden (⚙-Icon im Depot-Tab).<br><br>
           Eine Benachrichtigung kommt wenn eine Aktie die eingestellte ATH-Schwelle unterschreitet.
-          Nachkauf-Kandidaten werden mit einem 🛒-Symbol hervorgehoben.<br><br>
+          Nachkauf-Kandidaten werden mit einem 🛒-Symbol hervorgehoben, Aktien aus unterrepräsentierten
+          Sektoren zusätzlich mit ⚖️.<br><br>
           <b>Beispiel einer Benachrichtigung:</b>
           <div style="background:var(--bg3);border-radius:6px;padding:10px 14px;
                       font-family:monospace;font-size:11px;margin-top:6px;line-height:1.9;
-                      white-space:pre-wrap;word-break:break-word">ATH-Alarm [Bestand: Mein Depot]: Apple -22%-Block
+                      white-space:pre-wrap;word-break:break-word">ATH-Alarm [Bestand: Mein Depot]: 🛒 ⚖️ Apple -22%-Block
 🛒 Apple Inc. (APC.DE) — Bestand: Mein Depot
+⚖️ Sektor unterrepräsentiert
 
 Aktueller Kurs:  156,00 EUR
 ATH:             199,62 EUR
@@ -1001,7 +1021,8 @@ Kaufempfehlung:  2 Stk. (~312,00 EUR / Budget 1×350=350 EUR)
 
 http://depotradar.example.lan</div>
           <div style="margin-top:8px;font-size:11px;color:var(--muted)">
-            🛒 = Nachkauf-Kandidat (untergewichtet im Depot + weit unter ATH)
+            🛒 = Nachkauf-Kandidat (untergewichtet im Depot + weit unter ATH) &nbsp;·&nbsp;
+            ⚖️ = Sektor im Bestand unterrepräsentiert (nur beim Discount-Block-Alarm, nicht beim Neues-ATH-Alarm)
           </div>
           <br>
           Weitere Informationen zur Konfiguration mit Beispielen für Discord, Telegram, E-Mail und mehr:<br>
@@ -1333,6 +1354,7 @@ let watchlistsCache  = [];
 let activeDepot      = null;
 let activeView       = {type:"depot", id:null, name:""}; // type: depot | watchlist
 let stocksCache   = [];
+let basisStocksCache = [];   // Bestand für Sektor-Lücke — bleibt auch bei Watchlist-Re-Renders erhalten
 let selectedCompany = null;
 let userUrls      = [];
 let editingDepot  = null;
@@ -1511,15 +1533,20 @@ async function loadCurrentStocks(){
   renderViewTabs();
   updateViewTitle();
   try {
-    let stocks;
+    let stocks, basisStocks;
     if(isWl()){
-      const r = await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`);
-      stocks = await r.json();
+      const [r, rb] = await Promise.all([
+        fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`),
+        fetch(`${API}/stocks?depot=${activeDepot.id}`)
+      ]);
+      stocks      = await r.json();
+      basisStocks = await rb.json();
     } else {
       const r = await fetch(`${API}/stocks?depot=${activeDepot.id}`);
-      stocks = await r.json();
+      stocks      = await r.json();
+      basisStocks = stocks;
     }
-    renderTable(stocks);
+    renderTable(stocks, basisStocks);
     const times = stocks.filter(s=>s.updated).map(s=>s.updated);
     if(times.length) document.getElementById("lastUpdate").textContent = "Stand: "+times[times.length-1];
   } catch(e){ toast("Fehler beim Laden", false); }
@@ -1608,6 +1635,29 @@ function markBuyCandidates(stocks) {
     const posVal   = s.current_eur * (s.shares || 0);
     const discount = s.ath_eur > 0 ? (s.ath_eur - s.current_eur) / s.ath_eur * 100 : 0;
     s._isBuyCandidate = !!(s.buy_price_eur && s.shares && discount >= 20 && posVal <= cutoff);
+  });
+}
+
+// Diversifikations-Lücke: welche Sektoren sind im echten Bestand unterrepräsentiert?
+// basisStocks ist immer der Bestand (auch wenn stocks gerade eine Watchlist ist) —
+// so kann eine Watchlist-Aktie als Lücken-Kandidat markiert werden, auch wenn ihr
+// Sektor innerhalb der Watchlist selbst gar nicht knapp ist.
+function calcSectorGapCounts(basisStocks, factor=0.5){
+  const sectors = basisStocks.map(s => s.sector).filter(Boolean);
+  if(sectors.length < 2) return null;
+  const counts = {};
+  sectors.forEach(sec => counts[sec] = (counts[sec]||0) + 1);
+  const avg = sectors.length / Object.keys(counts).length;
+  return {counts, avg, factor};
+}
+
+function markSectorGap(stocks, basisStocks){
+  const basis = basisStocks || stocks;
+  const info  = calcSectorGapCounts(basis);
+  if(!info){ stocks.forEach(s => s._isSectorGap = false); return; }
+  stocks.forEach(s => {
+    const cnt = s.sector ? (info.counts[s.sector] || 0) : null;
+    s._isSectorGap = !!(s.sector && cnt < info.avg * info.factor);
   });
 }
 
@@ -2106,7 +2156,9 @@ function moveBtn(ticker){
   return `<button class="icon-btn move" title="Ins Depot verschieben" onclick="moveToDepot('${ticker}')" style="font-size:11px">&#8594; Depot</button>`;
 }
 
-function renderTable(stocks){
+function renderTable(stocks, basisStocks){
+  if(basisStocks) basisStocksCache = basisStocks;
+  basisStocks = basisStocksCache.length ? basisStocksCache : stocks;
   stocksCache=stocks;
   document.getElementById("sc-total").textContent=stocks.length;
   document.getElementById("sc-green").textContent=stocks.filter(s=>disc(s)<20).length;
@@ -2129,10 +2181,11 @@ function renderTable(stocks){
   empty.style.display="none"; tscrl.style.display="";
 
   renderPortfolioStats(stocks);
-  renderSectorOverview(stocks);
+  renderSectorOverview(stocks, basisStocks);
   stocks = _applySummaryFilter(stocks);
   stocks = _applyStockSearch(stocks);
   markBuyCandidates(stocks);
+  markSectorGap(stocks, basisStocks);
   if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
   if(_activeSectorFilter) stocks = stocks.filter(s => s.sector === _activeSectorFilter);
   renderSectorFilterBtn();
@@ -2969,7 +3022,7 @@ function toggleSnapshotSection(){
 }
 
 // ── Sektor-Übersicht ─────────────────────────────────────────────
-function renderSectorOverview(stocks){
+function renderSectorOverview(stocks, basisStocks){
   const wrap  = document.getElementById("sectorOverviewWrap");
   const chips = document.getElementById("sectorChips");
   if(!wrap || !chips) return;
@@ -2981,19 +3034,28 @@ function renderSectorOverview(stocks){
   if(!sectors.length){ wrap.style.display="none"; return; }
   wrap.style.display = "block";
 
+  // Soll-Wert (Ø Positionen/Sektor) immer auf Basis des echten Bestands berechnen,
+  // auch wenn gerade eine Watchlist angezeigt wird — Diversifikation bezieht sich
+  // immer auf das tatsächliche Depot.
+  const gapInfo = calcSectorGapCounts(basisStocks || stocks);
+
   chips.innerHTML = sectors.map(([sec, n]) => {
     const active = _activeSectorFilter === sec;
+    const basisCnt = gapInfo ? (gapInfo.counts[sec] || 0) : null;
+    const isGap    = gapInfo && basisCnt < gapInfo.avg * gapInfo.factor;
+    const gapMark  = isGap ? `<span style="margin-left:3px">⚖️</span>` : "";
+    const countTxt = isGap ? `${n} <span style="opacity:.75">· Ø ${Math.round(gapInfo.avg)}</span>` : `${n}`;
     return `<span onclick="setSectorFilter('${sec.replace(/'/g,"\\'")}')"
       style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;
              cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;
              background:${active?'rgba(99,102,241,.2)':'var(--bg3)'};
              border:1px solid ${active?'rgba(99,102,241,.5)':'var(--border)'};
              color:${active?'#a5b4fc':'var(--text)'}">
-        ${sec}
+        ${sec}${gapMark}
         <span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:4px;
                      background:${active?'rgba(99,102,241,.3)':'rgba(100,116,139,.15)'};
                      color:${active?'#c7d2fe':'var(--muted)'}">
-          ${n}
+          ${countTxt}
         </span>
       </span>`;
   }).join("");
@@ -3035,9 +3097,12 @@ function weightTd(s){
 }
 
 function sectorBadgeHtml(s, depotId, wl=false, wlId=null){
-  const wlAttr = wl ? `data-wl="1" data-wlid="${wlId||''}"` : "";
+  const wlAttr  = wl ? `data-wl="1" data-wlid="${wlId||''}"` : "";
+  const gapMark = s._isSectorGap
+    ? `<span title="Sektor im Bestand unterrepräsentiert" style="margin-left:4px;font-size:12px">⚖️</span>`
+    : "";
   if(s.sector){
-    return `<div style="margin-top:4px"><span class="sector-badge" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>${s.sector}</span></div>`;
+    return `<div style="margin-top:4px"><span class="sector-badge" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>${s.sector}</span>${gapMark}</div>`;
   }
   return `<div style="margin-top:4px"><span class="sector-ph" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>+ Sektor</span></div>`;
 }
@@ -3564,6 +3629,14 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.8.3 · Backend v2.7.2",
+    items: [
+      "Neu: Diversifikations-Lücke (⚖️) — markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind (Schwelle: unter 50% des Sektor-Durchschnitts), direkt am Sektor-Tag in Tabelle und Karten sowie als Ø-Hinweis in der Sektor-Übersicht. Watchlist-Aktien werden dabei immer gegen den echten Bestand bewertet, nicht gegen die Watchlist selbst.",
+      "ATH-Discount-Benachrichtigungen zeigen ⚖️ jetzt zusätzlich zu 🛒, wenn die betroffene Aktie aus einem unterrepräsentierten Sektor stammt (nur beim Discount-Block-Alarm, nicht beim separaten Neues-ATH-Alarm)",
+    ]
+  },
   {
     label: "Juni 2026",
     versions: "Frontend v2.8.2 · Backend v2.7.1",
@@ -4542,7 +4615,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.8.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.8.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
