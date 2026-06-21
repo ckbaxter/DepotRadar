@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.7.0-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.8.0-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.7.2-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.8.3-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -32,6 +32,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
 - **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
+- **Diversifikations-Lücke (⚖️)** — markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind (<50% des Sektor-Durchschnitts); sichtbar am Sektor-Tag in Tabelle/Karten, in der Sektor-Übersicht und im ATH-Discount-Alarm; Watchlist-Aktien werden dabei immer gegen den echten Bestand bewertet
 - **Performance-Badges** — 1T / 1W / 1M / 3M direkt unter dem Kurs
 - **P&L** — Gewinn/Verlust in % und € wenn Einstandskurs bekannt
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
@@ -218,6 +219,22 @@ Jede Aktie kann einem Sektor zugeordnet werden. 16 vordefinierte Sektoren stehen
 
 -----
 
+## Diversifikations-Lücke
+
+Das ⚖️-Symbol markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind — als Orientierung für eine ausgewogenere Streuung über die Sektoren.
+
+**Berechnung:** Ø Positionen pro Sektor = Gesamtzahl Aktien im Bestand ÷ Anzahl genutzter Sektoren. Ein Sektor gilt als unterrepräsentiert, wenn er weniger als 50% dieses Durchschnitts erreicht (fester Schwellenwert). Aktien ohne zugewiesenen Sektor werden nicht mitgezählt.
+
+**Sichtbar an drei Stellen:**
+
+- Am Sektor-Tag in Tabelle und Karten
+- Als Ø-Hinweis in der Sektor-Übersicht
+- Im ATH-Discount-Alarm (zusätzlich zu 🛒, falls beides zutrifft) — nicht beim separaten Neues-ATH-Alarm
+
+**Watchlist-Aktien** werden immer gegen den echten Bestand bewertet, nicht gegen die Watchlist selbst — so zeigt das Symbol direkt, welche Watchlist-Titel eine tatsächliche Lücke im Depot füllen würden.
+
+-----
+
 ## Aktiensplits
 
 Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen → Aktiensplits** verwaltet.
@@ -280,6 +297,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.7.2 / 2.8.3 | Diversifikations-Lücke (⚖️) — Aktien aus unterrepräsentierten Sektoren werden markiert (Tabelle, Sektor-Übersicht, ATH-Discount-Alarm); Watchlist-Bewertung immer gegen den echten Bestand |
 | 2.7.0 / 2.8.0 | Benutzerprofil ist jetzt Pflicht, Single-User-ohne-PIN loggt automatisch ein, Benachrichtigungseinstellungen nur noch pro Benutzer (keine doppelte Depot-Ebene mehr), Bugfixes (Depot-Speichern, Wochenbericht-Quelle) |
 | 2.6.0 / 2.7.45 | ATH-Alarm pro Aktie (neues Allzeithoch), individuell aktivierbar |
 | 2.5.x / 2.7.2x–2.7.4x | Interaktiver Portfolio-Verlauf-Chart (antippen/hovern für exakte Werte), kompakte einklappbare Übersichten, Ein/Aus-Schalter pro Depot für Benachrichtigungen, Tastatur-Unterstützung für PIN-Eingabe, App-Icon, In-App-Changelog, atomare Datei-Schreibvorgänge, HTML-Escaping gegen gespeicherten XSS |
