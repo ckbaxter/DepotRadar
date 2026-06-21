@@ -2057,7 +2057,7 @@ function perfBadge(val, label){
   return `<span class="pb ${cls}">${label} ${sign}${val.toFixed(1)}%</span>`;
 }
 function perfWrap(s){
-  const b = perfBadge(s.perf_1d,"1T") + perfBadge(s.perf_1w,"1W") + perfBadge(s.perf_1m,"1M") + perfBadge(s.perf_3m,"3M");
+  const b = perfBadge(s.perf_1d,"1T") + perfBadge(s.perf_1m,"1M") + perfBadge(s.perf_3m,"3M") + perfBadge(s.perf_1y,"1J") + perfBadge(s.perf_3y,"3J");
   return b ? `<div class="perf-wrap">${b}</div>` : "";
 }
 
@@ -3566,9 +3566,10 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
-    versions: "Frontend v2.8.1",
+    versions: "Frontend v2.8.2 · Backend v2.7.1",
     items: [
       "Logo oben links ist jetzt anklickbar und lädt die Seite neu",
+      "Performance-Badges umgestellt: 1T/1M/3M/1J/3J statt 1T/1W/1M/3M (Wochenperformance bleibt intern für die Wochenzusammenfassung erhalten)",
     ]
   },
   {
@@ -4541,7 +4542,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.8.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.8.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
