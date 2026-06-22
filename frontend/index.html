@@ -385,6 +385,7 @@ select</style>
             <div id="ps-total-wrap" class="blurred-val">
               <div class="scard-val" id="ps-total" style="color:var(--text)">—</div>
             </div>
+            <div id="ps-updated" style="font-size:10px;color:var(--muted);margin-top:3px"></div>
           </div>
           <div class="scard" onclick="toggleBlur('ps-pnl-wrap')" style="cursor:pointer" title="Tippen zum Anzeigen">
             <div class="scard-label">Gewinn / Verlust <span style="font-size:10px;opacity:.5">👁</span></div>
@@ -2050,6 +2051,30 @@ function renderPortfolioStats(stocks){
   const fmt = v => v.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
 
   document.getElementById("ps-total").textContent   = fmt(totalVal) + " EUR";
+
+  // Timestamp: ältester updated-Wert aller Positionen
+  // Backend-Format: "DD.MM.YYYY HH:MM" — new Date() versteht das nicht, daher manuell parsen
+  const parseUpdated = str => {
+    if(!str) return null;
+    const m = str.match(/^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})$/);
+    return m ? new Date(+m[3], +m[2]-1, +m[1], +m[4], +m[5]) : null;
+  };
+  const timestamps = withCost.map(s => parseUpdated(s.updated)).filter(Boolean);
+  const updEl = document.getElementById("ps-updated");
+  if(timestamps.length){
+    const oldest = new Date(Math.min(...timestamps.map(t => t.getTime())));
+    const now = new Date();
+    const isToday = oldest.toDateString() === now.toDateString();
+    const timeStr = oldest.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"});
+    const months = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+    const dateStr = isToday
+      ? `Stand: ${timeStr} Uhr`
+      : `Stand: ${oldest.getDate()}. ${months[oldest.getMonth()]}, ${timeStr} Uhr`;
+    updEl.textContent = dateStr;
+  } else {
+    updEl.textContent = "";
+  }
+
   const pnlEl = document.getElementById("ps-pnl");
   pnlEl.textContent  = (totalPnl >= 0 ? "+" : "") + fmt(totalPnl) + " EUR";
   pnlEl.style.color  = totalPnl >= 0 ? "var(--green)" : "var(--red)";
@@ -3631,6 +3656,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.8.4 · Backend v2.7.2",
+    items: [
+      "Portfolio-Übersicht: Gesamtwert zeigt jetzt den Zeitpunkt der ältesten Kursabfrage an (heute: nur Uhrzeit, ältere Tage: Datum + Uhrzeit) — so ist auf einen Blick erkennbar, wie aktuell der angezeigte Wert ist",
+    ]
+  },
+  {
+    label: "Juni 2026",
     versions: "Frontend v2.8.3 · Backend v2.7.2",
     items: [
       "Neu: Diversifikations-Lücke (⚖️) — markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind (Schwelle: unter 50% des Sektor-Durchschnitts), direkt am Sektor-Tag in Tabelle und Karten sowie als Ø-Hinweis in der Sektor-Übersicht. Watchlist-Aktien werden dabei immer gegen den echten Bestand bewertet, nicht gegen die Watchlist selbst.",
@@ -4615,7 +4647,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.8.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.8.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
