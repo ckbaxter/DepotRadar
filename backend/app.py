@@ -21,8 +21,17 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.2"
+VERSION           = "2.7.3"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
+
+# ── Gesundheits-Statistiken (In-Memory, wird bei Neustart zurückgesetzt) ──────
+APP_START_TIME = time_mod.time()
+_health_stats  = {
+    "total_refreshes":    0,
+    "total_yahoo_calls":  0,
+    "failed_yahoo_calls": 0,
+    "recent_errors":      [],   # Ring-Buffer, max. 20 Einträge
+}
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
 PARQET_TOKEN_URL  = "https://connect.parqet.com/oauth2/token"
@@ -601,6 +610,7 @@ def _fetch_prices(stocks):
     UND dafür den ATH-Alarm aktiviert haben (ath_alert_enabled)."""
     ok_list, err_list, ath_hits = [], [], []
     for i, s in enumerate(stocks):
+        _health_stats["total_yahoo_calls"] += 1
         try:
             old_ath   = float(s.get("ath_eur") or 0)
             data      = fetch_stock_data(s["ticker"])
@@ -621,6 +631,15 @@ def _fetch_prices(stocks):
         except Exception as e:
             log.error(f"{s['name']}: {e}")
             err_list.append(f"{s['name']}: {e}")
+            _health_stats["failed_yahoo_calls"] += 1
+            _health_stats["recent_errors"].append({
+                "time":   datetime.now().isoformat(timespec="seconds"),
+                "ticker": s.get("ticker", "?"),
+                "reason": str(e)[:120],
+            })
+            # Ring-Buffer: max. 20 Einträge behalten
+            if len(_health_stats["recent_errors"]) > 20:
+                _health_stats["recent_errors"] = _health_stats["recent_errors"][-20:]
     return stocks, ok_list, err_list, ath_hits
 
 def build_ath_reached_html(stock, prev_ath):
@@ -760,6 +779,7 @@ def take_snapshot():
 
 def refresh_all_depots(trigger="auto"):
     depots = load_depots(); total_ok, total_err = [], []
+    _health_stats["total_refreshes"] += 1
     for depot in depots:
         ok, err = _refresh_depot(depot, trigger)
         total_ok += ok; total_err += err
@@ -829,6 +849,18 @@ def cleanup_old_logs():
             log.info(f"Verlauf bereinigt: {removed} Einträge älter als {days} Tage entfernt")
     except Exception as e:
         log.warning(f"Verlauf-Bereinigung fehlgeschlagen: {e}")
+
+def _is_trading_time():
+    """Gibt True zurück, wenn wir uns gerade innerhalb der konfigurierten Handelszeit befinden."""
+    try:
+        s  = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
+        t  = s["trading"]; days = t.get("days", [0,1,2,3,4])
+        sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
+        eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
+        now_mins = now.hour * 60 + now.minute
+        return now.weekday() in days and sh * 60 + sm <= now_mins <= eh * 60 + em
+    except Exception:
+        return False
 
 def trading_window_check():
     global _last_refresh, _start_of_day_done
@@ -2305,7 +2337,33 @@ def api_snapshots():
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "version": VERSION, "time": datetime.now().isoformat(), "next_refresh": get_next_run_info()})
+    """Liefert Basis-Statusinfos plus Laufzeit-Statistiken für das Gesundheits-Dashboard."""
+    depots = load_depots()
+    tracked = 0
+    for dc in depots:
+        tracked += len(load_stocks(dc["id"]))
+        for wl in dc.get("watchlists", []):
+            tracked += len(load_wl_stocks(dc["id"], wl["id"]))
+    uptime = int(time_mod.time() - APP_START_TIME)
+    stats  = _health_stats
+    total  = stats["total_yahoo_calls"]
+    failed = stats["failed_yahoo_calls"]
+    return jsonify({
+        "status":               "ok",
+        "version":              VERSION,
+        "time":                 datetime.now().isoformat(),
+        "next_refresh":         get_next_run_info(),
+        "uptime_seconds":       uptime,
+        "scheduler_running":    scheduler.running,
+        "trading_hours_active": _is_trading_time(),
+        "total_refreshes":      stats["total_refreshes"],
+        "total_yahoo_calls":    total,
+        "failed_yahoo_calls":   failed,
+        "success_rate":         round((total - failed) / total * 100, 1) if total else 100.0,
+        "tracked_tickers":      tracked,
+        "last_refresh":         _last_refresh.isoformat() if _last_refresh else None,
+        "recent_errors":        list(reversed(stats["recent_errors"])),
+    })
 
 if __name__ == "__main__":
     reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); start_scheduler()
