@@ -336,6 +336,7 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .ath-alert-bell.active{opacity:1}
 .last-update{font-size:11px;color:var(--muted)}
 select</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" defer></script>
 </head>
 <body>
 
@@ -486,6 +487,7 @@ select</style>
               style="display:none">&#128269; ATH prüfen</button>
       <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()" title="Nachkauf-Kandidaten anzeigen">🛒 Nachkauf</button>
       <button class="btn btn-ghost btn-sm" id="sectorFilterBtn" onclick="openSectorFilterDropdown(event)" title="Nach Sektor filtern" style="display:none">🏷️ Sektor</button>
+      <button class="btn btn-ghost btn-sm" id="viewToggleBtn" onclick="toggleViewMode()" title="Ansicht wechseln" style="display:none">⊞ Treemap</button>
       <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center;margin-left:auto">
         <span style="position:absolute;left:8px;font-size:13px;color:var(--muted);pointer-events:none">🔍</span>
         <input id="stockSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
@@ -535,6 +537,9 @@ select</style>
       </table>
     </div>
     <div class="cards-view" id="cardsView"></div>
+    <div id="treemapView" style="display:none;padding:10px">
+      <div id="treemapCanvas" style="width:100%;height:420px;position:relative;border-radius:10px;overflow:hidden"></div>
+    </div>
     <div id="emptyState" style="display:none" class="empty">
       <div class="empty-icon" id="emptyIcon">&#128202;</div>
       <h3 id="emptyTitle">Noch keine Aktien</h3>
@@ -2205,6 +2210,12 @@ function renderTable(stocks, basisStocks){
   }
   empty.style.display="none"; tscrl.style.display="";
 
+  // View-Toggle: nur für Bestand sichtbar (nicht Watchlist), mindestens 2 Positionen
+  const vtBtn = document.getElementById("viewToggleBtn");
+  if(vtBtn) vtBtn.style.display = (!isWl() && stocks.length >= 2) ? "" : "none";
+  // Treemap-Daten für den Fall eines späteren Wechsels vorab speichern
+  _lastStocksForTreemap = stocks;
+
   renderPortfolioStats(stocks);
   renderSectorOverview(stocks, basisStocks);
   stocks = _applySummaryFilter(stocks);
@@ -2315,6 +2326,13 @@ function renderTable(stocks, basisStocks){
       <div class="card-actions">${cardActions}</div>
     </div>`;
   }).join("");
+
+  // View-Modus anwenden (Tabelle / Treemap) — nach dem Rendern beider Views
+  _applyViewMode();
+  if(_viewMode === "treemap" && typeof d3 !== "undefined"){
+    // Nächster Frame damit der Canvas bereits im DOM liegt und Breite messbar ist
+    requestAnimationFrame(() => renderTreemap(_lastStocksForTreemap));
+  }
 }
 
 // ── Bought Level Toggle ──────────────────────────────────────────
@@ -2903,13 +2921,25 @@ function renderSnapshotChart(data, did){
   const perfSign   = perf >= 0 ? "+" : "";
   const perfColor  = perf >= 0 ? "var(--green)" : "var(--red)";
   const perfEl = document.getElementById("snapshotPerf");
-  if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}%</span> · ${fmtEUR(perfLast)}`;
+
+  // Invested-Capital-Kurve: cost-Werte aus den Snapshots (kann null sein für ältere Einträge)
+  const allCosts  = rawFiltered.map(s => s.depots[did].cost ?? null);
+  const hasCost   = allCosts.some(c => c !== null);
+  const lastCost  = hasCost ? [...allCosts].reverse().find(c => c !== null) : null;
+  const costLabel = hasCost && lastCost ? ` · <span style="color:var(--muted);font-size:10px">EK: ${fmtEUR(lastCost)}</span>` : "";
+  if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}%</span> · ${fmtEUR(perfLast)}${costLabel}`;
 
   // Downsampling für die Darstellung — max. ~90 Punkte, damit lange Zeiträume
   // (1J, Alles) nicht zu dicht/unübersichtlich werden
   const filtered = downsampleSnapshots(rawFiltered, 90);
   const values = filtered.map(s => s.depots[did].value);
+  const costs  = filtered.map(s => s.depots[did].cost ?? null);
   const dates  = filtered.map(s => s.date);
+
+  // Y-Skala über beide Datenreihen (damit cost-Linie korrekt in den Chart passt)
+  // Y-Skala ausschließlich nach Portfolio-Werten berechnen — cost-Linie wird im
+  // selben Koordinatensystem gezeichnet, aber die Skala wird nicht durch einen
+  // ggf. deutlich niedrigeren EK-Wert zusammengestaucht.
   const minV   = Math.min(...values);
   const maxV   = Math.max(...values);
   const range  = maxV - minV || 1;
@@ -2929,10 +2959,43 @@ function renderSnapshotChart(data, did){
 
   const px = i => n > 1 ? pad.l + (i / (n-1)) * iW : pad.l + iW/2;
   const py = v => pad.t + iH - ((v - minV) / range) * iH;
+  // Geklemmte Y-Koordinate für die EK-Linie: bleibt innerhalb des Chart-Bereichs,
+  // auch wenn der EK-Wert außerhalb der Y-Skala (= unterhalb minV) liegt.
+  const pyClamp = v => Math.max(pad.t + 1, Math.min(pad.t + iH - 1, py(v)));
 
-  // Pfad
-  const pts = values.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
+  // Portfolio-Wert-Pfad
+  const pts     = values.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
   const fillPts = `${px(0)},${py(minV)} L ${pts} L ${px(n-1)},${py(minV)} Z`;
+
+  // Invested-Capital-Pfad: nur Segmente wo cost-Wert vorhanden ist.
+  // Koordinaten werden auf den Chart-Bereich geklemmt (pyClamp), damit die Linie
+  // auch dann sichtbar bleibt wenn EK unterhalb der Wertelinie-Skala liegt.
+  let costPath = "";
+  const costBelowScale = hasCost && costs.some(c => c !== null && c < minV);
+  if(hasCost){
+    let seg = ""; let inSeg = false;
+    costs.forEach((c, i) => {
+      if(c !== null){
+        seg += inSeg ? ` L ${px(i)},${pyClamp(c)}` : `M ${px(i)},${pyClamp(c)}`;
+        inSeg = true;
+      } else { inSeg = false; }
+    });
+    costPath = seg
+      ? `<path d="${seg}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5,3" stroke-linejoin="round" opacity="0.7"/>`
+      : "";
+  }
+
+  // Legende (nur wenn cost-Daten vorhanden)
+  // Wenn EK unterhalb der Werte-Skala liegt, wird ein "↓"-Hinweis angezeigt
+  const ekLabel = costBelowScale ? "EK ↓" : "EK";
+  const legendHtml = hasCost
+    ? `<g>
+        <line x1="${pad.l+4}" y1="${pad.t+6}" x2="${pad.l+16}" y2="${pad.t+6}" stroke="${lineColor}" stroke-width="2"/>
+        <text x="${pad.l+20}" y="${pad.t+10}" font-size="9" fill="var(--muted)">Wert</text>
+        <line x1="${pad.l+44}" y1="${pad.t+6}" x2="${pad.l+56}" y2="${pad.t+6}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.7"/>
+        <text x="${pad.l+60}" y="${pad.t+10}" font-size="9" fill="var(--muted)">${ekLabel}</text>
+       </g>`
+    : "";
 
   // X-Achsen-Labels (max 5)
   const step  = Math.max(1, Math.floor(n/5));
@@ -2957,6 +3020,8 @@ function renderSnapshotChart(data, did){
       </linearGradient></defs>
       <path d="${fillPts}" fill="url(#sg)"/>
       <path d="M ${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
+      ${costPath}
+      ${legendHtml}
       ${xLabels}${yLabels}
       <g id="snapCrosshair" style="display:none;pointer-events:none">
         <line id="snapCrossLine" x1="0" y1="${pad.t}" x2="0" y2="${pad.t+iH}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3,3"/>
@@ -2965,6 +3030,7 @@ function renderSnapshotChart(data, did){
           <rect id="snapTooltipBg" rx="5" ry="5" fill="var(--bg3)" stroke="var(--border)" stroke-width="1"/>
           <text id="snapTooltipDate" font-size="10" fill="var(--muted)"></text>
           <text id="snapTooltipVal" font-size="12" font-weight="700" fill="var(--text)"></text>
+          <text id="snapTooltipCost" font-size="10" fill="var(--muted)"></text>
         </g>
       </g>
       <rect id="snapOverlay" x="${pad.l}" y="0" width="${iW}" height="${H}" fill="transparent"/>
@@ -2980,6 +3046,7 @@ function renderSnapshotChart(data, did){
   const ttBg      = document.getElementById("snapTooltipBg");
   const ttDate    = document.getElementById("snapTooltipDate");
   const ttVal     = document.getElementById("snapTooltipVal");
+  const ttCost    = document.getElementById("snapTooltipCost");
 
   function nearestIndex(svgX){
     if(n <= 1) return 0;
@@ -3000,13 +3067,17 @@ function renderSnapshotChart(data, did){
     const d = new Date(dates[idx]+"T00:00:00");
     const dateStr = `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
     const valStr  = fmtEUR(values[idx]);
+    const costVal = costs[idx];
+    const costStr = costVal != null ? `EK: ${fmtEUR(costVal)}` : "";
     ttDate.textContent = dateStr;
     ttVal.textContent  = valStr;
+    if(ttCost) ttCost.textContent = costStr;
 
-    // Tooltip-Box vermessen und am oberen Rand positionieren, horizontal geklemmt
-    const textW = Math.max(dateStr.length * 5.5, valStr.length * 7) + 16;
+    // Tooltip-Box vermessen: bei cost-Zeile etwas höher
+    const extraRow = costStr ? 14 : 0;
+    const textW = Math.max(dateStr.length * 5.5, valStr.length * 7, costStr.length * 5.5) + 16;
     const boxW  = Math.max(70, textW);
-    const boxH  = 34;
+    const boxH  = 34 + extraRow;
     let boxX = x - boxW / 2;
     boxX = Math.max(pad.l, Math.min(W - pad.r - boxW, boxX));
     const boxY = pad.t - 2;
@@ -3017,6 +3088,10 @@ function renderSnapshotChart(data, did){
     ttDate.setAttribute("text-anchor", "middle");
     ttVal.setAttribute("x", boxX + boxW/2); ttVal.setAttribute("y", boxY + 27);
     ttVal.setAttribute("text-anchor", "middle");
+    if(ttCost){
+      ttCost.setAttribute("x", boxX + boxW/2); ttCost.setAttribute("y", boxY + 27 + extraRow);
+      ttCost.setAttribute("text-anchor", "middle");
+    }
 
     crossG.style.display = "block";
   }
@@ -3656,6 +3731,37 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.8.8 · Backend v2.7.3",
+    items: [
+      "System-Status: Fehler-Log als gestapelte Cards statt Tabelle — Ticker, Datum und Ursache übereinander, kein horizontales Abschneiden auf dem Smartphone mehr",
+    ]
+  },
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.8.7 · Backend v2.7.3",
+    items: [
+      "Bugfix EK-Linie im Verlaufschart: Linie war nach dem Y-Skala-Fix unsichtbar wenn EK außerhalb des Wertebereichs lag — wird jetzt per Klammerung am unteren Chartrand sichtbar gehalten; Legende zeigt 'EK ↓' als Hinweis",
+    ]
+  },
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.8.6 · Backend v2.7.3",
+    items: [
+      "Bugfix Portfolio-Verlauf: Y-Achsen-Skala basiert wieder nur auf Portfolio-Werten — EK-Linie (gestrichelt) hat die Skala nicht mehr zusammengestaucht wenn EK deutlich unter dem Depotwert lag",
+      "Bugfix Treemap: Kachelnamen zeigen jetzt immer den Firmennamen statt des Ticker-Kürzels (z.B. 'Caterpillar' statt 'CAT1'), bei kleinen Kacheln entsprechend abgekürzt",
+    ]
+  },
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.8.5 · Backend v2.7.3",
+    items: [
+      "Portfolio-Verlauf: Invested-Capital-Kurve — zeigt den kumulierten Einstandswert als gestrichelte Linie im Verlaufschart an (nur bei Positionen mit bekanntem Einstandskurs)",
+      "Treemap-Ansicht — neuer View-Toggle (⊞ Treemap / ☰ Tabelle) im Depot-Header; jede Kachel zeigt Positionswert, ATH-Discount und Tagesperformance; Antippen öffnet Detail-Panel",
+      "System-Status — neuer Link im Footer öffnet Gesundheits-Dashboard: Laufzeit, Scheduler-Status, Yahoo-Erfolgsquote, überwachte Ticker und Fehler-Log",
+    ]
+  },
+  {
+    label: "Juni 2026",
     versions: "Frontend v2.8.4 · Backend v2.7.2",
     items: [
       "Portfolio-Übersicht: Gesamtwert zeigt jetzt den Zeitpunkt der ältesten Kursabfrage an (heute: nur Uhrzeit, ältere Tage: Datum + Uhrzeit) — so ist auf einen Blick erkennbar, wie aktuell der angezeigte Wert ist",
@@ -3717,6 +3823,233 @@ function openChangelog(){
       </ul>
     </div>`).join("");
   openModal("changelogModal");
+}
+
+// ── Gesundheits-Dashboard ─────────────────────────────────────────
+async function openHealthModal(){
+  openModal("healthModal");
+  const body = document.getElementById("healthBody");
+  body.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:24px">Lade…</div>`;
+  try {
+    const r = await fetch(`${API}/health`);
+    const d = await r.json();
+    const uptime = d.uptime_seconds || 0;
+    const days   = Math.floor(uptime / 86400);
+    const hours  = Math.floor((uptime % 86400) / 3600);
+    const mins   = Math.floor((uptime % 3600) / 60);
+    const uptimeStr = days > 0 ? `${days}T ${hours}h ${mins}m` : hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+    const fmtDT = iso => {
+      if(!iso) return "—";
+      const dt = new Date(iso);
+      return dt.toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    };
+    const errRate = d.total_yahoo_calls > 0
+      ? ((d.failed_yahoo_calls / d.total_yahoo_calls) * 100).toFixed(1) : "0.0";
+    const errColor = parseFloat(errRate) < 2 ? "var(--green)" : parseFloat(errRate) < 5 ? "var(--orange)" : "var(--red)";
+
+    const statCard = (label, val, color="") =>
+      `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${label}</div>
+        <div style="font-size:18px;font-weight:700;color:${color||"var(--text)"}">${val}</div>
+       </div>`;
+
+    const statusDot = ok =>
+      `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ok?"var(--green)":"var(--red)"};box-shadow:0 0 5px ${ok?"var(--green)":"var(--red)"}80;vertical-align:middle;margin-right:5px"></span>`;
+
+    const errItems = (d.recent_errors||[]).length === 0
+      ? `<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px">Keine Fehler seit dem letzten Start ✓</div>`
+      : (d.recent_errors||[]).map(e =>
+          `<div style="padding:10px 12px;border-top:1px solid var(--border)">
+            <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:3px">
+              <span style="font-size:12px;font-weight:700;font-family:monospace;color:var(--text)">${esc(e.ticker)}</span>
+              <span style="font-size:10px;color:var(--muted);white-space:nowrap">${fmtDT(e.time)}</span>
+            </div>
+            <div style="font-size:12px;color:var(--orange);word-break:break-word">${esc(e.reason)}</div>
+           </div>`).join("");
+
+    body.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px">
+        ${statusDot(d.scheduler_running)}<span style="font-weight:600">${d.scheduler_running ? "Scheduler aktiv" : "Scheduler gestoppt"}</span>
+        <span style="color:var(--border)">·</span>
+        ${statusDot(d.trading_hours_active)}<span style="color:var(--muted)">${d.trading_hours_active ? "Handelszeit" : "Außerhalb Handelszeit"}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">Backend v${esc(d.version||"—")}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+        ${statCard("Laufzeit", uptimeStr)}
+        ${statCard("Letzter Refresh", d.last_refresh ? new Date(d.last_refresh).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}) : "—")}
+        ${statCard("Nächster Refresh", d.next_refresh||"—")}
+        ${statCard("Ticker überwacht", d.tracked_tickers??0)}
+        ${statCard("Refreshes gesamt", (d.total_refreshes||0).toLocaleString("de-DE"))}
+        ${statCard("Erfolgsquote", (d.success_rate??100).toFixed(1)+" %", errColor)}
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--muted)">Letzte Fehler</span>
+        <span style="font-size:11px;color:${(d.recent_errors||[]).length>0?"var(--orange)":"var(--green)"}">
+          ${(d.recent_errors||[]).length} Einträge</span>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        ${errItems}
+      </div>
+      <div style="font-size:10px;color:var(--muted);text-align:center;margin-top:10px">
+        Statistiken werden bei App-Neustart zurückgesetzt · Yahoo-Calls: ${(d.total_yahoo_calls||0).toLocaleString("de-DE")} gesamt, ${d.failed_yahoo_calls||0} fehlgeschlagen
+      </div>`;
+  } catch(e) {
+    document.getElementById("healthBody").innerHTML =
+      `<div style="color:var(--red);font-size:13px;text-align:center;padding:24px">Fehler beim Laden der Statusdaten.</div>`;
+  }
+}
+
+// ── Treemap-Ansicht ───────────────────────────────────────────────
+let _viewMode = localStorage.getItem("depotViewMode") || "table"; // "table" | "treemap"
+
+function toggleViewMode(){
+  _viewMode = _viewMode === "table" ? "treemap" : "table";
+  localStorage.setItem("depotViewMode", _viewMode);
+  _applyViewMode();
+  if(_viewMode === "treemap" && typeof d3 !== "undefined") renderTreemap(_lastStocksForTreemap||[]);
+}
+
+function _applyViewMode(){
+  const btn = document.getElementById("viewToggleBtn");
+  const tblWrap = document.querySelector(".tbl-scroll");
+  const cardsView = document.getElementById("cardsView");
+  const treemapView = document.getElementById("treemapView");
+  const sortBar = document.getElementById("sortBar");
+  const isMobile = window.innerWidth <= 640;
+  if(_viewMode === "treemap"){
+    if(tblWrap) tblWrap.style.display = "none";
+    if(cardsView) cardsView.style.display = "none";
+    if(sortBar) sortBar.style.display = "none";
+    if(treemapView) treemapView.style.display = "block";
+    if(btn) btn.innerHTML = "☰ Tabelle";
+  } else {
+    if(tblWrap) tblWrap.style.display = isMobile ? "none" : "";
+    if(cardsView) cardsView.style.display = isMobile ? "" : "none";
+    if(sortBar) sortBar.style.display = isMobile ? "flex" : "none";
+    if(treemapView) treemapView.style.display = "none";
+    if(btn) btn.innerHTML = "⊞ Treemap";
+  }
+}
+
+let _lastStocksForTreemap = [];
+
+function renderTreemap(stocks){
+  _lastStocksForTreemap = stocks;
+  const canvas = document.getElementById("treemapCanvas");
+  if(!canvas || typeof d3 === "undefined") return;
+  canvas.innerHTML = "";
+
+  const filtered = stocks.filter(s => s.current_eur && s.shares);
+  if(!filtered.length){
+    canvas.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px">Keine Daten</div>`;
+    return;
+  }
+
+  const W = canvas.clientWidth || canvas.offsetWidth || 360;
+  const H = 420;
+
+  const root = d3.hierarchy({children: filtered}).sum(d => (d.current_eur||0) * (d.shares||0));
+  d3.treemap().size([W, H]).paddingOuter(6).paddingInner(3).round(true)(root);
+
+  const totalVal = filtered.reduce((s,x) => s + (x.current_eur||0)*(x.shares||0), 0);
+
+  // Farben analog ATH-Discount-Badges
+  const discColor = d => {
+    const isDark = !document.documentElement.classList.contains("light");
+    if(d < 20) return isDark ? {bg:"#1a3a2a",border:"#22c55e",text:"#22c55e"} : {bg:"#e8f8ee",border:"#22c55e",text:"#166534"};
+    if(d < 40) return isDark ? {bg:"#3a2e10",border:"#f97316",text:"#fb923c"} : {bg:"#fff3dd",border:"#f97316",text:"#9a3412"};
+    if(d < 60) return isDark ? {bg:"#3a1e10",border:"#ef4444",text:"#f87171"} : {bg:"#ffe8d6",border:"#ef4444",text:"#991b1b"};
+    return isDark ? {bg:"#3a1010",border:"#ef4444",text:"#fca5a5"} : {bg:"#ffdede",border:"#ef4444",text:"#7f1d1d"};
+  };
+
+  root.leaves().forEach(node => {
+    const s   = node.data;
+    const w   = node.x1 - node.x0;
+    const h   = node.y1 - node.y0;
+    const val = (s.current_eur||0) * (s.shares||0);
+    const disc= s.ath_eur && s.current_eur ? Math.round((1 - s.current_eur/s.ath_eur)*100) : 0;
+    const col = discColor(disc);
+    const micro = w < 70 || h < 42;
+    const small = w < 115 || h < 68;
+
+    const tile = document.createElement("div");
+    tile.style.cssText = [
+      `position:absolute`,`left:${node.x0}px`,`top:${node.y0}px`,`width:${w}px`,`height:${h}px`,
+      `background:${col.bg}`,`border:2px solid ${col.border}`,`border-radius:7px`,
+      `box-sizing:border-box`,`overflow:hidden`,`cursor:pointer`,`user-select:none`,
+      `display:flex`,`flex-direction:column`,
+      `justify-content:${micro?"center":"space-between"}`,
+      `align-items:${micro?"center":"flex-start"}`,
+      `padding:${micro?"0":"6px 8px"}`,
+      `transition:filter .1s`,
+    ].join(";");
+
+    const pct  = ((val/totalVal)*100).toFixed(1);
+    const perf = s.perf_1d != null
+      ? `<span style="font-size:10px;background:${s.perf_1d>=0?"rgba(34,197,94,.2)":"rgba(239,68,68,.2)"};color:${s.perf_1d>=0?"var(--green)":"var(--red)"};border-radius:4px;padding:1px 4px;font-weight:600">${s.perf_1d>=0?"+":""}${(s.perf_1d||0).toFixed(1)}%</span>` : "";
+
+    if(micro){
+      // Kachel zu klein für Text — kürzest mögliche Darstellung
+      // Erster Namensteil bevorzugen (lesbarer als Ticker-Kürzel)
+      const shortLabel = s.name.split(" ")[0].slice(0, Math.max(4, Math.floor(w / 8)));
+      tile.innerHTML = `<span style="font-size:${Math.min(10,w*0.17)}px;font-weight:700;color:${col.text};text-align:center;padding:0 2px;white-space:nowrap;overflow:hidden;max-width:100%;text-overflow:ellipsis">${esc(shortLabel)}</span>`;
+    } else {
+      // Name immer bevorzugen — bei kleinen Kacheln auf verfügbare Breite kürzen
+      const maxChars = Math.max(6, Math.floor(w / 9));
+      const nameStr  = s.name.length <= maxChars
+        ? esc(s.name)
+        : esc(s.name.slice(0, maxChars).trimEnd() + "…");
+      tile.innerHTML = `
+        <div>
+          <div style="font-size:${Math.min(13,w*0.12)}px;font-weight:700;color:${col.text};line-height:1.2;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:${w-16}px">${nameStr}</div>
+          ${!small?`<div style="font-size:10px;color:${col.text};opacity:.6;margin-top:1px">${esc(s.ticker)}</div>`:""}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          ${!small?`<div style="font-size:11px;font-weight:600;color:${col.text};opacity:.85">${fmtEUR(val)}</div>`:""}
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span style="font-size:10px;background:${col.text}22;color:${col.text};border-radius:4px;padding:1px 4px;font-weight:600">−${disc}%</span>
+            ${w > 90 ? perf : ""}
+          </div>
+        </div>`;
+    }
+
+    tile.addEventListener("mouseenter", () => tile.style.filter = "brightness(1.25)");
+    tile.addEventListener("mouseleave", () => tile.style.filter = "brightness(1)");
+    tile.addEventListener("click", () => _showTreemapDetail(s, disc, val, pct, totalVal));
+    canvas.appendChild(tile);
+  });
+}
+
+function _showTreemapDetail(s, disc, val, pct){
+  // Nutzt das bestehende Stock-Detail-Modal (openStockDetail) falls vorhanden,
+  // sonst ein simples Info-Panel am unteren Rand
+  if(typeof openStockDetail === "function"){
+    openStockDetail(s.ticker, activeDepot?.id, isWl() ? activeWl : null);
+    return;
+  }
+  // Fallback: kleines Info-Overlay
+  document.getElementById("treemapDetail")?.remove();
+  const perf1d = s.perf_1d != null ? `${s.perf_1d>=0?"+":""}${s.perf_1d.toFixed(1)}%` : "—";
+  const div = document.createElement("div");
+  div.id = "treemapDetail";
+  div.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 20px 28px;z-index:200;box-shadow:0 -8px 32px #00000055";
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:2px">${esc(s.ticker)} · ${esc(s.sector||"—")}</div>
+        <div style="font-size:17px;font-weight:700">${esc(s.name)}</div>
+      </div>
+      <button onclick="document.getElementById('treemapDetail').remove()" style="background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      ${[["Positionswert", fmtEUR(val)],["Depotanteil", pct+"%"],["ATH-Discount","−"+disc+"%"],["Perf. 1T", perf1d]].map(([l,v])=>
+        `<div style="background:var(--bg3);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">${l}</div>
+          <div style="font-size:14px;font-weight:700">${v}</div>
+         </div>`).join("")}
+    </div>`;
+  document.body.appendChild(div);
+  setTimeout(() => document.addEventListener("click", function h(e){ if(!div.contains(e.target)){div.remove();document.removeEventListener("click",h);}}), 100);
 }
 
 function openModal(id){
@@ -4647,7 +4980,7 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.8.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.8.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
@@ -4655,6 +4988,14 @@ setInterval(loadSchedulerStatus,30000);
       <path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5A6.5 6.5 0 118 1.5a6.5 6.5 0 010 13zM8 4a.75.75 0 00-.75.75v3.5c0 .2.08.39.22.53l2.5 2.5a.75.75 0 101.06-1.06L8.75 8V4.75A.75.75 0 008 4z"/>
     </svg>
     Letzte Änderungen
+  </a>
+  &nbsp;·&nbsp;
+  <a href="javascript:void(0)" onclick="openHealthModal()"
+     style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
+    <svg height="13" width="13" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle">
+      <path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.75 4.75a.75.75 0 00-1.5 0v3.5c0 .414.336.75.75.75h2.5a.75.75 0 000-1.5H8.75V4.75z"/>
+    </svg>
+    System-Status
   </a>
   &nbsp;·&nbsp;
   <a href="https://github.com/ckbaxter/DepotRadar" target="_blank" rel="noopener"
@@ -4682,6 +5023,20 @@ setInterval(loadSchedulerStatus,30000);
     <div class="modal-body" id="changelogBody" style="max-height:60vh;overflow-y:auto"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('changelogModal')">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: System-Status / Gesundheits-Dashboard -->
+<div class="overlay" id="healthModal" style="display:none" onclick="closeIfOverlay(event,'healthModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title">&#128268; System-Status</span>
+      <button class="close-btn" onclick="closeModal('healthModal')">&#215;</button>
+    </div>
+    <div class="modal-body" id="healthBody" style="max-height:75vh;overflow-y:auto;padding:16px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('healthModal')">Schließen</button>
     </div>
   </div>
 </div>
