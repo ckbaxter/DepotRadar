@@ -21,7 +21,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.3"
+VERSION           = "2.7.4"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (In-Memory, wird bei Neustart zurückgesetzt) ──────
@@ -182,13 +182,6 @@ def get_depot(depot_id):
     """Hilfsfunktion: Gibt Depot-Dict zurück oder None."""
     return next((d for d in load_depots() if d["id"] == depot_id), None)
 
-def get_depot_or_404(depot_id):
-    """Hilfsfunktion: Gibt Depot zurück oder Flask 404-Response als Tupel (None, response)."""
-    depot = get_depot(depot_id)
-    if not depot:
-        return None, ({"error": "Depot nicht gefunden"}, 404)
-    return depot, None
-
 def gen_id(name):
     return f"{re.sub(r'[^a-z0-9]', '_', name.lower())[:20].strip('_')}_{int(time_mod.time())}"
 
@@ -241,6 +234,7 @@ def migrate_if_needed():
 
 # ── Discount / Notification logic ─────────────────────────────────
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
+def get_multiplier(d):       return 3 if d >= 60 else (2 if d >= 40 else 1)
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
 def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
@@ -291,12 +285,11 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
     lb = stock.get("last_notified_block", cb)
-    confirm_mode = confirm
     pending_key  = f"pending_notify_{cb}"
     # Existiert ein ausstehendes Flag für ein Level <= cb? (z.B. -20% pending, jetzt -33%)
     has_pending  = any(stock.get(f"pending_notify_{lvl}") for lvl in [20, 30, 40, 50, 60] if lvl <= cb)
     if cb > lb and cb >= 20:
-        if confirm_mode and not has_pending:
+        if confirm and not has_pending:
             # Erst-Unterschreitung: Flag setzen, Verlauf-Eintrag, noch nicht senden
             stock[pending_key] = True
             pct_dist = round((new_ath - new_cur) / new_ath * 100, 1)
@@ -307,7 +300,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
             return lb  # last_notified_block noch nicht erhöhen
         lp         = round(new_ath * (1 - cb / 100), 2)
         link       = f"\n\n{APP_URL}" if APP_URL else ""
-        multiplier = 3 if cb >= 60 else (2 if cb >= 40 else 1)
+        multiplier = get_multiplier(cb)
         nk_icon    = "🛒 " if is_nachkauf else ""
         gap_icon   = "⚖️ " if is_sector_gap else ""
         title      = f"ATH-Alarm [{label}]: {nk_icon}{gap_icon}{stock['name']} -{cb}%-Block"
@@ -956,7 +949,7 @@ def build_digest_body(depot, stocks):
             cur = s.get("current_eur"); ath = s.get("ath_eur")
             if not cur or not ath or ath == 0: continue
             d   = (ath - cur) / ath * 100
-            mul = 3 if d >= 60 else (2 if d >= 40 else 1)
+            mul = get_multiplier(d)
             qty_str = ""
             if budget:
                 qty = calc_buy_quantity(budget, mul, cur)
@@ -1052,7 +1045,7 @@ def build_digest_html(depot, stocks, kw):
             cur = s.get("current_eur"); ath = s.get("ath_eur")
             if not cur or not ath or ath == 0: continue
             d   = (ath - cur) / ath * 100
-            mul = 3 if d >= 60 else (2 if d >= 40 else 1)
+            mul = get_multiplier(d)
             qty_str = ""
             if budget:
                 qty = calc_buy_quantity(budget, mul, cur)
