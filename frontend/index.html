@@ -2480,7 +2480,7 @@ async function refreshAll(){
     } else {
       await fetch(`${API}/stocks/refresh-all?depot=${activeDepot.id}`,{method:"POST"});
     }
-    toast("Alle aktualisiert"); loadCurrentStocks(); loadSchedulerStatus();
+    toast("Alle aktualisiert"); loadCurrentStocks(); loadSchedulerStatus(); updateHealthStatusDot();
   } catch(e){ toast("Fehler",false); }
   finally{btn.innerHTML="&#8635; Kurse aktualisieren";btn.disabled=false;}
 }
@@ -3728,7 +3728,11 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
-    versions: "Frontend v2.8.9 · Backend v2.7.4",
+    versions: "Frontend v2.9.0 · Backend v2.7.4",
+      text: "System-Status: farbiger Statusdot im Footer — grün (Handelszeit, kein Fehler), rot (Handelszeit + Yahoo-Fehler), grau (außerhalb Handelszeit); aktualisiert sich beim manuellen Refresh und automatisch alle 60 Sekunden",
+    },
+    {
+      versions: "Frontend v2.8.9 · Backend v2.7.4",
     items: [
       "Code-Cleanup: tote Hilfsfunktion entfernt, dreifach-setTimeout-Bug in Einstellungen behoben, Multiplier-Berechnung in eine Funktion zusammengeführt, Discount-Helfer konsequent genutzt",
     ]
@@ -3901,6 +3905,30 @@ async function openHealthModal(){
     document.getElementById("healthBody").innerHTML =
       `<div style="color:var(--red);font-size:13px;text-align:center;padding:24px">Fehler beim Laden der Statusdaten.</div>`;
   }
+}
+
+// ── System-Status-Dot im Footer ──────────────────────────────────
+async function updateHealthStatusDot(){
+  const dot = document.getElementById("healthStatusDot");
+  if(!dot) return;
+  try {
+    const r = await fetch(`${API}/health`);
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const d = await r.json();
+    if(!d.trading_hours_active){
+      dot.style.background = "var(--muted)";
+      dot.style.boxShadow  = "none";
+      dot.title = "Außerhalb Handelszeit";
+    } else if((d.recent_errors||[]).length > 0){
+      dot.style.background = "var(--red)";
+      dot.style.boxShadow  = "0 0 5px color-mix(in srgb,var(--red) 60%,transparent)";
+      dot.title = `${d.recent_errors.length} Yahoo-Fehler seit letztem Start`;
+    } else {
+      dot.style.background = "var(--green)";
+      dot.style.boxShadow  = "0 0 5px color-mix(in srgb,var(--green) 60%,transparent)";
+      dot.title = "Alles in Ordnung";
+    }
+  } catch(e){ /* Bei Netzwerkfehler Dot grau lassen */ }
 }
 
 // ── Treemap-Ansicht ───────────────────────────────────────────────
@@ -4980,11 +5008,13 @@ if(localStorage.getItem("athOverviewCollapsed") === "1"){
   const i=document.getElementById("athOverviewIcon"); if(i) i.textContent="▶";
 }
 loadSchedulerStatus();
+updateHealthStatusDot();
 setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
+setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.8.9 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
+  Frontend v2.9.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
@@ -4996,9 +5026,7 @@ setInterval(loadSchedulerStatus,30000);
   &nbsp;·&nbsp;
   <a href="javascript:void(0)" onclick="openHealthModal()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
-    <svg height="13" width="13" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle">
-      <path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.75 4.75a.75.75 0 00-1.5 0v3.5c0 .414.336.75.75.75h2.5a.75.75 0 000-1.5H8.75V4.75z"/>
-    </svg>
+    <span id="healthStatusDot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background .4s,box-shadow .4s" title="Status wird geladen…"></span>
     System-Status
   </a>
   &nbsp;·&nbsp;
