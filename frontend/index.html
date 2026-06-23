@@ -319,7 +319,7 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .threshold-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .threshold-wrap input[type=range]{width:120px;min-height:28px;accent-color:#22c55e}
 .notif-filter-btn.active{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
-.app-version{font-size:10px;color:var(--muted);text-align:center;padding:8px 0 4px;opacity:.5}
+.app-version{font-size:10px;color:var(--muted);text-align:center;padding:8px 0 4px;opacity:.5;display:flex;flex-direction:column;align-items:center;gap:3px}
 
 .day-btn{min-width:36px;min-height:36px;border:1px solid var(--border);border-radius:6px;
   background:var(--bg3);color:var(--muted);font-size:12px;cursor:pointer;padding:4px 6px}
@@ -3728,6 +3728,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.9.1 · Backend v2.7.4",
+    items: [
+      "Footer: zweizeilig auf Mobilgeräten — Versionsinfo oben, Links (Letzte Änderungen · System-Status · GitHub) unten",
+    ]
+  },
+  {
     versions: "Frontend v2.9.0 · Backend v2.7.4",
     items: [
       "System-Status: farbiger Statusdot im Footer — grün (Handelszeit, kein Fehler), rot (Handelszeit + Yahoo-Fehler), grau (außerhalb Handelszeit); aktualisiert sich beim manuellen Refresh und automatisch alle 60 Sekunden",
@@ -5016,8 +5022,8 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  Frontend v2.9.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span>
-  &nbsp;·&nbsp;
+  <span>Frontend v2.9.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
     <svg height="13" width="13" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle">
@@ -5046,6 +5052,7 @@ setInterval(updateHealthStatusDot,60000);
     </svg>
     GitHub
   </a>
+  </span>
 </div>
 <!-- Modal: Letzte Änderungen / Changelog -->
 <div class="overlay" id="changelogModal" style="display:none" onclick="closeIfOverlay(event,'changelogModal')">
