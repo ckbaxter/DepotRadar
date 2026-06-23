@@ -3729,10 +3729,12 @@ const CHANGELOG = [
   {
     label: "Juni 2026",
     versions: "Frontend v2.9.0 · Backend v2.7.4",
-      text: "System-Status: farbiger Statusdot im Footer — grün (Handelszeit, kein Fehler), rot (Handelszeit + Yahoo-Fehler), grau (außerhalb Handelszeit); aktualisiert sich beim manuellen Refresh und automatisch alle 60 Sekunden",
-    },
-    {
-      versions: "Frontend v2.8.9 · Backend v2.7.4",
+    items: [
+      "System-Status: farbiger Statusdot im Footer — grün (Handelszeit, kein Fehler), rot (Handelszeit + Yahoo-Fehler), grau (außerhalb Handelszeit); aktualisiert sich beim manuellen Refresh und automatisch alle 60 Sekunden",
+    ]
+  },
+  {
+    versions: "Frontend v2.8.9 · Backend v2.7.4",
     items: [
       "Code-Cleanup: tote Hilfsfunktion entfernt, dreifach-setTimeout-Bug in Einstellungen behoben, Multiplier-Berechnung in eine Funktion zusammengeführt, Discount-Helfer konsequent genutzt",
     ]
@@ -4833,6 +4835,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ["newDepotName","newWlName"].forEach(id=>{
     document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")({newDepotName:createDepot,newWlName:createWatchlist})[id]();});
   });
+  updateHealthStatusDot();
 });
 
 function ctSelect(co){
@@ -5008,7 +5011,6 @@ if(localStorage.getItem("athOverviewCollapsed") === "1"){
   const i=document.getElementById("athOverviewIcon"); if(i) i.textContent="▶";
 }
 loadSchedulerStatus();
-updateHealthStatusDot();
 setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
