@@ -21,7 +21,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.4"
+VERSION           = "2.7.5"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (In-Memory, wird bei Neustart zurückgesetzt) ──────
@@ -31,6 +31,8 @@ _health_stats  = {
     "total_yahoo_calls":  0,
     "failed_yahoo_calls": 0,
     "recent_errors":      [],   # Ring-Buffer, max. 20 Einträge
+    "cache_hits_total":   0,    # Kumulierte Cache-Hits über alle Zyklen
+    "last_refresh_stats": {"fresh": 0, "cached": 0},  # Letzter Zyklus
 }
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -597,16 +599,55 @@ def _make_stock(data, old=None):
         "ath_date":      data.get("ath_date") if data.get("ath_eur",0) >= base.get("ath_eur",0) else (base.get("ath_date") or data.get("ath_date")),
     }
 
-def _fetch_prices(stocks):
+def _fetch_prices(stocks, price_cache=None):
     """Phase 1: Kurse holen und Stocks aktualisieren — noch keine Benachrichtigungen.
     Sammelt nebenbei Aktien, die in diesem Durchlauf ein NEUES ATH erreicht haben
-    UND dafür den ATH-Alarm aktiviert haben (ath_alert_enabled)."""
+    UND dafür den ATH-Alarm aktiviert haben (ath_alert_enabled).
+    price_cache: optionaler Dict {ticker: data | {"_error": str}} — wird innerhalb
+    eines refresh_all_depots-Zyklus depot-übergreifend geteilt, damit identische
+    Ticker nur einmal bei Yahoo abgefragt werden."""
     ok_list, err_list, ath_hits = [], [], []
     for i, s in enumerate(stocks):
-        _health_stats["total_yahoo_calls"] += 1
+        ticker = s["ticker"]
+
+        # ── Kurs aus Cache lesen oder frisch von Yahoo holen ──────
+        if price_cache is not None and ticker in price_cache:
+            cached = price_cache[ticker]
+            if isinstance(cached, dict) and "_error" in cached:
+                # Fehler aus einem früheren Depot gecacht — nicht wiederholen
+                err_list.append(f"{s['name']}: {cached['_error']}")
+                continue
+            # Cache-Hit mit gültigen Daten — kein Yahoo-Call nötig
+            data = cached
+            _health_stats["cache_hits_total"] += 1
+            _health_stats["last_refresh_stats"]["cached"] += 1
+        else:
+            # Cache-Miss — Yahoo abfragen
+            _health_stats["total_yahoo_calls"] += 1
+            _health_stats["last_refresh_stats"]["fresh"] += 1
+            try:
+                data = fetch_stock_data(ticker)
+            except Exception as e:
+                log.error(f"{s['name']}: {e}")
+                err_list.append(f"{s['name']}: {e}")
+                _health_stats["failed_yahoo_calls"] += 1
+                _health_stats["recent_errors"].append({
+                    "time":   datetime.now().isoformat(timespec="seconds"),
+                    "ticker": ticker,
+                    "reason": str(e)[:120],
+                })
+                # Ring-Buffer: max. 20 Einträge behalten
+                if len(_health_stats["recent_errors"]) > 20:
+                    _health_stats["recent_errors"] = _health_stats["recent_errors"][-20:]
+                if price_cache is not None:
+                    price_cache[ticker] = {"_error": str(e)}
+                continue
+            if price_cache is not None:
+                price_cache[ticker] = data
+
+        # ── Daten auf Stock-Objekt anwenden ───────────────────────
         try:
             old_ath   = float(s.get("ath_eur") or 0)
-            data      = fetch_stock_data(s["ticker"])
             stocks[i] = _make_stock(data, s)
             new_ath   = float(stocks[i].get("ath_eur") or 0)
             # old_ath > 0 verhindert einen Fehlalarm beim allerersten Refresh
@@ -616,7 +657,7 @@ def _fetch_prices(stocks):
                 ath_hits.append({**stocks[i], "_prev_ath": old_ath})
             # Sektor auto-holen wenn noch nicht gesetzt
             if not stocks[i].get("sector"):
-                sec = fetch_sector_from_yahoo(s["ticker"])
+                sec = fetch_sector_from_yahoo(ticker)
                 if sec:
                     stocks[i]["sector"] = sec
                     log.info(f"Sektor gesetzt: {s['name']} → {sec}")
@@ -624,15 +665,6 @@ def _fetch_prices(stocks):
         except Exception as e:
             log.error(f"{s['name']}: {e}")
             err_list.append(f"{s['name']}: {e}")
-            _health_stats["failed_yahoo_calls"] += 1
-            _health_stats["recent_errors"].append({
-                "time":   datetime.now().isoformat(timespec="seconds"),
-                "ticker": s.get("ticker", "?"),
-                "reason": str(e)[:120],
-            })
-            # Ring-Buffer: max. 20 Einträge behalten
-            if len(_health_stats["recent_errors"]) > 20:
-                _health_stats["recent_errors"] = _health_stats["recent_errors"][-20:]
     return stocks, ok_list, err_list, ath_hits
 
 def build_ath_reached_html(stock, prev_ath):
@@ -691,7 +723,7 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_ga
             log.error(f"Notify {s.get('name','?')}: {e}")
     return stocks
 
-def _refresh_depot(depot, trigger="auto"):
+def _refresh_depot(depot, trigger="auto", price_cache=None):
     did       = depot["id"]; dname = depot["name"]
     urls, mention, confirm = resolve_notification_settings(did)
     budget    = depot.get("buy_budget") or None
@@ -699,12 +731,12 @@ def _refresh_depot(depot, trigger="auto"):
 
     # ── Phase 1: Alle Kurse holen ─────────────────────────────────
     stocks = load_stocks(did)
-    stocks, ok, err, ath_hits = _fetch_prices(stocks)
+    stocks, ok, err, ath_hits = _fetch_prices(stocks, price_cache)
 
     # Watchlist-Preise holen
     wl_data = {}
     for wl in depot.get("watchlists", []):
-        wls, wok, werr, wl_ath_hits = _fetch_prices(load_wl_stocks(did, wl["id"]))
+        wls, wok, werr, wl_ath_hits = _fetch_prices(load_wl_stocks(did, wl["id"]), price_cache)
         wl_data[wl["id"]] = (wl, wls, wok, werr, wl_ath_hits)
         ok += wok; err += werr
 
@@ -773,8 +805,10 @@ def take_snapshot():
 def refresh_all_depots(trigger="auto"):
     depots = load_depots(); total_ok, total_err = [], []
     _health_stats["total_refreshes"] += 1
+    _health_stats["last_refresh_stats"] = {"fresh": 0, "cached": 0}
+    price_cache = {}  # Depot-übergreifender Kurs-Cache für diesen Zyklus
     for depot in depots:
-        ok, err = _refresh_depot(depot, trigger)
+        ok, err = _refresh_depot(depot, trigger, price_cache)
         total_ok += ok; total_err += err
     label = "Automatisch" if trigger == "auto" else "Manuell"
     add_log(f"{trigger}_refresh", f"{label}er Refresh",
@@ -2341,6 +2375,7 @@ def health():
     stats  = _health_stats
     total  = stats["total_yahoo_calls"]
     failed = stats["failed_yahoo_calls"]
+    lrs = stats["last_refresh_stats"]
     return jsonify({
         "status":               "ok",
         "version":              VERSION,
@@ -2356,6 +2391,9 @@ def health():
         "tracked_tickers":      tracked,
         "last_refresh":         _last_refresh.isoformat() if _last_refresh else None,
         "recent_errors":        list(reversed(stats["recent_errors"])),
+        "cache_hits_total":     stats["cache_hits_total"],
+        "last_refresh_fresh":   lrs["fresh"],
+        "last_refresh_cached":  lrs["cached"],
     })
 
 if __name__ == "__main__":
