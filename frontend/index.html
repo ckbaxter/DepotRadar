@@ -377,6 +377,7 @@ select</style>
     <span id="overviewGroupIcon">▼</span>
     <span>Übersichten</span>
     <span id="overviewHint" style="display:none;font-size:13px;letter-spacing:2px;color:var(--muted);margin-left:2px">📊 📉 🏷 📈</span>
+    <span id="overviewFilterHint" style="margin-left:auto;display:flex;gap:5px;align-items:center;flex-shrink:0"></span>
   </div>
   <div id="overviewChildren">
   <!-- Portfolio-Übersicht (nur wenn Einstandsdaten vorhanden) -->
@@ -1483,7 +1484,7 @@ function renderDepotTabs(){
 
 function switchDepot(depot){
   activeDepot=depot; activeView={type:"depot",id:null,name:""};
-  _buyFilterActive=false; _summaryFilter="all";
+  _buyFilterActive=false; _summaryFilter="all"; _activeSectorFilter=null;
   clearStockSearch();
   ["green","yellow","orange","red"].forEach(k=>{
     const el=document.getElementById("scard-"+k); if(el) el.classList.remove("active");
@@ -1492,6 +1493,7 @@ function switchDepot(depot){
   const wrap=document.getElementById("thresholdWrap");
   if(btn) btn.classList.remove("active");
   if(wrap) wrap.style.display="none";
+  updateOverviewFilterHint();
   localStorage.setItem("activeDepot", depot.id);
   localStorage.setItem("activeView", JSON.stringify(activeView));
   renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
@@ -1499,8 +1501,9 @@ function switchDepot(depot){
 
 function switchWatchlist(wl){
   activeView={type:"watchlist", id:wl.id, name:wl.name};
-  _buyFilterActive=false; _summaryFilter="all";
+  _buyFilterActive=false; _summaryFilter="all"; _activeSectorFilter=null;
   clearStockSearch();
+  updateOverviewFilterHint();
   localStorage.setItem("activeView", JSON.stringify(activeView));
   renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
 }
@@ -1624,6 +1627,7 @@ function setSummaryFilter(key){
     if(el) el.classList.toggle("active", _summaryFilter === k && k !== "all");
     if(k === "all" && el) el.classList.toggle("active", false);
   });
+  updateOverviewFilterHint();
   if(stocksCache && stocksCache.length) renderTable(stocksCache);
 }
 
@@ -2139,6 +2143,27 @@ function toggleOverviewGroup(){
   icon.textContent       = open ? "▶" : "▼";
   hint.style.display     = open ? "inline" : "none";
   localStorage.setItem("overviewGroupCollapsed", open ? "1" : "0");
+}
+
+function updateOverviewFilterHint(){
+  const el = document.getElementById("overviewFilterHint");
+  if(!el) return;
+  const athColors = {
+    green:  {bg:"rgba(34,197,94,.15)",  color:"var(--green)",  label:"📉 <20%"},
+    yellow: {bg:"rgba(234,179,8,.15)",  color:"var(--yellow)", label:"📉 20–39%"},
+    orange: {bg:"rgba(249,115,22,.15)", color:"var(--orange)", label:"📉 40–59%"},
+    red:    {bg:"rgba(239,68,68,.15)",  color:"var(--red)",    label:"📉 >60%"},
+  };
+  const pills = [];
+  if(_summaryFilter && _summaryFilter !== "all"){
+    const c = athColors[_summaryFilter];
+    if(c) pills.push(`<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:${c.bg};color:${c.color};white-space:nowrap">${c.label}</span>`);
+  }
+  if(_activeSectorFilter){
+    const sec = _activeSectorFilter.length > 14 ? _activeSectorFilter.slice(0,13)+"…" : _activeSectorFilter;
+    pills.push(`<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:rgba(78,124,246,.12);color:var(--accent);white-space:nowrap">🏷 ${sec}</span>`);
+  }
+  el.innerHTML = pills.join("");
 }
 
 function togglePortfolioSummary(){
@@ -3318,6 +3343,7 @@ function openSectorFilterDropdown(e){
 function setSectorFilter(sector){
   _activeSectorFilter = _activeSectorFilter === sector ? null : sector;
   renderSectorFilterBtn();
+  updateOverviewFilterHint();
   if(stocksCache) renderTable(stocksCache);
 }
 
@@ -3747,6 +3773,13 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.9.5 · Backend v2.7.5",
+    items: [
+      "Übersichten: aktive Filter (ATH-Stufe, Sektor) werden als farbige Pills im Oberpunkt-Header angezeigt — sichtbar auch wenn die Übersichten zugeklappt sind",
+    ]
+  },
   {
     label: "Juni 2026",
     versions: "Frontend v2.9.4 · Backend v2.7.5",
@@ -5082,7 +5115,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.9.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.9.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
