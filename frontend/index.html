@@ -3728,6 +3728,14 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.9.2 · Backend v2.7.5",
+    items: [
+      "Depot-übergreifender Yahoo-Cache beim automatischen Refresh: identische Ticker in mehreren Depots oder Watchlists werden nur noch einmal abgefragt — spart Yahoo-Calls wenn Positionen in mehreren Depots vorkommen",
+      "System-Status: neue Cache-Zeile zeigt Treffer und Einsparung des letzten Refresh-Zyklus",
+    ]
+  },
+  {
+    label: "Juni 2026",
     versions: "Frontend v2.9.1 · Backend v2.7.4",
     items: [
       "Footer: zweizeilig auf Mobilgeräten — Versionsinfo oben, Links (Letzte Änderungen · System-Status · GitHub) unten",
@@ -3863,6 +3871,12 @@ async function openHealthModal(){
       ? ((d.failed_yahoo_calls / d.total_yahoo_calls) * 100).toFixed(1) : "0.0";
     const errColor = parseFloat(errRate) < 2 ? "var(--green)" : parseFloat(errRate) < 5 ? "var(--orange)" : "var(--red)";
 
+    const cacheTotal = (d.last_refresh_fresh||0) + (d.last_refresh_cached||0);
+    const cachePct   = cacheTotal > 0 ? Math.round((d.last_refresh_cached||0) / cacheTotal * 100) : 0;
+    const cacheStr   = cacheTotal > 0
+      ? `${d.last_refresh_cached||0} gecacht · ${d.last_refresh_fresh||0} abgefragt${cachePct > 0 ? ` · <span style="color:var(--green);font-weight:600">${cachePct}% eingespart</span>` : ""}`
+      : `Noch kein Refresh seit Start`;
+
     const statCard = (label, val, color="") =>
       `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
         <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${label}</div>
@@ -3890,13 +3904,18 @@ async function openHealthModal(){
         ${statusDot(d.trading_hours_active)}<span style="color:var(--muted)">${d.trading_hours_active ? "Handelszeit" : "Außerhalb Handelszeit"}</span>
         <span style="margin-left:auto;font-size:11px;color:var(--muted)">Backend v${esc(d.version||"—")}</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
         ${statCard("Laufzeit", uptimeStr)}
         ${statCard("Letzter Refresh", d.last_refresh ? new Date(d.last_refresh).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}) : "—")}
         ${statCard("Nächster Refresh", d.next_refresh||"—")}
         ${statCard("Ticker überwacht", d.tracked_tickers??0)}
         ${statCard("Refreshes gesamt", (d.total_refreshes||0).toLocaleString("de-DE"))}
         ${statCard("Erfolgsquote", (d.success_rate??100).toFixed(1)+" %", errColor)}
+      </div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="color:var(--muted)">♻️ Yahoo-Cache (letzter Refresh):</span>
+        <span>${cacheStr}</span>
+        ${d.cache_hits_total > 0 ? `<span style="margin-left:auto;font-size:11px;color:var(--muted)">${(d.cache_hits_total||0).toLocaleString("de-DE")} kumuliert</span>` : ""}
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <span style="font-size:12px;font-weight:600;color:var(--muted)">Letzte Fehler</span>
