@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.7.2-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.8.3-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.7.7-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.9.6-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -28,13 +28,15 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **ATH-Discount** — farbcodierte Badges: grün (<20%), gelb (20–39%), orange (40–59%), rot (>60%) mit Multiplikator (1×/2×/3×)
 - **Kompakte Übersichten** — ATH-, Portfolio- und Sektor-Übersicht sowie Portfolio-Verlauf in einer gemeinsam einklappbaren Ansicht, jede Sektion unabhängig auf-/zuklappbar
 - **Portfolio-Gewichtung** — Balken und %-Wert pro Aktie zeigen die relative Gewichtung im Depot; sortierbar
-- **Portfolio-Verlauf** — täglicher Snapshot des Gesamtwerts; interaktives Liniendiagramm mit Zeitraum-Filter (1W/1M/3M/6M/1J/Alles); Datenpunkte per Antippen/Hovern abrufbar (Datum + exakter Wert), lange Zeiträume werden automatisch reduziert
+- **Portfolio-Verlauf** — täglicher Snapshot des Gesamtwerts; interaktives Liniendiagramm mit Zeitraum-Filter (1W/1M/3M/6M/1J/Alles); Datenpunkte per Antippen/Hovern abrufbar (Datum + exakter Wert), lange Zeiträume werden automatisch reduziert; **Invested-Capital-Kurve** zeigt den kumulierten Einstandswert als gestrichelte Linie (nur bei Positionen mit bekanntem Einstandskurs)
+- **Treemap-Ansicht** — alternative Darstellung des Depots als Flächenkarte; Kachelgröße = Positionswert, Farbe = ATH-Discount-Stufe; Toggle ⊞ Treemap / ☰ Tabelle in der Aktionsleiste (nur Bestand, ab 2 Positionen)
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
 - **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
 - **Diversifikations-Lücke (⚖️)** — markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind (<50% des Sektor-Durchschnitts); sichtbar am Sektor-Tag in Tabelle/Karten, in der Sektor-Übersicht und im ATH-Discount-Alarm; Watchlist-Aktien werden dabei immer gegen den echten Bestand bewertet
-- **Performance-Badges** — 1T / 1W / 1M / 3M direkt unter dem Kurs
+- **Performance-Badges** — 1T / 1M / 3M / 1J / 3J direkt unter dem Kurs
 - **P&L** — Gewinn/Verlust in % und € wenn Einstandskurs bekannt
+- **Kaufmarkierung (K)** — ATH-Level-Kacheln (−20%, −30% usw.) sind antippbar; ein Tippen setzt ein blaues K-Badge als persönliche Notiz auf welchem Level ein Kauf stattfand; mehrere Level gleichzeitig möglich, wird dauerhaft gespeichert
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance (inkl. Watchlist-Aktien); Korrekturen direkt in der App möglich
@@ -42,6 +44,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
+- **System-Status** — Gesundheits-Dashboard im Footer; zeigt Scheduler-Status, Laufzeit, Refresh-Statistiken, Yahoo Finance-Erfolgsquote und Fehler-Log der letzten 20 Abfragefehler
 - **Verlauf** — vollständiger Aktivitätsverlauf mit Filter nach Benutzer und Eintragstyp
 - **Letzte Änderungen** — Changelog direkt in der App abrufbar (Footer-Link)
 - **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten und Wochenbericht direkt in der App konfigurierbar
@@ -297,7 +300,12 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
-| 2.7.2 / 2.8.3 | Diversifikations-Lücke (⚖️) — Aktien aus unterrepräsentierten Sektoren werden markiert (Tabelle, Sektor-Übersicht, ATH-Discount-Alarm); Watchlist-Bewertung immer gegen den echten Bestand |
+| 2.7.7 / 2.9.6 | Hilfe erweitert: neue Abschnitte für Portfolio-Verlauf/EK-Kurve, Treemap-Ansicht und System-Status; veralteter Hinweis zur Depot-Ebene in der Apprise-Sektion entfernt |
+| 2.7.6 / 2.9.3–2.9.5 | Ausstehende Bestätigungen werden jetzt korrekt protokolliert wenn der Kurs sich vor dem zweiten Refresh erholt; Übersichten unter gemeinsamem aufklappbaren Oberpunkt zusammengefasst; aktive Filter als farbige Pills im Header sichtbar |
+| 2.7.5 / 2.9.0–2.9.2 | Depot-übergreifender Yahoo-Cache beim automatischen Refresh spart redundante API-Calls wenn identische Ticker in mehreren Depots vorkommen; System-Status zeigt Cache-Statistik; Statusdot im Footer (grün/grau/rot) |
+| 2.7.3–2.7.4 / 2.8.5–2.8.9 | Invested-Capital-Kurve im Verlaufschart (gestrichelte EK-Linie); Treemap-Ansicht (Toggle im Depot-Header); System-Status / Gesundheits-Dashboard (Footer-Link); zweizeiliger Footer auf Mobilgeräten; Code-Cleanup und Bugfixes (Y-Achsen-Skala, Treemap-Namen) |
+| 2.7.2 / 2.8.3–2.8.4 | Diversifikations-Lücke (⚖️) — Aktien aus unterrepräsentierten Sektoren werden markiert (Tabelle, Sektor-Übersicht, ATH-Discount-Alarm); Watchlist-Bewertung immer gegen den echten Bestand; Zeitstempel der ältesten Kursabfrage in der Portfolio-Übersicht |
+| 2.7.1 / 2.8.2 | Performance-Badges umgestellt auf 1T/1M/3M/1J/3J (vorher 1T/1W/1M/3M); Logo oben links als Seite-Neu-Laden-Button |
 | 2.7.0 / 2.8.0 | Benutzerprofil ist jetzt Pflicht, Single-User-ohne-PIN loggt automatisch ein, Benachrichtigungseinstellungen nur noch pro Benutzer (keine doppelte Depot-Ebene mehr), Bugfixes (Depot-Speichern, Wochenbericht-Quelle) |
 | 2.6.0 / 2.7.45 | ATH-Alarm pro Aktie (neues Allzeithoch), individuell aktivierbar |
 | 2.5.x / 2.7.2x–2.7.4x | Interaktiver Portfolio-Verlauf-Chart (antippen/hovern für exakte Werte), kompakte einklappbare Übersichten, Ein/Aus-Schalter pro Depot für Benachrichtigungen, Tastatur-Unterstützung für PIN-Eingabe, App-Icon, In-App-Changelog, atomare Datei-Schreibvorgänge, HTML-Escaping gegen gespeicherten XSS |
