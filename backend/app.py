@@ -21,7 +21,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.5"
+VERSION           = "2.7.6"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (In-Memory, wird bei Neustart zurückgesetzt) ──────
@@ -352,9 +352,17 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                     success=True, depot_id=depot_id)
         return cb
     # Ausstehende Flags für Level oberhalb des aktuellen cb bereinigen
-    for lvl in [20, 30, 40, 50, 60]:
-        if lvl > cb:
-            stock.pop(f"pending_notify_{lvl}", None)
+    # Tritt auf wenn cb == lb (kein neues Level) aber Kurs zwischenzeitlich über das
+    # pending-Level gestiegen ist — Bestätigung wurde nie abgeschlossen.
+    cleared_pending = [lvl for lvl in [20, 30, 40, 50, 60]
+                       if lvl > cb and stock.pop(f"pending_notify_{lvl}", None)]
+    if cleared_pending:
+        lvl_str = ", ".join(f"-{lvl}%" for lvl in cleared_pending)
+        add_log("pending_notify",
+                f"↩ Nicht bestätigt [{label}]: {stock['name']}",
+                f"Kurs hat sich vor der Bestätigung erholt — Level ({lvl_str}) nicht bestätigt.\n"
+                f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR",
+                success=True, depot_id=depot_id)
     return lb
 
 # ── Yahoo Finance ─────────────────────────────────────────────────
