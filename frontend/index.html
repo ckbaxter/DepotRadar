@@ -846,6 +846,20 @@ select</style>
       </details>
 
       <details class="help-section">
+        <summary class="help-summary">📈 Portfolio-Verlauf</summary>
+        <div class="help-body">
+          Zeigt den täglichen Gesamtwert deines Depots als Liniendiagramm. Mit den Zeitraum-Buttons
+          (1W / 1M / 3M / 6M / 1J / Alles) kann der Anzeigebereich eingestellt werden.
+          Antippen oder Hovern über einen Datenpunkt zeigt Datum und exakten Wert an.<br><br>
+          <b>Invested-Capital-Kurve:</b> Wenn Einstandskurse hinterlegt sind, erscheint eine zweite
+          gestrichelte Linie, die den kumulierten Einstandswert aller Positionen zeigt — so lässt
+          sich auf einen Blick erkennen, wie weit der aktuelle Depotwert über oder unter dem
+          eingesetzten Kapital liegt. Der Tooltip zeigt bei jedem Datenpunkt zusätzlich den
+          Einstandswert an (EK: x €).
+        </div>
+      </details>
+
+      <details class="help-section">
         <summary class="help-summary"><span class="parqet-badge" style="font-size:11px;margin-right:2px">P</span> Badge</summary>
         <div class="help-body">
           Aktien mit einem <span class="parqet-badge">P</span> wurden über Parqet importiert.
@@ -939,6 +953,21 @@ select</style>
       </details>
 
       <details class="help-section">
+        <summary class="help-summary">⊞ Treemap-Ansicht</summary>
+        <div class="help-body">
+          Mit dem Toggle-Button <b>⊞ Treemap / ☰ Tabelle</b> in der Aktionsleiste kann zwischen
+          der klassischen Tabellendarstellung und einer Treemap gewechselt werden. Die Treemap
+          steht nur für den Bestand zur Verfügung (nicht für Watchlists) und erscheint ab
+          mindestens 2 Positionen.<br><br>
+          In der Treemap entspricht die <b>Kachelgröße</b> dem aktuellen Positionswert — die
+          größte Position belegt den meisten Platz. Die <b>Farbe</b> folgt dem gleichen Schema
+          wie die ATH-Discount-Badges: grün (&lt;20%), gelb (20–39%), orange (40–59%),
+          rot (≥60%). Antippen einer Kachel öffnet das Detail-Panel der Aktie.<br><br>
+          Der zuletzt gewählte Ansichtsmodus wird gespeichert.
+        </div>
+      </details>
+
+      <details class="help-section">
         <summary class="help-summary">Buttons an jeder Aktie</summary>
         <div class="help-body">
           <div style="display:flex;flex-direction:column;gap:0">
@@ -1019,7 +1048,6 @@ select</style>
         <summary class="help-summary">🔔 Apprise Benachrichtigungen</summary>
         <div class="help-body">
           Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.<br><br>
-          Ohne Multi-User können Apprise-URLs weiterhin direkt in den Depot-Einstellungen hinterlegt werden (⚙-Icon im Depot-Tab).<br><br>
           Eine Benachrichtigung kommt wenn eine Aktie die eingestellte ATH-Schwelle unterschreitet.
           Nachkauf-Kandidaten werden mit einem 🛒-Symbol hervorgehoben, Aktien aus unterrepräsentierten
           Sektoren zusätzlich mit ⚖️.<br><br>
@@ -1045,6 +1073,25 @@ http://depotradar.example.lan</div>
           Weitere Informationen zur Konfiguration mit Beispielen für Discord, Telegram, E-Mail und mehr:<br>
           <a href="https://appriseit.com/services/" target="_blank"
              style="color:var(--accent)">appriseit.com/services</a>
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">🩺 System-Status</summary>
+        <div class="help-body">
+          Der Link „System-Status" im Footer öffnet ein Gesundheits-Dashboard mit Informationen
+          über den laufenden Betrieb:<br><br>
+          <ul style="margin:0 0 0 16px;padding:0;line-height:1.9">
+            <li>Scheduler-Status (aktiv / gestoppt) und Handelszeit-Indikator</li>
+            <li>Laufzeit seit dem letzten Container-Start</li>
+            <li>Letzter und nächster automatischer Refresh</li>
+            <li>Anzahl überwachter Ticker und Gesamt-Refreshes</li>
+            <li>Yahoo Finance-Erfolgsquote und Fehler-Log der letzten 20 Abfrage-Fehler</li>
+            <li>Yahoo-Cache: gecachte Treffer und Einsparung beim letzten Refresh-Zyklus</li>
+          </ul><br>
+          Die Statistiken laufen im Arbeitsspeicher und werden beim Container-Neustart zurückgesetzt.
+          Ob die App gerade in der Handelszeit läuft, zeigt auch der farbige Statusdot im Footer
+          (grün = Handelszeit, grau = außerhalb, rot = Handelszeit mit Yahoo-Fehlern).
         </div>
       </details>
 
@@ -3775,6 +3822,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.9.6 · Backend v2.7.7",
+    items: [
+      "Hilfe: Neue Abschnitte für Portfolio-Verlauf/EK-Kurve, Treemap-Ansicht und System-Status hinzugefügt; veralteten Hinweis auf Apprise-Konfiguration auf Depot-Ebene entfernt (Benachrichtigungen sind seit v2.8.0 ausschließlich pro Benutzer)",
+    ]
+  },
+  {
+    label: "Juni 2026",
     versions: "Frontend v2.9.5 · Backend v2.7.5",
     items: [
       "Übersichten: aktive Filter (ATH-Stufe, Sektor) werden als farbige Pills im Oberpunkt-Header angezeigt — sichtbar auch wenn die Übersichten zugeklappt sind",
@@ -5115,7 +5169,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.9.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.9.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
