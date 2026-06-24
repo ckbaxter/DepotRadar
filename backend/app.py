@@ -21,7 +21,7 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.6"
+VERSION           = "2.7.7"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (In-Memory, wird bei Neustart zurückgesetzt) ──────
@@ -358,10 +358,11 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                        if lvl > cb and stock.pop(f"pending_notify_{lvl}", None)]
     if cleared_pending:
         lvl_str = ", ".join(f"-{lvl}%" for lvl in cleared_pending)
+        ath_dist = (new_ath - new_cur) / new_ath * 100 if new_ath else 0
         add_log("pending_notify",
                 f"↩ Nicht bestätigt [{label}]: {stock['name']}",
                 f"Kurs hat sich vor der Bestätigung erholt — Level ({lvl_str}) nicht bestätigt.\n"
-                f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR",
+                f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{ath_dist:.1f}%",
                 success=True, depot_id=depot_id)
     return lb
 
