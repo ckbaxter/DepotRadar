@@ -171,6 +171,9 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .snapshot-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
 .overview-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
 .overview-group>div+div{border-top:1px solid var(--border)}
+#overviewChildren>div+div{border-top:1px solid var(--border)}
+.overview-parent-header{display:flex;align-items:center;padding:9px 16px;cursor:pointer;user-select:none;gap:8px;font-size:13px;font-weight:700}
+.snapshot-header.sub-header{padding-left:28px}
 /* ── Multi-User ── */
 .user-overlay{position:fixed;inset:0;background:var(--bg);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px}
 .user-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;width:100%;max-width:400px;text-align:center}
@@ -370,9 +373,15 @@ select</style>
 
 <div class="main">
 <div class="overview-group">
+  <div class="overview-parent-header" onclick="toggleOverviewGroup()">
+    <span id="overviewGroupIcon">▼</span>
+    <span>Übersichten</span>
+    <span id="overviewHint" style="display:none;font-size:13px;letter-spacing:2px;color:var(--muted);margin-left:2px">📊 📉 🏷 📈</span>
+  </div>
+  <div id="overviewChildren">
   <!-- Portfolio-Übersicht (nur wenn Einstandsdaten vorhanden) -->
   <div id="portfolioSummaryWrap" style="display:none">
-    <div class="snapshot-header" onclick="togglePortfolioSummary()">
+    <div class="snapshot-header sub-header" onclick="togglePortfolioSummary()">
       <div class="snapshot-header-left">
         <span id="portfolioToggleIcon">▶</span>
         <span>📊 Portfolio-Übersicht</span>
@@ -409,7 +418,7 @@ select</style>
   </div>
 
   <div>
-    <div class="snapshot-header" onclick="toggleAthOverview()">
+    <div class="snapshot-header sub-header" onclick="toggleAthOverview()">
       <div class="snapshot-header-left">
         <span id="athOverviewIcon">▼</span>
         <span>📉 ATH-Übersicht</span>
@@ -430,7 +439,7 @@ select</style>
 
   <!-- Sektor-Übersicht -->
   <div id="sectorOverviewWrap" style="display:none">
-    <div class="snapshot-header" onclick="toggleSectorOverview()">
+    <div class="snapshot-header sub-header" onclick="toggleSectorOverview()">
       <div class="snapshot-header-left">
         <span id="sectorToggleIcon">▶</span>
         <span>🏷 Sektor-Übersicht</span>
@@ -443,7 +452,7 @@ select</style>
 
   <!-- Portfolio-Verlauf -->
   <div id="snapshotSection" style="display:none">
-    <div class="snapshot-header" onclick="toggleSnapshotSection()">
+    <div class="snapshot-header sub-header" onclick="toggleSnapshotSection()">
       <div class="snapshot-header-left">
         <span id="snapshotToggleIcon">▶</span>
         <span>📈 Portfolio-Verlauf</span>
@@ -464,6 +473,7 @@ select</style>
       </div>
     </div>
   </div>
+  </div><!-- /overviewChildren -->
 </div>
 
   <div class="table-wrap">
@@ -2120,6 +2130,17 @@ function toggleAthOverview(){
   localStorage.setItem("athOverviewCollapsed", open ? "1" : "0");
 }
 
+function toggleOverviewGroup(){
+  const children = document.getElementById("overviewChildren");
+  const icon     = document.getElementById("overviewGroupIcon");
+  const hint     = document.getElementById("overviewHint");
+  const open     = children.style.display !== "none";
+  children.style.display = open ? "none" : "";
+  icon.textContent       = open ? "▶" : "▼";
+  hint.style.display     = open ? "inline" : "none";
+  localStorage.setItem("overviewGroupCollapsed", open ? "1" : "0");
+}
+
 function togglePortfolioSummary(){
   const cards = document.getElementById("portfolioSummary");
   const icon  = document.getElementById("portfolioToggleIcon");
@@ -3728,6 +3749,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.9.4 · Backend v2.7.5",
+    items: [
+      "Übersichten: Portfolio-, ATH-, Sektor-Übersicht und Portfolio-Verlauf sind jetzt unter einem gemeinsamen Oberpunkt 'Übersichten' zusammengefasst — ein Tap klappt alles auf einmal weg; bei zugeklapptem Oberpunkt zeigen vier Emojis (📊 📉 🏷 📈) kurz an was sich dahinter verbirgt",
+    ]
+  },
+  {
+    label: "Juni 2026",
     versions: "Frontend v2.9.3 · Backend v2.7.6",
     items: [
       "Verlauf: ausstehende Bestätigungen (Bestätigungsmodus) werden jetzt auch dann als '↩ Nicht bestätigt' eingetragen, wenn der Kurs sich bereits vor dem zweiten Refresh erholt — bisher wurden solche Pending-Flags still verworfen",
@@ -5042,13 +5070,19 @@ if(localStorage.getItem("athOverviewCollapsed") === "1"){
   const b=document.getElementById("athOverviewBody"); if(b) b.style.display="none";
   const i=document.getElementById("athOverviewIcon"); if(i) i.textContent="▶";
 }
+// Übersichten Oberpunkt collapsed state
+if(localStorage.getItem("overviewGroupCollapsed") === "1"){
+  const ch=document.getElementById("overviewChildren"); if(ch) ch.style.display="none";
+  const ic=document.getElementById("overviewGroupIcon"); if(ic) ic.textContent="▶";
+  const hi=document.getElementById("overviewHint"); if(hi) hi.style.display="inline";
+}
 loadSchedulerStatus();
 setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.9.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.9.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
