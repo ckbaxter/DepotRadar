@@ -3822,8 +3822,9 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
-    versions: "Frontend v2.9.6 · Backend v2.7.7",
+    versions: "Frontend v2.9.7 · Backend v2.7.7",
     items: [
+      "Parqet: Nach erfolgreichem OAuth-Callback wird die Depot-Auswahl automatisch in den sichtbaren Bereich gescrollt — verhindert dass der Picker auf Mobile unterhalb des Folds landet",
       "Hilfe: Neue Abschnitte für Portfolio-Verlauf/EK-Kurve, Treemap-Ansicht und System-Status hinzugefügt; veralteten Hinweis auf Apprise-Konfiguration auf Depot-Ebene entfernt (Benachrichtigungen sind seit v2.8.0 ausschließlich pro Benutzer)",
     ]
   },
@@ -4365,6 +4366,7 @@ async function loadParqetPortfolios(){
     }
     sel.innerHTML = list.map(p => `<option value="${p.id}">${esc(p.name || p.title || p.id)}</option>`).join("");
     picker.style.display = "block";
+    setTimeout(() => picker.scrollIntoView({behavior: "smooth", block: "center"}), 100);
     if(list.length === 1) await confirmParqetPortfolio();
   } catch(e){ toast("Fehler: "+e.message, false); }
 }
@@ -5169,7 +5171,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.9.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.9.7 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
