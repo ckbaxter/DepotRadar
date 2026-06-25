@@ -18,13 +18,15 @@ NOTIF_FILE     = os.path.join(DATA_DIR, "notifications.json")
 SPLITS_FILE    = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE  = os.path.join(DATA_DIR, "settings.json")
 USERS_FILE     = os.path.join(DATA_DIR, "users.json")
-SNAPSHOTS_FILE = os.path.join(DATA_DIR, "snapshots.json")
+SNAPSHOTS_FILE  = os.path.join(DATA_DIR, "snapshots.json")
+HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
+EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.7"
+VERSION           = "2.7.8"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
-# ── Gesundheits-Statistiken (In-Memory, wird bei Neustart zurückgesetzt) ──────
+# ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
 APP_START_TIME = time_mod.time()
 _health_stats  = {
     "total_refreshes":    0,
@@ -372,16 +374,28 @@ YH = {
     "Accept": "application/json",
 }
 
+_STATIC_EUR_FALLBACK = {"USD":0.92,"GBP":1.17,"CHF":1.05,"JPY":0.0062,
+                        "CAD":0.68,"AUD":0.60,"DKK":0.134,"HKD":0.118}
+
 def get_eur_rate(currency):
-    """Gibt EUR-Umrechnungskurs zurück. Normalisiert GBp → GBP automatisch."""
+    """Gibt EUR-Umrechnungskurs zurück. Normalisiert GBp → GBP automatisch.
+    Bei API-Ausfall: zuerst gecachter Kurs aus eur_rates.json, dann statischer Fallback."""
     if currency == "EUR": return 1.0
     if currency == "GBp": currency = "GBP"
     try:
-        r = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
-        return float(r.json()["rates"]["EUR"])
+        r    = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
+        rate = float(r.json()["rates"]["EUR"])
+        cache = _load_json(EUR_RATES_FILE, {}); cache[currency] = rate
+        _save_json(EUR_RATES_FILE, cache)
+        return rate
     except:
-        return {"USD":0.92,"GBP":1.17,"CHF":1.05,"JPY":0.0062,
-                "CAD":0.68,"AUD":0.60,"DKK":0.134,"HKD":0.118}.get(currency, 0.92)
+        cache = _load_json(EUR_RATES_FILE, {})
+        if currency in cache:
+            log.warning(f"Frankfurter API nicht erreichbar — gecachter Kurs für {currency}: {cache[currency]}")
+            return cache[currency]
+        fallback = _STATIC_EUR_FALLBACK.get(currency, 0.92)
+        log.warning(f"Frankfurter API nicht erreichbar, kein Cache — statischer Fallback für {currency}: {fallback}")
+        return fallback
 
 SECTOR_MAP = {
     # Industrie (spezifisch) → hat Vorrang
@@ -825,10 +839,31 @@ def refresh_all_depots(trigger="auto"):
             len(total_err) == 0)
     if trigger == "auto":
         take_snapshot()
+    _persist_health_stats()
 
 # ── Scheduler ─────────────────────────────────────────────────────
 scheduler = BackgroundScheduler(daemon=True)
 _last_refresh = None; _start_of_day_done = None
+
+def _restore_health_stats():
+    """Lädt persistierte Zähler aus health.json beim Start — damit kumulative Statistiken
+    Container-Neustarts überleben. Nur die stabilen Zähler werden geladen; recent_errors
+    und last_refresh_stats bleiben absichtlich In-Memory."""
+    persisted = _load_json(HEALTH_FILE, {})
+    _health_stats["total_refreshes"]    = persisted.get("total_refreshes",    0)
+    _health_stats["total_yahoo_calls"]  = persisted.get("total_yahoo_calls",  0)
+    _health_stats["failed_yahoo_calls"] = persisted.get("failed_yahoo_calls", 0)
+    _health_stats["cache_hits_total"]   = persisted.get("cache_hits_total",   0)
+
+def _persist_health_stats():
+    """Schreibt kumulative Zähler atomar in health.json. Wird am Ende jedes
+    refresh_all_depots-Aufrufs ausgeführt — einmal pro Zyklus statt pro Yahoo-Call."""
+    _save_json(HEALTH_FILE, {
+        "total_refreshes":    _health_stats["total_refreshes"],
+        "total_yahoo_calls":  _health_stats["total_yahoo_calls"],
+        "failed_yahoo_calls": _health_stats["failed_yahoo_calls"],
+        "cache_hits_total":   _health_stats["cache_hits_total"],
+    })
 
 def _restore_last_refresh():
     """Liest next_refresh_ts aus settings.json und setzt _last_refresh so dass der
@@ -886,13 +921,20 @@ def cleanup_old_logs():
     except Exception as e:
         log.warning(f"Verlauf-Bereinigung fehlgeschlagen: {e}")
 
+def _parse_trading_config(s):
+    """Extrahiert Handelszeitenfelder aus einem geladenen Settings-Dict.
+    Gibt (tz, now, days, sh, sm, eh, em) zurück — zentraler Parsing-Punkt
+    für _is_trading_time, trading_window_check und get_next_run_info."""
+    tz   = pytz.timezone(s["timezone"]); now = datetime.now(tz)
+    t    = s["trading"]; days = t.get("days", [0,1,2,3,4])
+    sh   = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
+    eh   = t.get("end_hour", 23);   em = t.get("end_minute", 0)
+    return tz, now, days, sh, sm, eh, em
+
 def _is_trading_time():
     """Gibt True zurück, wenn wir uns gerade innerhalb der konfigurierten Handelszeit befinden."""
     try:
-        s  = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
-        t  = s["trading"]; days = t.get("days", [0,1,2,3,4])
-        sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
-        eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
+        _, now, days, sh, sm, eh, em = _parse_trading_config(load_settings())
         now_mins = now.hour * 60 + now.minute
         return now.weekday() in days and sh * 60 + sm <= now_mins <= eh * 60 + em
     except Exception:
@@ -900,12 +942,10 @@ def _is_trading_time():
 
 def trading_window_check():
     global _last_refresh, _start_of_day_done
-    s        = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
-    interval = s["refresh_interval"]
-    t = s["trading"]; days = t.get("days", [0,1,2,3,4])
-    sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
-    eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
-    now_mins = now.hour * 60 + now.minute
+    s                              = load_settings()
+    tz, now, days, sh, sm, eh, em = _parse_trading_config(s)
+    interval   = s["refresh_interval"]
+    now_mins   = now.hour * 60 + now.minute
     start_mins = sh * 60 + sm; end_mins = eh * 60 + em
     if now.weekday() not in days or now_mins < start_mins or now_mins > end_mins: return
     today = now.date()
@@ -917,11 +957,9 @@ def trading_window_check():
         refresh_all_depots("auto")
 
 def get_next_run_info():
-    s        = load_settings(); tz = pytz.timezone(s["timezone"]); now = datetime.now(tz)
-    interval = s["refresh_interval"]
-    t = s["trading"]; days = t.get("days", [0,1,2,3,4])
-    sh = t.get("start_hour", 8);  sm = t.get("start_minute", 0)
-    eh = t.get("end_hour", 23);   em = t.get("end_minute", 0)
+    s                              = load_settings()
+    tz, now, days, sh, sm, eh, em = _parse_trading_config(s)
+    interval   = s["refresh_interval"]
     start_mins = sh * 60 + sm; end_mins = eh * 60 + em
     if _last_refresh:
         c = _last_refresh + timedelta(seconds=interval)
@@ -953,67 +991,46 @@ def get_next_run_info():
                 return tz.localize(datetime(check.year, check.month, check.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
     return "unbekannt"
 
-def build_digest_body(depot, stocks):
-    """Baut den Digest-Text für ein Depot."""
-    name   = depot.get("name", "Depot")
-    total  = len(stocks)
-    if total == 0:
-        return None, None
-
-    now       = datetime.now()
-    kw        = now.isocalendar()[1]
-    title     = f"📊 DepotRadar Wochenbericht — KW {kw}"
+def _build_digest_data(depot, stocks):
+    """Berechnet alle für den Wochenbericht benötigten Daten einmalig.
+    Wird von build_digest_body und build_digest_html gemeinsam genutzt,
+    damit Sektorzählung, Near-Level-Loop und Nachkauf-Kandidaten nicht
+    doppelt berechnet werden."""
+    kw    = datetime.now().isocalendar()[1]
+    name  = depot.get("name", "Depot")
+    total = len(stocks)
 
     # ATH-Verteilung
-    buckets = {"<20": [], "20-39": [], "40-59": [], ">60": []}
+    buckets = {"<20": 0, "20-39": 0, "40-59": 0, ">60": 0}
     for s in stocks:
         cur = s.get("current_eur"); ath = s.get("ath_eur")
         if not cur or not ath or ath == 0: continue
         d = (ath - cur) / ath * 100
-        if   d < 20: buckets["<20"].append(s)
-        elif d < 40: buckets["20-39"].append(s)
-        elif d < 60: buckets["40-59"].append(s)
-        else:        buckets[">60"].append(s)
-
-    dist = (f"  < 20% unter ATH:  {len(buckets['<20'])} Aktie(n) ✅\n"
-            f"  20–39%:           {len(buckets['20-39'])} Aktie(n) 🟡\n"
-            f"  40–59%:           {len(buckets['40-59'])} Aktie(n) 🟠\n"
-            f"  ≥60%:             {len(buckets['>60'])} Aktie(n) 🔴")
+        if   d < 20: buckets["<20"]   += 1
+        elif d < 40: buckets["20-39"] += 1
+        elif d < 60: buckets["40-59"] += 1
+        else:        buckets[">60"]   += 1
 
     # Nachkauf-Kandidaten
     threshold = int(depot.get("nachkauf_threshold") or 30)
     nk_set    = calc_nachkauf_set(stocks, threshold)
-    nk_lines  = ""
-    if nk_set:
-        budget = depot.get("buy_budget")
-        lines  = []
-        for s in stocks:
-            if s.get("ticker") not in nk_set: continue
-            cur = s.get("current_eur"); ath = s.get("ath_eur")
-            if not cur or not ath or ath == 0: continue
-            d   = (ath - cur) / ath * 100
-            mul = get_multiplier(d)
-            qty_str = ""
-            if budget:
-                qty = calc_buy_quantity(budget, mul, cur)
-                if qty:
-                    cost = round(qty * cur, 2)
-                    qty_str = f" — {qty} Stk. · ~{cost:.0f} €"
-            lines.append(f"  {s['name']} (-{d:.1f}%){qty_str}")
-        if lines:
-            nk_lines = "\n\n🛒 Nachkauf-Kandidaten:\n" + "\n".join(lines)
+    budget    = depot.get("buy_budget")
+    nk_items  = []
+    for s in stocks:
+        if s.get("ticker") not in nk_set: continue
+        cur = s.get("current_eur"); ath = s.get("ath_eur")
+        if not cur or not ath or ath == 0: continue
+        d   = (ath - cur) / ath * 100
+        qty = calc_buy_quantity(budget, get_multiplier(d), cur) if budget else None
+        nk_items.append({"stock": s, "discount": d, "qty": qty, "cur": cur})
 
-    # Beste/schlechteste Woche
-    perf_stocks = [(s, s.get("perf_1w")) for s in stocks if s.get("perf_1w") is not None]
-    perf_section = ""
-    if perf_stocks:
-        best  = max(perf_stocks, key=lambda x: x[1])
-        worst = min(perf_stocks, key=lambda x: x[1])
-        perf_section = (f"\n\n📈 Beste Woche:    {best[0]['name']} {best[1]:+.1f}%"
-                        f"\n📉 Schlechteste:  {worst[0]['name']} {worst[1]:+.1f}%")
+    # Wochenperformance
+    perf_list  = [(s, s.get("perf_1w")) for s in stocks if s.get("perf_1w") is not None]
+    perf_best  = max(perf_list, key=lambda x: x[1]) if perf_list else None
+    perf_worst = min(perf_list, key=lambda x: x[1]) if perf_list else None
 
     # Nah am nächsten Level (< 3% Puffer)
-    near_lines = []
+    near_items = []
     for s in stocks:
         cur = s.get("current_eur"); ath = s.get("ath_eur")
         if not cur or not ath or ath == 0: continue
@@ -1022,51 +1039,73 @@ def build_digest_body(depot, stocks):
         for lvl in [20, 30, 40, 50, 60]:
             if lvl > lb:
                 next_price = round(ath * (1 - lvl / 100), 2)
-                gap        = (cur - next_price) / cur * 100
-                if 0 < gap < 3:
-                    near_lines.append(f"  {s['name']} -{d:.1f}% (→ -{lvl}%-Block bei {next_price:.2f} €)")
+                if 0 < (cur - next_price) / cur * 100 < 3:
+                    near_items.append({"name": s["name"], "discount": d,
+                                       "lvl": lvl, "next_price": next_price})
                 break
-    near_section = ""
-    if near_lines:
-        near_section = "\n\n⚠️ Nah am nächsten Level:\n" + "\n".join(near_lines)
 
     # Sektor-Verteilung
-    sector_section = ""
     sector_counts = {}
     for s in stocks:
         sec = s.get("sector")
-        if sec:
-            sector_counts[sec] = sector_counts.get(sec, 0) + 1
-    if sector_counts:
-        parts = " · ".join(f"{k} {v}" for k, v in sorted(sector_counts.items(), key=lambda x: -x[1]))
+        if sec: sector_counts[sec] = sector_counts.get(sec, 0) + 1
+
+    return {"kw": kw, "name": name, "total": total, "buckets": buckets,
+            "nk_items": nk_items, "perf_best": perf_best, "perf_worst": perf_worst,
+            "near_items": near_items, "sector_counts": sector_counts}
+
+
+def build_digest_body(depot, stocks):
+    """Baut den Digest-Text für ein Depot."""
+    if not stocks: return None, None
+    d = _build_digest_data(depot, stocks)
+    b = d["buckets"]
+
+    title = f"📊 DepotRadar Wochenbericht — KW {d['kw']}"
+    dist  = (f"  < 20% unter ATH:  {b['<20']} Aktie(n) ✅\n"
+             f"  20–39%:           {b['20-39']} Aktie(n) 🟡\n"
+             f"  40–59%:           {b['40-59']} Aktie(n) 🟠\n"
+             f"  ≥60%:             {b['>60']} Aktie(n) 🔴")
+
+    nk_lines = ""
+    if d["nk_items"]:
+        lines = []
+        for item in d["nk_items"]:
+            qty_str = ""
+            if item["qty"]:
+                qty_str = f" — {item['qty']} Stk. · ~{round(item['qty'] * item['cur'], 2):.0f} €"
+            lines.append(f"  {item['stock']['name']} (-{item['discount']:.1f}%){qty_str}")
+        if lines: nk_lines = "\n\n🛒 Nachkauf-Kandidaten:\n" + "\n".join(lines)
+
+    perf_section = ""
+    if d["perf_best"] and d["perf_worst"]:
+        best = d["perf_best"]; worst = d["perf_worst"]
+        perf_section = (f"\n\n📈 Beste Woche:    {best[0]['name']} {best[1]:+.1f}%"
+                        f"\n📉 Schlechteste:  {worst[0]['name']} {worst[1]:+.1f}%")
+
+    near_section = ""
+    if d["near_items"]:
+        near_section = "\n\n⚠️ Nah am nächsten Level:\n" + "\n".join(
+            f"  {it['name']} -{it['discount']:.1f}% (→ -{it['lvl']}%-Block bei {it['next_price']:.2f} €)"
+            for it in d["near_items"])
+
+    sector_section = ""
+    if d["sector_counts"]:
+        parts = " · ".join(f"{k} {v}" for k, v in sorted(d["sector_counts"].items(), key=lambda x: -x[1]))
         sector_section = f"\n\n📂 Sektoren: {parts}"
 
-    link    = f"\n\n{APP_URL}" if APP_URL else ""
-    body = (f"Depot: {name} ({total} Aktien)\n\n"
+    link = f"\n\n{APP_URL}" if APP_URL else ""
+    body = (f"Depot: {d['name']} ({d['total']} Aktien)\n\n"
             f"📊 Verteilung:\n{dist}"
-            f"{nk_lines}"
-            f"{perf_section}"
-            f"{near_section}"
-            f"{sector_section}"
-            f"{link}")
+            f"{nk_lines}{perf_section}{near_section}{sector_section}{link}")
     return title, body
 
 
-def build_digest_html(depot, stocks, kw):
+def build_digest_html(depot, stocks):
     """Baut eine HTML-Version des Digests für E-Mail-Versand."""
-    name  = depot.get("name", "Depot")
-    total = len(stocks)
-
-    # Verteilung
-    b = {"<20": 0, "20-39": 0, "40-59": 0, ">60": 0}
-    for s in stocks:
-        cur = s.get("current_eur"); ath = s.get("ath_eur")
-        if not cur or not ath or ath == 0: continue
-        d = (ath - cur) / ath * 100
-        if   d < 20: b["<20"]   += 1
-        elif d < 40: b["20-39"] += 1
-        elif d < 60: b["40-59"] += 1
-        else:        b[">60"]   += 1
+    if not stocks: return None
+    d = _build_digest_data(depot, stocks)
+    b = d["buckets"]
 
     dist_html = f"""
     <table style="width:100%;border-collapse:collapse;margin-top:8px">
@@ -1076,81 +1115,50 @@ def build_digest_html(depot, stocks, kw):
       <tr style="background:#f9fafb"><td style="padding:4px 8px">🔴 ≥60%</td><td style="padding:4px 8px;font-weight:600;color:#ef4444">{b['>60']}</td></tr>
     </table>"""
 
-    # Nachkauf-Kandidaten
-    threshold = int(depot.get("nachkauf_threshold") or 30)
-    nk_set    = calc_nachkauf_set(stocks, threshold)
-    nk_html   = ""
-    if nk_set:
-        budget = depot.get("buy_budget")
-        rows   = []
-        for s in stocks:
-            if s.get("ticker") not in nk_set: continue
-            cur = s.get("current_eur"); ath = s.get("ath_eur")
-            if not cur or not ath or ath == 0: continue
-            d   = (ath - cur) / ath * 100
-            mul = get_multiplier(d)
+    nk_html = ""
+    if d["nk_items"]:
+        rows = []
+        for item in d["nk_items"]:
             qty_str = ""
-            if budget:
-                qty = calc_buy_quantity(budget, mul, cur)
-                if qty:
-                    qty_str = f" &nbsp;→&nbsp; {qty} Stk. · ~{qty*cur:.0f} €"
-            rows.append(f"<tr><td style='padding:4px 8px'>{s['name']}</td>"
-                        f"<td style='padding:4px 8px;color:#f97316'>-{d:.1f}%</td>"
+            if item["qty"]:
+                qty_str = f" &nbsp;→&nbsp; {item['qty']} Stk. · ~{item['qty'] * item['cur']:.0f} €"
+            rows.append(f"<tr><td style='padding:4px 8px'>{item['stock']['name']}</td>"
+                        f"<td style='padding:4px 8px;color:#f97316'>-{item['discount']:.1f}%</td>"
                         f"<td style='padding:4px 8px;color:#22c55e'>{qty_str}</td></tr>")
         if rows:
             nk_html = f"""<h3 style="color:#f97316;margin:20px 0 8px">🛒 Nachkauf-Kandidaten</h3>
             <table style="width:100%;border-collapse:collapse">{''.join(rows)}</table>"""
 
-    # Performance
-    perf_stocks = [(s, s.get("perf_1w")) for s in stocks if s.get("perf_1w") is not None]
-    perf_html   = ""
-    if perf_stocks:
-        best  = max(perf_stocks, key=lambda x: x[1])
-        worst = min(perf_stocks, key=lambda x: x[1])
+    perf_html = ""
+    if d["perf_best"] and d["perf_worst"]:
+        best = d["perf_best"]; worst = d["perf_worst"]
         perf_html = f"""<h3 style="margin:20px 0 8px">📈 Wochenperformance</h3>
         <table style="width:100%;border-collapse:collapse">
           <tr><td style="padding:4px 8px">📈 Beste</td><td style="padding:4px 8px;font-weight:600">{best[0]['name']}</td><td style="padding:4px 8px;color:#22c55e">{best[1]:+.1f}%</td></tr>
           <tr style="background:#f9fafb"><td style="padding:4px 8px">📉 Schlechteste</td><td style="padding:4px 8px;font-weight:600">{worst[0]['name']}</td><td style="padding:4px 8px;color:#ef4444">{worst[1]:+.1f}%</td></tr>
         </table>"""
 
-    # Nah am Level
-    near_rows = []
-    for s in stocks:
-        cur = s.get("current_eur"); ath = s.get("ath_eur")
-        if not cur or not ath or ath == 0: continue
-        d  = (ath - cur) / ath * 100
-        lb = s.get("last_notified_block", 0)
-        for lvl in [20, 30, 40, 50, 60]:
-            if lvl > lb:
-                next_price = round(ath * (1 - lvl / 100), 2)
-                gap        = (cur - next_price) / cur * 100
-                if 0 < gap < 3:
-                    near_rows.append(f"<tr><td style='padding:4px 8px'>{s['name']}</td>"
-                                     f"<td style='padding:4px 8px;color:#f97316'>-{d:.1f}%</td>"
-                                     f"<td style='padding:4px 8px;color:#94a3b8'>→ -{lvl}%-Block bei {next_price:.2f} €</td></tr>")
-                break
     near_html = ""
-    if near_rows:
+    if d["near_items"]:
+        rows = [f"<tr><td style='padding:4px 8px'>{it['name']}</td>"
+                f"<td style='padding:4px 8px;color:#f97316'>-{it['discount']:.1f}%</td>"
+                f"<td style='padding:4px 8px;color:#94a3b8'>→ -{it['lvl']}%-Block bei {it['next_price']:.2f} €</td></tr>"
+                for it in d["near_items"]]
         near_html = f"""<h3 style="color:#f59e0b;margin:20px 0 8px">⚠️ Nah am nächsten Level</h3>
-        <table style="width:100%;border-collapse:collapse">{''.join(near_rows)}</table>"""
+        <table style="width:100%;border-collapse:collapse">{''.join(rows)}</table>"""
 
-    # Sektoren
-    sector_counts = {}
-    for s in stocks:
-        sec = s.get("sector")
-        if sec: sector_counts[sec] = sector_counts.get(sec, 0) + 1
     sector_html = ""
-    if sector_counts:
+    if d["sector_counts"]:
         chips = " ".join(f"<span style='display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:12px;margin:2px'>{k} {v}</span>"
-                         for k, v in sorted(sector_counts.items(), key=lambda x: -x[1]))
+                         for k, v in sorted(d["sector_counts"].items(), key=lambda x: -x[1]))
         sector_html = f"""<h3 style="margin:20px 0 8px">📂 Sektoren</h3><div>{chips}</div>"""
 
     link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
 
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
-      <h2 style="margin:0;font-size:18px">📊 DepotRadar Wochenbericht — KW {kw}</h2>
-      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {name} · {total} Aktien</div>
+      <h2 style="margin:0;font-size:18px">📊 DepotRadar Wochenbericht — KW {d['kw']}</h2>
+      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {d['name']} · {d['total']} Aktien</div>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
       <h3 style="margin:0 0 8px">📊 ATH-Verteilung</h3>
@@ -1171,16 +1179,15 @@ def send_weekly_digests():
     if not s.get("digest_enabled", False): return
     log.info("Wöchentlicher Digest wird versendet…")
     depots = load_depots()
-    kw     = datetime.now().isocalendar()[1]
     for dc in depots:
         if not dc.get("weekly_digest", False): continue
         did = dc["id"]
         urls, mention, _confirm = resolve_notification_settings(did)
         if not urls: continue
-        stocks  = load_stocks(did)
+        stocks      = load_stocks(did)
         title, body = build_digest_body(dc, stocks)
         if title:
-            html_body = build_digest_html(dc, stocks, kw)
+            html_body = build_digest_html(dc, stocks)
             add_log("digest", f"📊 Wochenbericht [{dc['name']}]",
                     f"Gesendet an {len(urls)} URL(s).", success=True, depot_id=dc['id'])
             send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id'])
@@ -1207,6 +1214,7 @@ def schedule_digest_job():
 
 
 def start_scheduler():
+    _restore_health_stats()
     _restore_last_refresh()
     scheduler.add_job(trading_window_check, "cron", minute="*", id="trading_check",
                       replace_existing=True, misfire_grace_time=None)
@@ -1506,6 +1514,25 @@ def parqet_select_portfolio(depot_id):
         if d["id"] == depot_id: d.setdefault("parqet", {})["portfolio_id"] = pid; break
     save_depots(depots); return jsonify({"ok": True})
 
+def _fetch_all_parqet_activities(depot, depot_id, pid):
+    """Lädt alle Parqet-Aktivitäten (buy/sell/transfer) vollständig paginiert.
+    Kapselt den while-True/cursor-Loop der zuvor in parqet_sync und parqet_debug
+    dupliziert war. Wirft eine Exception bei Netzwerk- oder API-Fehlern."""
+    all_activities = []; cursor = None
+    while True:
+        url = (f"/portfolios/{pid}/activities"
+               f"?activityType=buy&activityType=sell"
+               f"&activityType=transfer_in&activityType=transfer_out"
+               f"&assetType=security&limit=500")
+        if cursor: url += f"&cursor={cursor}"
+        data   = parqet_api_get(depot, url, depot_id)
+        acts   = data.get("activities", data) if isinstance(data, dict) else data
+        if isinstance(acts, list): all_activities.extend(acts)
+        cursor = data.get("nextCursor") if isinstance(data, dict) else None
+        if not cursor: break
+    return all_activities
+
+
 @app.route("/api/depots/<depot_id>/parqet/sync", methods=["POST"])
 def parqet_sync(depot_id):
     depots = load_depots()
@@ -1545,19 +1572,8 @@ def parqet_sync(depot_id):
     if enriched: save_stocks(depot_id, stocks); log.info(f"{enriched} ISINs ergänzt")
 
     # 3) Aktivitäten laden (paginiert)
-    all_activities = []; cursor = None
     try:
-        while True:
-            url = (f"/portfolios/{pid}/activities"
-                   f"?activityType=buy&activityType=sell"
-                   f"&activityType=transfer_in&activityType=transfer_out"
-                   f"&assetType=security&limit=500")
-            if cursor: url += f"&cursor={cursor}"
-            data   = parqet_api_get(depot, url, depot_id)
-            acts   = data.get("activities", data) if isinstance(data, dict) else data
-            if isinstance(acts, list): all_activities.extend(acts)
-            cursor = data.get("nextCursor") if isinstance(data, dict) else None
-            if not cursor: break
+        all_activities = _fetch_all_parqet_activities(depot, depot_id, pid)
     except Exception as e:
         err = str(e)
         if "401" in err or "Unauthorized" in err: return handle_401(e)
@@ -1705,16 +1721,7 @@ def parqet_debug(depot_id):
         return jsonify({"error": "Nicht verbunden"}), 400
     pq = depot.get("parqet", {}); pid = pq.get("portfolio_id", ""); out = {}
     try:
-        all_acts, cursor = [], None
-        while True:
-            url = (f"/portfolios/{pid}/activities?activityType=buy&activityType=sell"
-                   f"&activityType=transfer_in&activityType=transfer_out&assetType=security&limit=500")
-            if cursor: url += f"&cursor={cursor}"
-            d2   = parqet_api_get(depot, url, depot_id)
-            a2   = d2.get("activities", d2) if isinstance(d2, dict) else d2
-            if isinstance(a2, list): all_acts.extend(a2)
-            cursor = d2.get("nextCursor") if isinstance(d2, dict) else None
-            if not cursor: break
+        all_acts = _fetch_all_parqet_activities(depot, depot_id, pid)
         out["total_activities"] = len(all_acts)
         holdings = calculate_holdings(all_acts); out["holdings_count"] = len(holdings)
         for isin in [s["isin"] for s in load_splits()[:3]]:
