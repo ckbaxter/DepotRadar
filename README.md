@@ -18,6 +18,8 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 
 *Alle dargestellten Aktien, Kurse, Einstandswerte und Kennzahlen sind frei erfunden und dienen ausschließlich zur Veranschaulichung der Benutzeroberfläche.*
 
+> **Hinweis:** Aufgrund der schnellen Weiterentwicklung spiegelt dieses Bild nicht zwingend den neuesten Stand wider — einzelne UI-Details und Designänderungen können abweichen.
+
 -----
 
 ## Features
