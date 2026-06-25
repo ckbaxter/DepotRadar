@@ -745,10 +745,11 @@ select</style>
         <div id="parqetActions" style="display:flex;gap:8px;flex-wrap:wrap"></div>
 
         <!-- Portfolio Picker (nach Connect) -->
-        <div id="parqetPortfolioPicker" style="display:none;margin-top:10px">
-          <label class="form-label">Parqet-Portfolio auswählen</label>
+        <div id="parqetPortfolioPicker" style="display:none;margin-top:10px;background:rgba(78,124,246,.08);border-left:3px solid var(--accent);padding:10px 12px;border-radius:0 6px 6px 0">
+          <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px">&#10140; Letzter Schritt: Portfolio auswählen</div>
+          <label class="form-label">Parqet-Portfolio</label>
           <select class="form-input" id="parqetPortfolioSelect"></select>
-          <button class="btn btn-primary btn-sm" style="margin-top:6px"
+          <button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%"
                   onclick="confirmParqetPortfolio()">Portfolio verbinden</button>
         </div>
       </div>
@@ -3822,9 +3823,10 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
-    versions: "Frontend v2.9.7 · Backend v2.7.7",
+    versions: "Frontend v2.9.8 · Backend v2.7.7",
     items: [
-      "Parqet: Nach erfolgreichem OAuth-Callback wird die Depot-Auswahl automatisch in den sichtbaren Bereich gescrollt — verhindert dass der Picker auf Mobile unterhalb des Folds landet",
+      "Parqet: Portfolio-Auswahl nach OAuth-Callback als Callout-Card hervorgehoben (blauer Rahmen + \"Letzter Schritt\"-Hinweis) und zusätzlicher Toast — macht den nächsten Schritt auf Mobile unmissverständlich deutlich",
+      "Parqet: Nach erfolgreichem OAuth-Callback wird die Depot-Auswahl automatisch in den sichtbaren Bereich gescrollt (scrollIntoView) — verhindert dass der Picker auf Mobile unterhalb des Folds landet",
       "Hilfe: Neue Abschnitte für Portfolio-Verlauf/EK-Kurve, Treemap-Ansicht und System-Status hinzugefügt; veralteten Hinweis auf Apprise-Konfiguration auf Depot-Ebene entfernt (Benachrichtigungen sind seit v2.8.0 ausschließlich pro Benutzer)",
     ]
   },
@@ -4366,6 +4368,7 @@ async function loadParqetPortfolios(){
     }
     sel.innerHTML = list.map(p => `<option value="${p.id}">${esc(p.name || p.title || p.id)}</option>`).join("");
     picker.style.display = "block";
+    toast("Parqet verbunden — bitte Portfolio auswählen ↓");
     setTimeout(() => picker.scrollIntoView({behavior: "smooth", block: "center"}), 100);
     if(list.length === 1) await confirmParqetPortfolio();
   } catch(e){ toast("Fehler: "+e.message, false); }
@@ -5171,7 +5174,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.9.7 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.9.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
