@@ -3011,6 +3011,8 @@ function renderSnapshotChart(data, did){
   const perf       = ((perfLast - perfFirst) / perfFirst * 100);
   const perfSign   = perf >= 0 ? "+" : "";
   const perfColor  = perf >= 0 ? "var(--green)" : "var(--red)";
+  const perfAbsolute = perfLast - perfFirst;
+  const perfAbsSign  = perfAbsolute >= 0 ? "+" : "";
   const perfEl = document.getElementById("snapshotPerf");
 
   // Invested-Capital-Kurve: cost-Werte aus den Snapshots (kann null sein für ältere Einträge)
@@ -3018,7 +3020,7 @@ function renderSnapshotChart(data, did){
   const hasCost   = allCosts.some(c => c !== null);
   const lastCost  = hasCost ? [...allCosts].reverse().find(c => c !== null) : null;
   const costLabel = hasCost && lastCost ? ` · <span style="color:var(--muted);font-size:10px">EK: ${fmtEUR(lastCost)}</span>` : "";
-  if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}%</span> · ${fmtEUR(perfLast)}${costLabel}`;
+  if(perfEl) perfEl.innerHTML = `<span style="color:${perfColor}">${perfSign}${perf.toFixed(1)}% (${perfAbsSign}${fmtEUR(perfAbsolute)})</span>${costLabel}`;
 
   // Downsampling für die Darstellung — max. ~90 Punkte, damit lange Zeiträume
   // (1J, Alles) nicht zu dicht/unübersichtlich werden
@@ -3821,6 +3823,13 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "Juni 2026",
+    versions: "Frontend v2.9.9 · Backend v2.7.8",
+    items: [
+      "Portfolio-Verlauf: Header zeigt jetzt zusätzlich zum Prozent-Wert auch die absolute Wertveränderung in Euro an (z.B. +5,3% (+1.234,56 €)) — der aktuelle Depotwert entfällt dort, da er im Chart-Tooltip weiterhin sichtbar ist",
+    ]
+  },
   {
     label: "Juni 2026",
     versions: "Frontend v2.9.8 · Backend v2.7.7",
@@ -5174,7 +5183,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.9.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.9.9 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">

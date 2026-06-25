@@ -23,18 +23,19 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.8"
+VERSION           = "2.7.9"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
 APP_START_TIME = time_mod.time()
 _health_stats  = {
-    "total_refreshes":    0,
-    "total_yahoo_calls":  0,
-    "failed_yahoo_calls": 0,
-    "recent_errors":      [],   # Ring-Buffer, max. 20 Einträge
-    "cache_hits_total":   0,    # Kumulierte Cache-Hits über alle Zyklen
-    "last_refresh_stats": {"fresh": 0, "cached": 0},  # Letzter Zyklus
+    "total_refreshes":         0,
+    "total_yahoo_calls":       0,
+    "failed_yahoo_calls":      0,
+    "recent_errors":           [],    # Ring-Buffer, max. 20 Einträge
+    "cache_hits_total":        0,     # Kumulierte Cache-Hits über alle Zyklen
+    "last_refresh_stats":      {"fresh": 0, "cached": 0},  # Letzter Zyklus
+    "last_refresh_had_errors": False, # Wird pro Zyklus zurückgesetzt — steuert den Statusdot
 }
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
@@ -654,6 +655,7 @@ def _fetch_prices(stocks, price_cache=None):
                 log.error(f"{s['name']}: {e}")
                 err_list.append(f"{s['name']}: {e}")
                 _health_stats["failed_yahoo_calls"] += 1
+                _health_stats["last_refresh_had_errors"] = True
                 _health_stats["recent_errors"].append({
                     "time":   datetime.now().isoformat(timespec="seconds"),
                     "ticker": ticker,
@@ -828,7 +830,8 @@ def take_snapshot():
 def refresh_all_depots(trigger="auto"):
     depots = load_depots(); total_ok, total_err = [], []
     _health_stats["total_refreshes"] += 1
-    _health_stats["last_refresh_stats"] = {"fresh": 0, "cached": 0}
+    _health_stats["last_refresh_stats"]     = {"fresh": 0, "cached": 0}
+    _health_stats["last_refresh_had_errors"] = False  # Pro Zyklus zurücksetzen
     price_cache = {}  # Depot-übergreifender Kurs-Cache für diesen Zyklus
     for depot in depots:
         ok, err = _refresh_depot(depot, trigger, price_cache)
@@ -2405,12 +2408,22 @@ def health():
         "failed_yahoo_calls":   failed,
         "success_rate":         round((total - failed) / total * 100, 1) if total else 100.0,
         "tracked_tickers":      tracked,
-        "last_refresh":         _last_refresh.isoformat() if _last_refresh else None,
-        "recent_errors":        list(reversed(stats["recent_errors"])),
-        "cache_hits_total":     stats["cache_hits_total"],
+        "last_refresh":          _last_refresh.isoformat() if _last_refresh else None,
+        "recent_errors":         list(reversed(stats["recent_errors"])),
+        "last_refresh_had_errors": stats["last_refresh_had_errors"],
+        "cache_hits_total":      stats["cache_hits_total"],
         "last_refresh_fresh":   lrs["fresh"],
         "last_refresh_cached":  lrs["cached"],
     })
+
+@app.route("/api/health/clear-errors", methods=["POST"])
+def health_clear_errors():
+    """Löscht den Yahoo-Fehler-Ring-Buffer und setzt last_refresh_had_errors zurück.
+    Ermöglicht dem Nutzer, quittierte Fehler aus dem Statusdot und dem Log zu entfernen."""
+    _health_stats["recent_errors"]           = []
+    _health_stats["last_refresh_had_errors"] = False
+    add_log("system", "Fehlerlog geleert", "Yahoo-Fehler-Verlauf manuell zurückgesetzt", True)
+    return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
     reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); start_scheduler()
