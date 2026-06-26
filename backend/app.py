@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.9"
+VERSION           = "2.7.10"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -292,7 +292,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
     lb = stock.get("last_notified_block", cb)
     pending_key  = f"pending_notify_{cb}"
     # Existiert ein ausstehendes Flag für ein Level <= cb? (z.B. -20% pending, jetzt -33%)
-    has_pending  = any(stock.get(f"pending_notify_{lvl}") for lvl in [20, 30, 40, 50, 60] if lvl <= cb)
+    has_pending  = any(stock.get(f"pending_notify_{lvl}") for lvl in [20, 30, 40, 50, 60, 70, 80, 90] if lvl <= cb)
     if cb > lb and cb >= 20:
         if confirm and not has_pending:
             # Erst-Unterschreitung: Flag setzen, Verlauf-Eintrag, noch nicht senden
@@ -331,7 +331,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                                       is_sector_gap=is_sector_gap)
         send_apprise(title, body, urls or [], mention=mention, html_body=html_body, depot_id=depot_id)
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
-        cleared = [lvl for lvl in [20, 30, 40, 50, 60] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
+        cleared = [lvl for lvl in [20, 30, 40, 50, 60, 70, 80, 90] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
         if cleared:
             pct_dist = round(d, 1)
             skipped  = [lvl for lvl in cleared if lvl != cb]
@@ -345,7 +345,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         return cb
     elif cb < lb:
         # Kurs hat sich erholt — alle pending flags löschen
-        cancelled = [lvl for lvl in [20, 30, 40, 50, 60] if stock.pop(f"pending_notify_{lvl}", None)]
+        cancelled = [lvl for lvl in [20, 30, 40, 50, 60, 70, 80, 90] if stock.pop(f"pending_notify_{lvl}", None)]
         if cancelled:
             lvl_str = ", ".join(f"-{lvl}%" for lvl in cancelled)
             add_log("pending_notify",
@@ -357,7 +357,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
     # Ausstehende Flags für Level oberhalb des aktuellen cb bereinigen
     # Tritt auf wenn cb == lb (kein neues Level) aber Kurs zwischenzeitlich über das
     # pending-Level gestiegen ist — Bestätigung wurde nie abgeschlossen.
-    cleared_pending = [lvl for lvl in [20, 30, 40, 50, 60]
+    cleared_pending = [lvl for lvl in [20, 30, 40, 50, 60, 70, 80, 90]
                        if lvl > cb and stock.pop(f"pending_notify_{lvl}", None)]
     if cleared_pending:
         lvl_str = ", ".join(f"-{lvl}%" for lvl in cleared_pending)
@@ -1039,7 +1039,7 @@ def _build_digest_data(depot, stocks):
         if not cur or not ath or ath == 0: continue
         d  = (ath - cur) / ath * 100
         lb = s.get("last_notified_block", 0)
-        for lvl in [20, 30, 40, 50, 60]:
+        for lvl in [20, 30, 40, 50, 60, 70, 80, 90]:
             if lvl > lb:
                 next_price = round(ath * (1 - lvl / 100), 2)
                 if 0 < (cur - next_price) / cur * 100 < 3:
