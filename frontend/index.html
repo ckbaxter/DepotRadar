@@ -263,6 +263,7 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .card-level-bought{font-size:11px;line-height:1;margin-top:2px}
 .card-actions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap}
 @media(max-width:640px){.tbl-scroll{display:none}.cards-view{display:block}.topbar-right .btn-ghost{padding:6px 8px}.btn-label{display:none}}
+@media(max-width:640px){#stockSearchWrap{display:none!important}#mobileSearchTrigger{display:inline-flex!important}}
 /* Empty */
 .empty{padding:48px 20px;text-align:center;color:var(--muted)}
 .empty-icon{font-size:36px;margin-bottom:10px}
@@ -512,6 +513,8 @@ select</style>
                 style="display:none;position:absolute;right:7px;background:none;border:none;
                        cursor:pointer;color:var(--muted);font-size:14px;padding:0;line-height:1">✕</button>
       </div>
+      <button id="mobileSearchTrigger" class="btn btn-ghost btn-sm" onclick="openMobileSearch()" title="Suchen"
+              style="display:none;margin-left:auto;font-size:16px;padding:6px 10px">🔍</button>
   <div class="threshold-wrap" id="thresholdWrap" style="display:none;width:100%;flex-basis:100%">
     <span>Untere</span>
     <input type="range" id="thresholdSlider" min="0" max="50" step="5" value="30"
@@ -519,6 +522,21 @@ select</style>
     <span id="thresholdLabel" style="font-weight:600;color:var(--fg);min-width:28px">30%</span>
     <span>der Positionen nach Wert</span>
   </div>
+</div>
+<div id="mobileSearchBar" style="display:none;align-items:center;gap:8px;padding:6px 12px 4px">
+  <div style="position:relative;flex:1;display:flex;align-items:center">
+    <span style="position:absolute;left:12px;font-size:15px;color:var(--muted);pointer-events:none">🔍</span>
+    <input id="mobileSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
+           oninput="onMobileStockSearch(this.value)" onkeydown="if(event.key==='Escape')closeMobileSearch()"
+           style="width:100%;padding:11px 38px 11px 40px;border:1.5px solid var(--accent);
+                  border-radius:12px;background:var(--bg2);color:var(--text);
+                  font-size:16px;outline:none;box-sizing:border-box;-webkit-appearance:none"/>
+    <button id="mobileSearchClearBtn" onclick="clearMobileInput()"
+            style="display:none;position:absolute;right:10px;background:none;border:none;
+                   cursor:pointer;color:var(--muted);font-size:16px;padding:4px;line-height:1">✕</button>
+  </div>
+  <button class="btn btn-ghost btn-sm" onclick="closeMobileSearch()"
+          style="flex-shrink:0;white-space:nowrap;padding:8px 10px">Abbrechen</button>
 </div>
 <div class="sort-bar" id="sortBar">
       <span style="font-size:12px;color:var(--muted);align-self:center">Sortierung:</span>
@@ -1657,6 +1675,46 @@ function clearStockSearch(){
   if(input){ input.value = ""; input.style.width="120px"; input.style.borderColor="var(--border)"; }
   const clearBtn = document.getElementById("stockSearchClear");
   if(clearBtn) clearBtn.style.display = "none";
+  // Mobile-Suchleiste ebenfalls zurücksetzen
+  const mBar = document.getElementById("mobileSearchBar");
+  if(mBar) mBar.style.display = "none";
+  const mInput = document.getElementById("mobileSearchInput");
+  if(mInput) mInput.value = "";
+  const mClear = document.getElementById("mobileSearchClearBtn");
+  if(mClear) mClear.style.display = "none";
+  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+}
+
+function openMobileSearch(){
+  const bar = document.getElementById("mobileSearchBar");
+  if(bar) bar.style.display = "flex";
+  setTimeout(()=>{ const inp=document.getElementById("mobileSearchInput"); if(inp) inp.focus(); },100);
+}
+
+function closeMobileSearch(){
+  const bar = document.getElementById("mobileSearchBar");
+  if(bar) bar.style.display = "none";
+  const inp = document.getElementById("mobileSearchInput");
+  if(inp) inp.value = "";
+  const clr = document.getElementById("mobileSearchClearBtn");
+  if(clr) clr.style.display = "none";
+  _stockSearchQuery = "";
+  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+}
+
+function clearMobileInput(){
+  const inp = document.getElementById("mobileSearchInput");
+  if(inp) inp.value = "";
+  const clr = document.getElementById("mobileSearchClearBtn");
+  if(clr) clr.style.display = "none";
+  _stockSearchQuery = "";
+  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+}
+
+function onMobileStockSearch(val){
+  _stockSearchQuery = val.toLowerCase().trim();
+  const clr = document.getElementById("mobileSearchClearBtn");
+  if(clr) clr.style.display = _stockSearchQuery ? "block" : "none";
   if(stocksCache && stocksCache.length) renderTable(stocksCache);
 }
 
@@ -3825,6 +3883,11 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.10.0 · Backend v2.7.9",
+    changes: [
+      "Suchfeld auf Smartphone: Icon-Button 🔍 in der Aktionsleiste öffnet vollbreite Suchleiste mit Abbrechen-Button (font-size 16px verhindert iOS-Zoom); Desktop/iPad unverändert"
+    ]
+  },{
     versions: "Frontend v2.9.9 · Backend v2.7.8",
     items: [
       "Portfolio-Verlauf: Header zeigt jetzt zusätzlich zum Prozent-Wert auch die absolute Wertveränderung in Euro an (z.B. +5,3% (+1.234,56 €)) — der aktuelle Depotwert entfällt dort, da er im Chart-Tooltip weiterhin sichtbar ist",
@@ -5183,7 +5246,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.9.9 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.10.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
