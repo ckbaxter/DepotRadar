@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.11"
+VERSION           = "2.7.12"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -2208,6 +2208,43 @@ def wl_move_to_depot(depot_id, wl_id, ticker):
     save_wl_stocks(depot_id, wl_id, [s for s in wl_stocks if s["ticker"] != ticker.upper()])
     return jsonify({"ok": True, "stock": s})
 
+XETRA_MAP_FILE = os.path.join(DATA_DIR, "xetra_map.json")
+
+def _xetra_lookup(name, ticker):
+    """Sucht XETRA/.DE-Ticker via OpenFIGI für Aktien die nicht in xetra_map.json sind.
+    Bereinigt den Yahoo-Longnamen für bessere Trefferquote und schreibt Ergebnis in den Cache,
+    damit beim nächsten Aufruf kein API-Call mehr nötig ist."""
+    clean = re.sub(r'\b(Inc\.?|Incorporated|Corp\.?|Corporation|Ltd\.?|Limited|PLC|AG|SE|NV|LLC|Co\.?|GmbH)\s*$',
+                   '', name.split(',')[0], flags=re.IGNORECASE).strip()
+    clean = re.sub(r'\.com\b', '', clean, flags=re.IGNORECASE).strip() or name.split(',')[0].strip()
+    headers = {"Content-Type": "application/json"}
+    api_key = os.environ.get("OPENFIGI_API_KEY", "")
+    if api_key:
+        headers["X-OPENFIGI-APIKEY"] = api_key
+    r = requests.post("https://api.openfigi.com/v3/search",
+                      json={"query": clean, "exchCode": "GY"},
+                      headers=headers, timeout=5)
+    data = r.json().get("data", [])
+    if not data:
+        log.info(f"OpenFIGI: kein Treffer für '{clean}'")
+        return None
+    # Leveraged/inverse Produkte überspringen
+    _skip = ("ETF","3X","-3X","2X","-2X","SHORT","BEAR","BULL","ULTRA","TURBO","MINI")
+    hit = next((d for d in data if not any(x in d.get("name","").upper() for x in _skip)), None)
+    if not hit:
+        log.info(f"OpenFIGI: nur Derivate für '{clean}', übersprungen")
+        return None
+    figi_ticker = hit.get("ticker","")
+    if not figi_ticker:
+        return None
+    entry = {"ticker": f"{figi_ticker}.DE", "name": hit.get("name","").title(), "exchange": "XETRA"}
+    # Ergebnis in xetra_map.json cachen — kein zweiter API-Call beim nächsten Mal
+    xmap = _load_json(XETRA_MAP_FILE, {})
+    xmap[ticker] = entry
+    _save_json(XETRA_MAP_FILE, xmap)
+    log.info(f"OpenFIGI: {ticker} → {entry['ticker']} gecacht in xetra_map.json")
+    return entry
+
 # ── Search ────────────────────────────────────────────────────────
 @app.route("/api/search", methods=["GET"])
 def search_companies():
@@ -2272,11 +2309,18 @@ def search_companies():
     try:
         res = yahoo(q)
         if res:
-            # XETRA-Vorschlag: xetra_map.json (Ticker → EUR-Listing) prüfen
-            xmap = _load_json(os.path.join(DATA_DIR, "xetra_map.json"), {})
-            first_eq = next((r for r in res if r.get("type") in ("EQUITY","ETF") and not r["ticker"].endswith(".DE")), None)
+            # XETRA-Vorschlag: erst xetra_map.json (Cache), dann OpenFIGI-Fallback
+            _eur_sfx = (".DE",".AS",".PA",".MI",".MC",".BR",".LS",".HE",".CO",".ST",".OL")
+            first_eq = next((r for r in res if r.get("type") in ("EQUITY","ETF")
+                             and not any(r["ticker"].endswith(s) for s in _eur_sfx)), None)
             if first_eq:
+                xmap  = _load_json(XETRA_MAP_FILE, {})
                 xentry = xmap.get(first_eq["ticker"])
+                if not xentry:
+                    try:
+                        xentry = _xetra_lookup(first_eq["name"], first_eq["ticker"])
+                    except Exception as xe:
+                        log.info(f"OpenFIGI '{first_eq['ticker']}': {xe}")
                 if xentry and xentry.get("ticker") and xentry["ticker"] not in {r["ticker"] for r in res}:
                     res = [{**xentry, "type": first_eq["type"], "xetra_suggested": True}] + res
                     log.info(f"XETRA-Vorschlag: {first_eq['ticker']} → {xentry['ticker']}")
