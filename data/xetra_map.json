@@ -1,0 +1,153 @@
+{
+  "_comment": "Mapping von US/non-EUR Ticker → XETRA/EUR-Listing. Vom Backend beim Aktiensuche-XETRA-Vorschlag verwendet. Eigene Einträge können hier ergänzt werden.",
+  "AAPL": {
+    "ticker": "APC.DE",
+    "name": "Apple",
+    "exchange": "XETRA"
+  },
+  "MSFT": {
+    "ticker": "MSF.DE",
+    "name": "Microsoft",
+    "exchange": "XETRA"
+  },
+  "AMZN": {
+    "ticker": "AMZ.DE",
+    "name": "Amazon",
+    "exchange": "XETRA"
+  },
+  "GOOGL": {
+    "ticker": "ABEA.DE",
+    "name": "Alphabet (Class A)",
+    "exchange": "XETRA"
+  },
+  "GOOG": {
+    "ticker": "ABEA.DE",
+    "name": "Alphabet (Class C)",
+    "exchange": "XETRA"
+  },
+  "NVDA": {
+    "ticker": "NVD.DE",
+    "name": "NVIDIA",
+    "exchange": "XETRA"
+  },
+  "META": {
+    "ticker": "FB2A.DE",
+    "name": "Meta Platforms",
+    "exchange": "XETRA"
+  },
+  "TSLA": {
+    "ticker": "TL0.DE",
+    "name": "Tesla",
+    "exchange": "XETRA"
+  },
+  "AVGO": {
+    "ticker": "1YD.DE",
+    "name": "Broadcom",
+    "exchange": "XETRA"
+  },
+  "NFLX": {
+    "ticker": "NFC.DE",
+    "name": "Netflix",
+    "exchange": "XETRA"
+  },
+  "NKE": {
+    "ticker": "NKE.DE",
+    "name": "Nike",
+    "exchange": "XETRA"
+  },
+  "NVO": {
+    "ticker": "NOV.DE",
+    "name": "Novo Nordisk",
+    "exchange": "XETRA"
+  },
+  "V": {
+    "ticker": "3V64.DE",
+    "name": "Visa",
+    "exchange": "XETRA"
+  },
+  "MA": {
+    "ticker": "M4I.DE",
+    "name": "Mastercard",
+    "exchange": "XETRA"
+  },
+  "PYPL": {
+    "ticker": "2PP.DE",
+    "name": "PayPal",
+    "exchange": "XETRA"
+  },
+  "BKNG": {
+    "ticker": "BKH.DE",
+    "name": "Booking Holdings",
+    "exchange": "XETRA"
+  },
+  "PG": {
+    "ticker": "PRG.DE",
+    "name": "Procter & Gamble",
+    "exchange": "XETRA"
+  },
+  "DE": {
+    "ticker": "DCO.DE",
+    "name": "Deere & Company",
+    "exchange": "XETRA"
+  },
+  "BRK-B": {
+    "ticker": "BRYN.DE",
+    "name": "Berkshire Hathaway B",
+    "exchange": "XETRA"
+  },
+  "ASML": {
+    "ticker": "ASML.DE",
+    "name": "ASML",
+    "exchange": "XETRA"
+  },
+  "AMD": {
+    "ticker": "AMD.DE",
+    "name": "AMD",
+    "exchange": "XETRA"
+  },
+  "PLTR": {
+    "ticker": "PLTR.DE",
+    "name": "Palantir",
+    "exchange": "XETRA"
+  },
+  "SHELL": {
+    "ticker": "SHELL.AS",
+    "name": "Shell",
+    "exchange": "Amsterdam"
+  },
+  "SHEL": {
+    "ticker": "SHELL.AS",
+    "name": "Shell",
+    "exchange": "Amsterdam"
+  },
+  "BP": {
+    "ticker": "BP.AS",
+    "name": "BP",
+    "exchange": "Amsterdam"
+  },
+  "IWDA.L": {
+    "ticker": "EUNL.DE",
+    "name": "iShares MSCI World",
+    "exchange": "XETRA"
+  },
+  "IDUS.L": {
+    "ticker": "IUSA.DE",
+    "name": "iShares S&P 500 Dist.",
+    "exchange": "XETRA"
+  },
+  "VUSA.L": {
+    "ticker": "VUSA.DE",
+    "name": "Vanguard S&P 500",
+    "exchange": "XETRA"
+  },
+  "VUAA.L": {
+    "ticker": "VUAA.DE",
+    "name": "Vanguard S&P 500 Acc.",
+    "exchange": "XETRA"
+  },
+  "A": {
+    "ticker": "AG8.DE",
+    "name": "Agilent Technologies Inc",
+    "exchange": "XETRA"
+  }
+}
