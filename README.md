@@ -42,7 +42,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance (inkl. Watchlist-Aktien); Korrekturen direkt in der App möglich
-- **XETRA-Unterstützung** — automatischer Ticker-Vorschlag für deutsche Handelsplätze
+- **XETRA-Unterstützung** — bei der Aktiensuche wird automatisch das passende XETRA-Listing vorgeschlagen; bekannte Aktien sofort aus lokalem Cache (`xetra_map.json`), unbekannte dynamisch via OpenFIGI und dann gecacht
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
@@ -99,6 +99,7 @@ DepotRadar/
 │   ├── depot_*_backup.json    # Backup vor Parqet-Sync (automatisch)
 │   ├── depot_*_wl_*.json      # Watchlist-Aktien
 │   ├── splits.json            # Aktiensplits (automatisch befüllt)
+│   ├── xetra_map.json         # XETRA-Ticker-Mapping (vorausgefüllt, selbst-erweiternd)
 │   ├── settings.json
 │   ├── users.json             # Benutzerprofile (wird beim ersten Start angelegt)
 │   ├── snapshots.json         # Tägliche Portfolio-Snapshots
@@ -116,9 +117,23 @@ DepotRadar/
 environment:
   - TZ=Europe/Berlin
   - APP_URL=http://depotradar.lan   # Eigene URL/IP — wichtig für Parqet OAuth
+  - OPENFIGI_API_KEY=               # Optional — siehe unten
 ```
 
 `APP_URL` muss auf die tatsächlich erreichbare Adresse zeigen.
+
+### XETRA-Ticker-Suche (OpenFIGI)
+
+Beim Hinzufügen einer Aktie schlägt DepotRadar automatisch das passende XETRA-Listing vor (z.B. AMZN → AMZ.DE). Bekannte Aktien werden sofort aus `data/xetra_map.json` geladen. Für unbekannte Aktien fragt das Backend die kostenlose [OpenFIGI API](https://www.openfigi.com) von Bloomberg ab und speichert das Ergebnis automatisch im lokalen Cache.
+
+**Ohne API-Key:** 25 Anfragen/Minute — für den normalen Betrieb ausreichend, da jede Aktie nur einmal abgefragt und dann gecacht wird.
+
+**Mit API-Key:** 250 Anfragen/Minute. Kostenlosen Key unter [openfigi.com](https://www.openfigi.com/api) registrieren und in `docker-compose.yml` eintragen:
+
+```yaml
+environment:
+  - OPENFIGI_API_KEY=dein-key-hier
+```
 
 ### Administration via Umgebungsvariablen
 
@@ -295,6 +310,7 @@ Unterstützte Dienste (Auswahl):
 - **Historische Daten:** 10 Jahre für ATH-Berechnung
 - **Währungen:** Automatische EUR-Umrechnung via [Frankfurter API](https://www.frankfurter.app)
 - **GBp-Fix:** Londoner Aktien in Pence werden automatisch in GBP umgerechnet
+- **XETRA-Lookup:** [OpenFIGI API](https://www.openfigi.com) (Bloomberg) für dynamische XETRA-Ticker-Zuordnung; kostenlos, optionaler API-Key für höheres Rate-Limit
 
 -----
 
