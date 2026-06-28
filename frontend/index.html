@@ -2654,36 +2654,38 @@ async function doSearch(q){
   const res=document.getElementById("searchResults");
   res.innerHTML='<div class="search-results"><div class="no-results">Suche …</div></div>';
   try {
-    const r=await fetch(`${API}/search?q=${encodeURIComponent(q)}`); let items=await r.json();
-    // XETRA-Eintrag aus ISIN_TO_XETRA ergänzen falls nicht in Ergebnissen
-    const knownIsins = new Set(items.map(it => it.isin).filter(Boolean));
-    const xetraTickersInResults = new Set(items.map(it => it.ticker));
-    for(const [isin, xetra] of Object.entries(ISIN_TO_XETRA)){
-      if(knownIsins.has(isin) && !xetraTickersInResults.has(xetra.ticker)){
-        items = [{...xetra, isin, type:"EQUITY"}, ...items];
-      }
-    }
+    const r=await fetch(`${API}/search?q=${encodeURIComponent(q)}`);
+    const items=await r.json();
     if(!items.length){
-    const gUrl=`https://www.google.com/search?q=${encodeURIComponent(q+" ISIN")}`;
-    res.innerHTML=`<div class="search-results"><div class="no-results" style="padding:10px 12px;line-height:1.7">
-      Keine Treffer in Yahoo Finance.<br>
-      <span style="font-size:11px;color:var(--muted)">ISIN über
-        <a href="${gUrl}" target="_blank" style="color:var(--accent)">Google suchen: "${q} ISIN"</a>
-        herausfinden und dann direkt als Ticker eingeben.
-      </span>
-    </div></div>`;
-    return;
-  }
-    res.innerHTML='<div class="search-results">'+items.map((it,i)=>
-      `<div class="search-item" onclick="selectCompany(${i},${JSON.stringify(it).replace(/"/g,'&quot;')})">
+      const gUrl=`https://www.google.com/search?q=${encodeURIComponent(q+" ISIN")}`;
+      res.innerHTML=`<div class="search-results"><div class="no-results" style="padding:10px 12px;line-height:1.7">
+        Keine Treffer in Yahoo Finance.<br>
+        <span style="font-size:11px;color:var(--muted)">ISIN über
+          <a href="${gUrl}" target="_blank" style="color:var(--accent)">Google suchen: "${q} ISIN"</a>
+          herausfinden und dann direkt als Ticker eingeben.
+        </span>
+      </div></div>`;
+      return;
+    }
+    let html='<div class="search-results">';
+    items.forEach((it,i)=>{
+      if(i===0 && it.xetra_suggested)
+        html+=`<div style="font-size:10px;color:var(--green);font-weight:600;padding:6px 10px 2px;letter-spacing:.3px">&#127482; XETRA EMPFOHLEN</div>`;
+      if(i===1 && items[0].xetra_suggested)
+        html+=`<div style="height:1px;background:var(--border);margin:2px 0 4px"></div>`;
+      const isXetra=it.ticker.endsWith(".DE")||!!it.xetra_suggested;
+      html+=`<div class="search-item" onclick="selectCompany(${i},${JSON.stringify(it).replace(/"/g,'&quot;')})">
         <span style="font-weight:500;font-size:13px">${esc(it.name)}</span>
         <div class="si-right">
-          ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
+          ${isXetra?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
           <span class="exch-tag">${it.exchange}</span>
-          ${it.type?`<span class="type-tag">${it.type}`+"</span>":""}
+          ${it.type?`<span class="type-tag">${it.type}</span>`:""}
           <span class="ticker-tag">${it.ticker}</span>
         </div>
-      </div>`).join("")+'</div>';
+      </div>`;
+    });
+    html+='</div>';
+    res.innerHTML=html;
   } catch(e){res.innerHTML="";}
 }
 
@@ -3883,6 +3885,11 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.10.1 · Backend v2.7.11",
+    changes: [
+      "Aktiensuche: XETRA-Eintrag wird jetzt dynamisch via Boerse Frankfurt + ISIN-Lookup ermittelt und immer an erster Stelle mit 'XETRA EMPFOHLEN'-Label angezeigt (kein hardcodiertes Mapping mehr); gilt auch für Handelsplatz-Wechseln-Dialog"
+    ]
+  },{
     versions: "Frontend v2.10.0 · Backend v2.7.9",
     changes: [
       "Suchfeld auf Smartphone: Icon-Button 🔍 in der Aktionsleiste öffnet vollbreite Suchleiste mit Abbrechen-Button (font-size 16px verhindert iOS-Zoom); Desktop/iPad unverändert"
@@ -4040,7 +4047,7 @@ function openChangelog(){
       <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em">${group.label}</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${group.versions}</div>
       <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">
-        ${group.items.map(it => `<li style="font-size:13px;line-height:1.5;color:var(--text)">${it}</li>`).join("")}
+        ${(group.items||group.changes||[]).map(it => `<li style="font-size:13px;line-height:1.5;color:var(--text)">${it}</li>`).join("")}
       </ul>
     </div>`).join("");
   openModal("changelogModal");
@@ -4652,18 +4659,7 @@ async function pqiAutoSearch(idx, autoImport=true){
   const nameEl = document.querySelector(`#pqi-${idx} div`);
   if(!item.isin) return;
 
-  // Schritt 1: Direkte ISIN→XETRA Zuordnung (schnell, kein API-Call)
-  const xetraMatch = ISIN_TO_XETRA[item.isin];
-  if(xetraMatch){
-    if((!item.name || item.name === item.isin) && nameEl)
-      nameEl.textContent = xetraMatch.name;
-    _parqetImportItems[idx].name = xetraMatch.name || item.name;
-    if(status) status.innerHTML = `<span style="color:var(--green)">&#127482; XETRA: ${xetraMatch.ticker}</span>`;
-    pqiSelect(idx, 0, xetraMatch);
-    if(autoImport) await pqiImport(idx);
-    return;
-  }
-
+  // ISIN-Suche via Backend (findet XETRA automatisch wenn verfügbar)
   if(status) status.textContent = "Suche …";
   try {
     const r = await fetch(`${API}/search?q=${encodeURIComponent(item.isin)}`);
@@ -4886,106 +4882,32 @@ async function applyMismatch(idx, m){
   } catch(e){ toast("Fehler: "+e.message, false); }
 }
 
-// ── XETRA Vorschläge ─────────────────────────────────────────────
-// Direkte ISIN → XETRA Zuordnung für Parqet-Import
-// Kombiniert aus ISIN_MAP (Backend) + bestätigten XETRA_SUGGESTIONS
-const ISIN_TO_XETRA = {
-  // US-Aktien
-  "US0378331005": {ticker:"APC.DE",  name:"Apple",                exchange:"XETRA"},
-  "US5949181045": {ticker:"MSF.DE",  name:"Microsoft",            exchange:"XETRA"},
-  "US0231351067": {ticker:"AMZ.DE",  name:"Amazon",               exchange:"XETRA"},
-  "US02079K3059": {ticker:"ABEA.DE", name:"Alphabet (Class A)",   exchange:"XETRA"},
-  "US02079K1079": {ticker:"ABEA.DE", name:"Alphabet (Class C)",   exchange:"XETRA"},
-  "US67066G1040": {ticker:"NVD.DE",  name:"NVIDIA",               exchange:"XETRA"},
-  "US30303M1027": {ticker:"FB2A.DE", name:"Meta Platforms",       exchange:"XETRA"},
-  "US88160R1014": {ticker:"TL0.DE",  name:"Tesla",                exchange:"XETRA"},
-  "US11135F1012": {ticker:"1YD.DE",  name:"Broadcom",             exchange:"XETRA"},
-  "US6541061031": {ticker:"NKE.DE",  name:"Nike",                 exchange:"XETRA"},
-    "US64110L1061": {ticker:"NFC.DE",  name:"Netflix",              exchange:"XETRA"},
-  "US6701002056": {ticker:"NOV.DE",  name:"Novo Nordisk",         exchange:"XETRA"},
-  "US92826C8394": {ticker:"3V64.DE", name:"Visa",                 exchange:"XETRA"},
-  "US57636Q1040": {ticker:"M4I.DE",  name:"Mastercard",           exchange:"XETRA"},
-  "US70450Y1038": {ticker:"2PP.DE",  name:"PayPal",               exchange:"XETRA"},
-  "US09857L1089": {ticker:"BKH.DE",  name:"Booking Holdings",     exchange:"XETRA"},
-  "US7427181091": {ticker:"PRG.DE",  name:"Procter & Gamble",     exchange:"XETRA"},
-  "US2441991054": {ticker:"DCO.DE",  name:"Deere & Company",      exchange:"XETRA"},
-  "US0846707026": {ticker:"BRYN.DE", name:"Berkshire Hathaway B", exchange:"XETRA"},
-  // DE/EU-Aktien: bereits auf XETRA/EUR gelistet, kein Wechsel nötig
-  "DE0007164600": {ticker:"SAP.DE",  name:"SAP",                  exchange:"XETRA"},
-  "DE000BASF111": {ticker:"BAS.DE",  name:"BASF",                 exchange:"XETRA"},
-  "FR0000121667": {ticker:"EL.DE",   name:"EssilorLuxottica",     exchange:"XETRA"},
-  // Shell/BP: Amsterdam-Listing in EUR bevorzugen
-  "GB00BP6MXD84": {ticker:"SHELL.AS",name:"Shell",                exchange:"Amsterdam"},
-  "GB0007980591": {ticker:"BP.AS",   name:"BP",                   exchange:"Amsterdam"},
-  // ETFs
-  "DE000A0F5UF5": {ticker:"EXXT.DE", name:"iShares Nasdaq 100 UCITS ETF (DE)", exchange:"XETRA"},
-  "IE00B4L5Y983": {ticker:"EUNL.DE", name:"iShares MSCI World UCITS ETF",      exchange:"XETRA"},
-  "IE0031442068": {ticker:"IUSA.DE", name:"iShares Core S&P 500 UCITS ETF",    exchange:"XETRA"},
-};
-
-// Nur bestätigte XETRA-Ticker — für alle anderen: Auto-Suche per ISIN
-const XETRA_SUGGESTIONS = {
-  "AAPL":   {ticker:"APC.DE",   name:"Apple",                 exchange:"XETRA"},
-  "MSFT":   {ticker:"MSF.DE",   name:"Microsoft",             exchange:"XETRA"},
-  "AMZN":   {ticker:"AMZ.DE",   name:"Amazon",                exchange:"XETRA"},
-  "GOOGL":  {ticker:"ABEA.DE",  name:"Alphabet (Class A)",    exchange:"XETRA"},
-  "GOOG":   {ticker:"ABEA.DE",  name:"Alphabet (Class C)",    exchange:"XETRA"},
-  "NVDA":   {ticker:"NVD.DE",   name:"NVIDIA",                exchange:"XETRA"},
-  "META":   {ticker:"FB2A.DE",  name:"Meta Platforms",        exchange:"XETRA"},
-  "TSLA":   {ticker:"TL0.DE",   name:"Tesla",                 exchange:"XETRA"},
-  "AVGO":   {ticker:"1YD.DE",   name:"Broadcom",              exchange:"XETRA"},
-  "NFLX":   {ticker:"NFC.DE",   name:"Netflix",               exchange:"XETRA"},
-  "NVO":    {ticker:"NOV.DE",   name:"Novo Nordisk",          exchange:"XETRA"},
-  "V":      {ticker:"3V64.DE",  name:"Visa",                  exchange:"XETRA"},
-  "BRK-B":  {ticker:"BRYN.DE",  name:"Berkshire Hathaway B",  exchange:"XETRA"},
-  "PYPL":   {ticker:"2PP.DE",   name:"PayPal",                exchange:"XETRA"},
-  "PG":     {ticker:"PRG.DE",   name:"Procter & Gamble",      exchange:"XETRA"},
-  "ASML":   {ticker:"ASML.DE",  name:"ASML",                  exchange:"XETRA"},
-  "AMD":    {ticker:"AMD.DE",   name:"AMD",                   exchange:"XETRA"},
-  "PLTR":   {ticker:"PLTR.DE",  name:"Palantir",              exchange:"XETRA"},
-  "DE":     {ticker:"DCO.DE",   name:"Deere & Company",       exchange:"XETRA"},
-  "IWDA.L": {ticker:"EUNL.DE",  name:"iShares MSCI World",    exchange:"XETRA"},
-  "IDUS.L": {ticker:"IUSA.DE",  name:"iShares S&P 500 Dist",  exchange:"XETRA"},
-  "VUSA.L": {ticker:"VUSA.DE",  name:"Vanguard S&P 500",      exchange:"XETRA"},
-  "VUAA.L": {ticker:"VUAA.DE",  name:"Vanguard S&P 500 Acc",  exchange:"XETRA"},
-};
-
 // ── Handelsplatz wechseln ─────────────────────────────────────────
 let _ctStock = null;
 let _ctSelected = null;
+let _ctXetraSuggestion = null;
 let _ctSearchTimer = null;
 
 function openChangeTickerModal(ticker){
-  _ctStock    = stocksCache.find(s => s.ticker === ticker);
-  _ctSelected = null;
+  _ctStock          = stocksCache.find(s => s.ticker === ticker);
+  _ctSelected       = null;
+  _ctXetraSuggestion = null;
   if(!_ctStock) return;
 
-  // XETRA-Vorschlag prüfen
-  const xetra = XETRA_SUGGESTIONS[ticker.toUpperCase()];
+  // UI zurücksetzen
   const suggBox = document.getElementById("ctXetraSuggestion");
-  if(xetra){
-    document.getElementById("ctXetraName").textContent   = xetra.name;
-    document.getElementById("ctXetraTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
-    suggBox.style.display = "block";
-    // Direkt vorauswählen
-    _ctSelected = xetra;
-    document.getElementById("ctSelected").style.display = "block";
-    document.getElementById("ctSelectedName").textContent   = xetra.name;
-    document.getElementById("ctSelectedTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
-    document.getElementById("ctConfirmBtn").disabled = false;
-  } else {
-    suggBox.style.display = "none";
-    document.getElementById("ctSelected").style.display  = "none";
-    document.getElementById("ctConfirmBtn").disabled = true;
-  }
+  suggBox.style.display = "none";
+  document.getElementById("ctSelected").style.display = "none";
+  document.getElementById("ctConfirmBtn").disabled = true;
 
-  // Suchfeld mit Aktienname vorausfüllen und Suche starten
+  // Suchfeld vorausfüllen
   const prefill = _ctStock.name || "";
   document.getElementById("ctSearchInput").value = prefill;
   document.getElementById("ctSearchResults").innerHTML = "";
   openModal("changeTickerModal");
-  // Suche direkt auslösen wenn kein XETRA-Vorschlag vorhanden
-  if(!xetra && prefill){
+
+  // Immer Suche nach Name auslösen (Ergebnisse im Suchfeld)
+  if(prefill){
     setTimeout(async () => {
       document.getElementById("ctSearchInput").focus();
       document.getElementById("ctSearchInput").select();
@@ -4993,29 +4915,48 @@ function openChangeTickerModal(ticker){
       const items = await r.json();
       const res = document.getElementById("ctSearchResults");
       if(!items.length){ res.innerHTML='<div class="no-results" style="padding:8px;font-size:12px;color:var(--muted)">Keine Treffer</div>'; return; }
-      items.sort((a,b) => (b.ticker.endsWith(".DE")?1:0) - (a.ticker.endsWith(".DE")?1:0));
+      const isXetra = it => it.ticker.endsWith(".DE") || !!it.xetra_suggested;
+      items.sort((a,b) => (isXetra(b)?1:0) - (isXetra(a)?1:0));
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
         `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
           <span style="font-size:13px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
-            ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
+            ${isXetra(it)?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
             <span class="exch-tag">${esc(it.exchange)}</span>
             <span class="ticker-tag">${esc(it.ticker)}</span>
           </div>
         </div>`).join("") + '</div>';
     }, 150);
-  } else if(xetra) {
-    setTimeout(()=>document.getElementById("ctSearchInput").select(), 100);
+  }
+
+  // Dynamischer XETRA-Lookup via ISIN (falls vorhanden) → Suggestion-Box befüllen
+  if(_ctStock.isin){
+    fetch(`${API}/search?q=${encodeURIComponent(_ctStock.isin)}`)
+      .then(r => r.json())
+      .then(items => {
+        const xetra = items.find(it => it.ticker.endsWith(".DE") || !!it.xetra_suggested);
+        if(!xetra) return;
+        _ctXetraSuggestion = xetra;
+        document.getElementById("ctXetraName").textContent   = xetra.name;
+        document.getElementById("ctXetraTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
+        suggBox.style.display = "block";
+        // Direkt vorauswählen
+        _ctSelected = xetra;
+        document.getElementById("ctSelected").style.display = "block";
+        document.getElementById("ctSelectedName").textContent   = xetra.name;
+        document.getElementById("ctSelectedTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
+        document.getElementById("ctConfirmBtn").disabled = false;
+      })
+      .catch(()=>{});
   }
 }
 
 function applyXetraSuggestion(){
-  const xetra = XETRA_SUGGESTIONS[_ctStock.ticker.toUpperCase()];
-  if(!xetra) return;
-  _ctSelected = xetra;
+  if(!_ctXetraSuggestion) return;
+  _ctSelected = _ctXetraSuggestion;
   document.getElementById("ctSelected").style.display  = "block";
-  document.getElementById("ctSelectedName").textContent   = xetra.name;
-  document.getElementById("ctSelectedTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
+  document.getElementById("ctSelectedName").textContent   = _ctXetraSuggestion.name;
+  document.getElementById("ctSelectedTicker").textContent = `${_ctXetraSuggestion.ticker} · ${_ctXetraSuggestion.exchange}`;
   document.getElementById("ctConfirmBtn").disabled = false;
 }
 
@@ -5026,24 +4967,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if(q.length < 1){ document.getElementById("ctSearchResults").innerHTML=""; return; }
     _ctSearchTimer = setTimeout(async () => {
       const r = await fetch(`${API}/search?q=${encodeURIComponent(q)}`);
-      let items = await r.json();
-      // XETRA-Eintrag aus ISIN_TO_XETRA ergänzen falls nicht in Ergebnissen
-      const _ctKnownIsins = new Set(items.map(it => it.isin).filter(Boolean));
-      const _ctKnownTickers = new Set(items.map(it => it.ticker));
-      for(const [isin, xetra] of Object.entries(ISIN_TO_XETRA)){
-        if(_ctKnownIsins.has(isin) && !_ctKnownTickers.has(xetra.ticker)){
-          items = [{...xetra, isin, type:"EQUITY"}, ...items];
-        }
-      }
+      const items = await r.json();
       const res = document.getElementById("ctSearchResults");
       if(!items.length){ res.innerHTML='<div class="no-results" style="padding:8px;font-size:12px;color:var(--muted)">Keine Treffer</div>'; return; }
-      // .DE Ergebnisse nach oben sortieren
-      items.sort((a,b) => (b.ticker.endsWith(".DE")?1:0) - (a.ticker.endsWith(".DE")?1:0));
+      // XETRA/.DE Ergebnisse nach oben sortieren
+      const isXetra2 = it => it.ticker.endsWith(".DE") || !!it.xetra_suggested;
+      items.sort((a,b) => (isXetra2(b)?1:0) - (isXetra2(a)?1:0));
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
         `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
           <span style="font-size:13px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
-            ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
+            ${isXetra2(it)?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
             <span class="exch-tag">${esc(it.exchange)}</span>
             <span class="ticker-tag">${esc(it.ticker)}</span>
           </div>
@@ -5246,7 +5180,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.10.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.10.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
