@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.10"
+VERSION           = "2.7.11"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -2219,7 +2219,7 @@ def search_companies():
         r   = requests.get(url, headers=YH, timeout=8); r.raise_for_status()
         return [{"name": it.get("longname") or it.get("shortname") or it.get("symbol",""),
                  "ticker": it.get("symbol",""), "exchange": it.get("exchDisp") or it.get("exchange",""),
-                 "type": it.get("quoteType","")}
+                 "type": it.get("quoteType",""), "isin": it.get("isin","")}
                 for it in r.json().get("quotes", [])
                 if it.get("quoteType","") in ("EQUITY","ETF","MUTUALFUND","INDEX","CRYPTOCURRENCY")
                 and it.get("symbol")]
@@ -2271,7 +2271,16 @@ def search_companies():
     # Allgemeine Suche
     try:
         res = yahoo(q)
-        if res: return jsonify(res[:10])
+        if res:
+            # XETRA-Vorschlag: xetra_map.json (Ticker → EUR-Listing) prüfen
+            xmap = _load_json(os.path.join(DATA_DIR, "xetra_map.json"), {})
+            first_eq = next((r for r in res if r.get("type") in ("EQUITY","ETF") and not r["ticker"].endswith(".DE")), None)
+            if first_eq:
+                xentry = xmap.get(first_eq["ticker"])
+                if xentry and xentry.get("ticker") and xentry["ticker"] not in {r["ticker"] for r in res}:
+                    res = [{**xentry, "type": first_eq["type"], "xetra_suggested": True}] + res
+                    log.info(f"XETRA-Vorschlag: {first_eq['ticker']} → {xentry['ticker']}")
+            return jsonify(res[:11])
     except Exception as e: log.warning(f"Yahoo: {e}")
     return jsonify([])
 
