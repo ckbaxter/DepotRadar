@@ -93,13 +93,13 @@ DepotRadar/
 │       └── apple-touch-icon.png
 ├── nginx/
 │   └── nginx.conf
-├── data/                      # Wird automatisch angelegt
-│   ├── depots.json
+├── data/
+│   ├── xetra_map.json         # XETRA-Ticker-Mapping (im Repo, selbst-erweiternd via OpenFIGI)
+│   ├── depots.json            # Wird beim ersten Start automatisch angelegt
 │   ├── depot_*.json
 │   ├── depot_*_backup.json    # Backup vor Parqet-Sync (automatisch)
 │   ├── depot_*_wl_*.json      # Watchlist-Aktien
 │   ├── splits.json            # Aktiensplits (automatisch befüllt)
-│   ├── xetra_map.json         # XETRA-Ticker-Mapping (vorausgefüllt, selbst-erweiternd)
 │   ├── settings.json
 │   ├── users.json             # Benutzerprofile (wird beim ersten Start angelegt)
 │   ├── snapshots.json         # Tägliche Portfolio-Snapshots
