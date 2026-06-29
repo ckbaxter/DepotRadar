@@ -1450,6 +1450,7 @@ const storedView    = (() => { try { return JSON.parse(localStorage.getItem("act
 
 // ── Utils ────────────────────────────────────────────────────────
 const fmtEUR = v => new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(v);
+const fmtOrig = (val, cur) => { try { return new Intl.NumberFormat("de-DE",{style:"currency",currency:cur,minimumFractionDigits:2}).format(val); } catch(e) { return val + "\u00a0" + cur; } };
 const fmtPct = v => v.toFixed(1)+" %";
 const disc   = s => s.ath_eur>0?(s.ath_eur-s.current_eur)/s.ath_eur*100:0;
 
@@ -2413,6 +2414,7 @@ function renderTable(stocks, basisStocks){
       ${weightTd(s)}
       <td>
         <div style="font-weight:600">${fmtEUR(s.current_eur)}</div>
+        ${s.currency && s.currency !== "EUR" && s.current_orig ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${fmtOrig(s.current_orig, s.currency)}</div>` : ""}
         ${s.market_time?`<div class="ts">Kurs: ${s.market_time}</div>`:""}
         ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
         ${perfWrap(s)}
@@ -2467,6 +2469,7 @@ function renderTable(stocks, basisStocks){
         <div class="card-price-block">
           <div class="card-price-label">Kurs</div>
           <div class="card-price-val">${fmtEUR(s.current_eur)}</div>
+          ${s.currency && s.currency !== "EUR" && s.current_orig ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${fmtOrig(s.current_orig, s.currency)}</div>` : ""}
           ${s.market_time?`<div class="ts">Kurs: ${s.market_time}</div>`:""}
           ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
           ${perfWrap(s)}
@@ -3885,6 +3888,11 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.11.0 · Backend v2.7.13",
+    changes: [
+      "Originalwährung unter EUR-Kurs: Bei Fremdwährungsaktien (USD, GBP etc.) wird der Kurs in der Originalwährung jetzt klein und grau unter dem EUR-Kurs angezeigt — in Tabelle und Mobile-Card. EUR-Aktien bleiben unverändert."
+    ]
+  },{
     versions: "Frontend v2.10.2 · Backend v2.7.11",
     changes: [
       "Bugfix Changelog: 'UNDEFINED' als Monats-Header behoben — fehlende label-Felder in vier Einträgen ergänzt und Render-Code defensiv gemacht (label-Div wird nur gerendert wenn vorhanden)"
@@ -5191,7 +5199,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.10.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.11.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">

@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.12"
+VERSION           = "2.7.13"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -525,9 +525,10 @@ def fetch_stock_data(ticker):
             mt_str = datetime.fromtimestamp(int(mt), tz=tz).strftime("%d.%m.%Y %H:%M")
         except: pass
 
+    cur_orig = round(float(current), 2)
     perfs = fetch_performance(ticker, cur_eur, eur, currency)
-    return {"current_eur": cur_eur, "ath_eur": ath_eur, "ath_date": ath_date, "currency": currency,
-            "market_time": mt_str, **perfs}
+    return {"current_eur": cur_eur, "current_orig": cur_orig, "ath_eur": ath_eur, "ath_date": ath_date,
+            "currency": currency, "market_time": mt_str, **perfs}
 
 def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
     """Berechnet 1T/1W/1M/3M/1J/3J Performance. perf_1w wird nur noch intern für die
@@ -606,6 +607,7 @@ def _make_stock(data, old=None):
     return {
         **base,
         "current_eur":   data["current_eur"],
+        "current_orig":  data.get("current_orig"),
         "ath_eur":       max(data["ath_eur"], base.get("ath_eur", 0)),
         "currency":      data["currency"],
         "market_time":   data.get("market_time"),
