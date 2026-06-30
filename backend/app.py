@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.13"
+VERSION           = "2.7.14"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -168,7 +168,7 @@ def load_settings():
 
 def save_settings(s):     _save_json(SETTINGS_FILE, s)
 
-def save_notifications(n): _save_json(NOTIF_FILE, n[-100:])
+def save_notifications(n): _save_json(NOTIF_FILE, n)
 
 def add_log(etype, title, body, success=True, depot_id=None):
     n = load_notifications()
