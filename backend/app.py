@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.14"
+VERSION           = "2.7.15"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -170,10 +170,12 @@ def save_settings(s):     _save_json(SETTINGS_FILE, s)
 
 def save_notifications(n): _save_json(NOTIF_FILE, n)
 
-def add_log(etype, title, body, success=True, depot_id=None):
+def add_log(etype, title, body, success=True, depot_id=None, kind=None):
     n = load_notifications()
     entry = {"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
              "type": etype, "title": title, "body": body, "success": success}
+    if kind:
+        entry["kind"] = kind
     if depot_id:
         entry["depot_id"] = depot_id
         user = get_depot_user(depot_id)
@@ -329,7 +331,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         html_body = build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp,
                                       buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf,
                                       is_sector_gap=is_sector_gap)
-        send_apprise(title, body, urls or [], mention=mention, html_body=html_body, depot_id=depot_id)
+        send_apprise(title, body, urls or [], mention=mention, html_body=html_body, depot_id=depot_id, kind="discount")
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
         cleared = [lvl for lvl in [20, 30, 40, 50, 60, 70, 80, 90] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
         if cleared:
@@ -574,7 +576,7 @@ EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "pos
 def _is_email_url(u):
     return u.lower().startswith(EMAIL_PREFIXES)
 
-def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None):
+def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, kind=None):
     if not urls: return False
     try:
         ok = True
@@ -590,11 +592,11 @@ def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None):
             else:
                 if not ap.notify(title=title, body=msg):
                     ok = False
-        add_log("alert", title, body, ok, depot_id=depot_id)
+        add_log("alert", title, body, ok, depot_id=depot_id, kind=kind)
         return ok
     except Exception as e:
         log.error(f"Apprise: {e}")
-        add_log("alert", title, body, False, depot_id=depot_id)
+        add_log("alert", title, body, False, depot_id=depot_id, kind=kind)
         return False
 
 # ── Stock helpers ─────────────────────────────────────────────────
@@ -729,7 +731,7 @@ def send_ath_alerts(hits, label, urls, mention="", depot_id=None):
                  f"Kursstand:      {s.get('market_time', '—')}")
         html_body = build_ath_reached_html(s, prev_ath)
         try:
-            send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=depot_id)
+            send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=depot_id, kind="ath")
         except Exception as e:
             log.error(f"ATH-Alarm {s.get('name','?')}: {e}")
 
@@ -1178,6 +1180,98 @@ def build_digest_html(depot, stocks):
     </body></html>"""
 
 
+_DAILY_DIGEST_ATH_RE      = re.compile(r"^🎉 Neues ATH — (.+)$")
+_DAILY_DIGEST_DISCOUNT_RE = re.compile(r"^ATH-Alarm \[.*?\]: (.+)$")
+
+def _daily_digest_line(entry):
+    """Extrahiert eine kompakte, lesbare Zeile aus einem Verlauf-Eintrag für die
+    Tageszusammenfassung — nutzt den bereits vorhandenen Titel statt Daten neu zu berechnen."""
+    title = entry.get("title", "")
+    if entry.get("kind") == "ath":
+        m = _DAILY_DIGEST_ATH_RE.match(title)
+    else:
+        m = _DAILY_DIGEST_DISCOUNT_RE.match(title)
+    return m.group(1) if m else title
+
+def _build_daily_ath_digest_data(depot_id):
+    """Sammelt alle heute für dieses Depot erfolgreich gesendeten Discount- und
+    ATH-Alarme aus notifications.json (per kind-Feld, siehe send_apprise/add_log).
+    Kein neues Datenfeld nötig — reine Auswertung des bestehenden Verlaufs."""
+    today   = datetime.now().strftime("%d.%m.%Y")
+    entries = [n for n in load_notifications()
+               if n.get("depot_id") == depot_id and n.get("success", True)
+               and n.get("kind") in ("discount", "ath")
+               and n.get("time", "").startswith(today)]
+    ath_hits      = [e for e in entries if e["kind"] == "ath"]
+    discount_hits = [e for e in entries if e["kind"] == "discount"]
+    return ath_hits, discount_hits
+
+def build_daily_ath_digest_body(depot, ath_hits, discount_hits):
+    """Baut den Text für die tägliche 21-Uhr-Zusammenfassung."""
+    name  = depot.get("name", "Depot")
+    total = len(ath_hits) + len(discount_hits)
+    title = f"🌙 DepotRadar Tageszusammenfassung — {name}"
+    if total == 0:
+        return title, f"Depot: {name}\n\nHeute gab es keine Benachrichtigung für dein Depot."
+    lines = [f"Depot: {name}\n\nHeute gab es {total} Alarm(e):"]
+    if ath_hits:
+        lines.append(f"\n🎉 {len(ath_hits)} neue(s) Allzeithoch:")
+        lines += [f"  • {_daily_digest_line(e)}" for e in ath_hits]
+    if discount_hits:
+        lines.append(f"\n📉 {len(discount_hits)} Discount-Alarm(e):")
+        lines += [f"  • {_daily_digest_line(e)}" for e in discount_hits]
+    link = f"\n\n{APP_URL}" if APP_URL else ""
+    return title, "\n".join(lines) + link
+
+def build_daily_ath_digest_html(depot, ath_hits, discount_hits):
+    """HTML-Version der Tageszusammenfassung für E-Mail-Versand."""
+    name  = depot.get("name", "Depot")
+    total = len(ath_hits) + len(discount_hits)
+    if total == 0:
+        body_html = '<p style="color:#64748b;margin:0">Heute gab es keine Benachrichtigung für dein Depot.</p>'
+    else:
+        sections = []
+        if ath_hits:
+            rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in ath_hits)
+            sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {len(ath_hits)} neue(s) Allzeithoch</h3>"
+                            f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
+        if discount_hits:
+            rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in discount_hits)
+            sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {len(discount_hits)} Discount-Alarm(e)</h3>"
+                            f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
+        body_html = "".join(sections)
+    link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
+    return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
+    <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
+      <h2 style="margin:0;font-size:18px">🌙 Tageszusammenfassung</h2>
+      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {name} · {total} Alarm(e) heute</div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
+      {body_html}
+      {link_html}
+    </div>
+    <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
+    </body></html>"""
+
+def send_daily_ath_digests():
+    """Sendet die tägliche 21-Uhr-Zusammenfassung (Discount- + ATH-Alarme, auch bei
+    null Treffern) an alle Depots die daily_ath_digest aktiviert haben."""
+    log.info("Tägliche ATH-Zusammenfassung wird versendet…")
+    depots = load_depots()
+    for dc in depots:
+        if not dc.get("daily_ath_digest", False): continue
+        did = dc["id"]
+        urls, mention, _confirm = resolve_notification_settings(did)
+        if not urls: continue
+        ath_hits, discount_hits = _build_daily_ath_digest_data(did)
+        title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits)
+        html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits)
+        add_log("daily_ath_digest", f"🌙 Tageszusammenfassung [{dc['name']}]",
+                f"Gesendet an {len(urls)} URL(s). ({len(ath_hits) + len(discount_hits)} Alarm(e))",
+                success=True, depot_id=dc["id"])
+        send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc["id"])
+
+
 def send_weekly_digests():
     """Sendet den Wochenbericht an alle Depots die es aktiviert haben."""
     s = load_settings()
@@ -1218,12 +1312,25 @@ def schedule_digest_job():
     log.info(f"Digest-Job geplant: {dow_map[day]} {hour:02d}:{minute:02d} ({'aktiv' if enabled else 'inaktiv — Job läuft, prüft intern'})")
 
 
+def schedule_daily_ath_digest_job():
+    """Plant den täglichen ATH-Zusammenfassungs-Job auf feste 21:00 Uhr
+    (Zeitpunkt bewusst nicht konfigurierbar, siehe Absprache — nur die
+    konfigurierte Zeitzone wird berücksichtigt)."""
+    s  = load_settings()
+    tz = pytz.timezone(s.get("timezone", "Europe/Berlin"))
+    scheduler.add_job(
+        send_daily_ath_digests, CronTrigger(hour=21, minute=0, timezone=tz),
+        id="daily_ath_digest", replace_existing=True, misfire_grace_time=None)
+    log.info("Tägliche ATH-Zusammenfassung geplant: 21:00")
+
+
 def start_scheduler():
     _restore_health_stats()
     _restore_last_refresh()
     scheduler.add_job(trading_window_check, "cron", minute="*", id="trading_check",
                       replace_existing=True, misfire_grace_time=None)
     schedule_digest_job()
+    schedule_daily_ath_digest_job()
     if not scheduler.running: scheduler.start()
     log.info("Scheduler gestartet")
 
@@ -1946,6 +2053,8 @@ def update_depot(depot_id):
                 d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
             if "weekly_digest" in body:
                 d["weekly_digest"] = bool(body["weekly_digest"])
+            if "daily_ath_digest" in body:
+                d["daily_ath_digest"] = bool(body["daily_ath_digest"])
             notif_toggled = False
             if "notifications_enabled" in body:
                 old_enabled = d.get("notifications_enabled", True)
@@ -2359,7 +2468,7 @@ def update_settings():
     if "digest_enabled" in body: s["digest_enabled"] = bool(body["digest_enabled"])
     if "digest_day"     in body: s["digest_day"]     = int(body["digest_day"])
     if "digest_time"    in body: s["digest_time"]    = str(body["digest_time"])
-    save_settings(s); schedule_digest_job(); return jsonify(s)
+    save_settings(s); schedule_digest_job(); schedule_daily_ath_digest_job(); return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
 def get_notifications(): return jsonify(list(reversed(load_notifications())))

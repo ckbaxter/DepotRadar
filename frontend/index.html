@@ -692,6 +692,28 @@ select</style>
             </div>
           </details>
         </div>
+        <!-- Tägliche ATH-Zusammenfassung Toggle -->
+        <div style="margin-top:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle-switch">
+              <input type="checkbox" id="depotDailyAthDigestToggle"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">Tägliche Zusammenfassung senden (21 Uhr)</span>
+          </div>
+          <details style="margin-top:8px">
+            <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
+              <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
+            </summary>
+            <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
+              Fasst täglich um 21 Uhr per Apprise zusammen, welche Discount- und
+              ATH-Alarme heute für dieses Depot gesendet wurden — praktisch als
+              Erinnerung, falls du tagsüber keine Zeit zum Reagieren hattest.
+              Kommt auch wenn es keine Alarme gab ("Heute keine Benachrichtigung").
+              Zeitpunkt ist fest auf 21 Uhr eingestellt.
+            </div>
+          </details>
+        </div>
       <!-- Parqet Integration -->
       <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <div style="font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">
@@ -2772,6 +2794,7 @@ function openDepotSettings(depot){
   if(cbEl) cbEl.value = window.location.origin + "/api/parqet/callback";
   document.getElementById("depotNotifsEnabled").checked = depot.notifications_enabled !== false;
   document.getElementById("depotDigestToggle").checked  = !!depot.weekly_digest;
+  document.getElementById("depotDailyAthDigestToggle").checked = !!depot.daily_ath_digest;
   // Digest-Zeile nur zeigen wenn global aktiviert
   fetch(`${API}/settings`).then(r=>r.json()).then(s=>{
     const row = document.getElementById("depotDigestRow");
@@ -2808,7 +2831,8 @@ async function saveDepotSettings(){
   const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({name, buy_budget,
       notifications_enabled:document.getElementById("depotNotifsEnabled")?.checked!==false,
-      weekly_digest:document.getElementById("depotDigestToggle")?.checked||false})});
+      weekly_digest:document.getElementById("depotDigestToggle")?.checked||false,
+      daily_ath_digest:document.getElementById("depotDailyAthDigestToggle")?.checked||false})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
   if(activeDepot&&activeDepot.id===editingDepot.id){
@@ -3780,7 +3804,7 @@ function getUserDepotIds(){
 }
 
 // ── Verlauf ───────────────────────────────────────────────────────
-const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht"};
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung"};
 const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh"};
 let _notifItems = [];
 let _notifTypeFilter = "all";
@@ -3887,6 +3911,12 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juni 2026",
+    versions: "Frontend v2.12.0 · Backend v2.7.15",
+    changes: [
+      "Neu: Tägliche ATH-Zusammenfassung — optional pro Depot aktivierbar (Depot-Einstellungen), fasst um 21 Uhr zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); gedacht als Erinnerung falls man tagsüber keine Zeit zum Reagieren hatte."
+    ]
+  },{
     label: "Juni 2026",
     versions: "Frontend v2.11.0 · Backend v2.7.13",
     changes: [
@@ -5199,7 +5229,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.11.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
