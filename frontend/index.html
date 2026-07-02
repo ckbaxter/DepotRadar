@@ -978,7 +978,27 @@ select</style>
         <div class="help-body">
           Pro Depot kannst du ein monatliches Kaufbudget hinterlegen — Tippen auf das ⚙-Icon im
           Depot-Tab. Bei Nachkauf-Kandidaten wird direkt angezeigt wie viele Stück du dir für
-          dieses Budget leisten kannst — als schnelle Orientierungshilfe ohne extra Rechnen.
+          dieses Budget leisten kannst — als schnelle Orientierungshilfe ohne extra Rechnen.<br><br>
+          Das Budget wird abhängig vom Discount-Block automatisch vervielfacht — je tiefer der
+          Kurs unter ATH steht, desto mehr wird zum Nachkauf vorgeschlagen:
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:6px;padding:7px 10px;font-size:12px">
+              <span>20–39% unter ATH</span>
+              <b>1× Budget</b>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:6px;padding:7px 10px;font-size:12px">
+              <span>40–59% unter ATH</span>
+              <b>2× Budget</b>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:6px;padding:7px 10px;font-size:12px">
+              <span>≥60% unter ATH</span>
+              <b>3× Budget</b>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px">
+            Beispiel bei 200€ Budget: 40% Discount → 2×200€ = 400€ Kaufvorschlag.
+          </div><br>
+          Die berechnete Stückzahl erscheint sowohl in der App als auch in Apprise-Benachrichtigungen.
         </div>
       </details>
 
@@ -1068,6 +1088,41 @@ select</style>
       </details>
 
       <details class="help-section">
+        <summary class="help-summary">🌙 Tägliche ATH-Zusammenfassung</summary>
+        <div class="help-body">
+          Pro Depot aktivierbar (Depot-Einstellungen → ⚙) — fasst jeden Tag um <b>21 Uhr</b>
+          per Apprise zusammen, welche Discount- und ATH-Alarme heute für dieses Depot
+          ausgelöst wurden.<br><br>
+          Gedacht als Erinnerung falls tagsüber keine Zeit war, auf einen Alarm zu reagieren.
+          Gab es an dem Tag keine Alarme, kommt trotzdem eine kurze Meldung — so weißt du,
+          dass die Zusammenfassung nicht einfach ausgeblieben ist.<br><br>
+          Nutzt die gleichen Apprise-URLs wie die normalen Alarme (Benutzer-Chip oben rechts)
+          und respektiert ebenfalls den Benachrichtigungs-Schalter des Depots — ist dieser
+          deaktiviert, bleibt auch die Tageszusammenfassung still. Im Verlauf erscheint sie
+          mit dem Typ „🌙 Tageszusammenfassung".
+        </div>
+      </details>
+
+      <details class="help-section">
+        <summary class="help-summary">📊 Wöchentliche Zusammenfassung</summary>
+        <div class="help-body">
+          Pro Depot aktivierbar (Depot-Einstellungen → ⚙ → Apprise-Bereich) — Wochentag und
+          Uhrzeit werden zentral in den App-Einstellungen (⚙ oben) festgelegt und gelten für
+          alle teilnehmenden Depots gemeinsam.<br><br>
+          Der Bericht wird als HTML-formatierte E-Mail bzw. entsprechend dem gewählten
+          Apprise-Dienst versendet und enthält:
+          <ul style="margin:8px 0 0 16px;padding:0;line-height:1.8">
+            <li>ATH-Verteilung — wie viele Positionen in welcher Discount-Stufe liegen</li>
+            <li>Aktuelle Nachkauf-Kandidaten</li>
+            <li>Beste und schlechteste Wochenperformance im Depot</li>
+            <li>Aktien, die kurz vor dem nächsten Discount-Level stehen</li>
+          </ul><br>
+          Nutzt dieselben Apprise-URLs wie die normalen Alarme. Im Verlauf erscheint sie mit
+          dem Typ „📊 Wochenbericht".
+        </div>
+      </details>
+
+      <details class="help-section">
         <summary class="help-summary">🔗 Parqet — nach der Ersteinrichtung</summary>
         <div class="help-body">
           Nach der einmaligen OAuth-Verbindung genügt ein Tippen auf „↺ Sync starten" im Depot-Tab.<br><br>
@@ -1089,6 +1144,10 @@ select</style>
         <summary class="help-summary">🔔 Apprise Benachrichtigungen</summary>
         <div class="help-body">
           Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.<br><br>
+          Ob überhaupt Benachrichtigungen für ein Depot verschickt werden, entscheidet zusätzlich
+          ein Ein/Aus-Schalter <b>pro Depot</b> (Depot-Einstellungen → ⚙) — nur wenn dieser aktiv
+          ist, gehen Alarme, die tägliche und die wöchentliche Zusammenfassung für dieses Depot
+          überhaupt raus, unabhängig davon ob Apprise-URLs beim Benutzer hinterlegt sind.<br><br>
           Eine Benachrichtigung kommt wenn eine Aktie die eingestellte ATH-Schwelle unterschreitet.
           Nachkauf-Kandidaten werden mit einem 🛒-Symbol hervorgehoben, Aktien aus unterrepräsentierten
           Sektoren zusätzlich mit ⚖️.<br><br>
@@ -3912,6 +3971,18 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.12.2 · Backend v2.7.15",
+    changes: [
+      "Hilfe: Kaufbudget-Tabelle (Discount-Multiplikator) durch kompakte Zeilen ersetzt — die vorherige 3-Spalten-Tabelle lief auf iPad/Smartphone aus dem Rahmen"
+    ]
+  },{
+    label: "Juni 2026",
+    versions: "Frontend v2.12.1 · Backend v2.7.15",
+    changes: [
+      "Hilfe: Neue Abschnitte für Tägliche ATH-Zusammenfassung und Wöchentliche Zusammenfassung ergänzt (fehlten bisher komplett); Kaufbudget-Abschnitt um die Discount-Multiplikator-Tabelle (1×/2×/3×) erweitert; Apprise-Abschnitt erklärt jetzt zusätzlich den Ein/Aus-Schalter pro Depot"
+    ]
+  },{
+    label: "Juni 2026",
     versions: "Frontend v2.12.0 · Backend v2.7.15",
     changes: [
       "Neu: Tägliche ATH-Zusammenfassung — optional pro Depot aktivierbar (Depot-Einstellungen), fasst um 21 Uhr zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); gedacht als Erinnerung falls man tagsüber keine Zeit zum Reagieren hatte."
@@ -5229,7 +5300,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.0 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
