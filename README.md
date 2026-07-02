@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.7.7-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.9.6-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.7.15-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.12.2-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -38,6 +38,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Diversifikations-Lücke (⚖️)** — markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind (<50% des Sektor-Durchschnitts); sichtbar am Sektor-Tag in Tabelle/Karten, in der Sektor-Übersicht und im ATH-Discount-Alarm; Watchlist-Aktien werden dabei immer gegen den echten Bestand bewertet
 - **Performance-Badges** — 1T / 1M / 3M / 1J / 3J direkt unter dem Kurs
 - **P&L** — Gewinn/Verlust in % und € wenn Einstandskurs bekannt
+- **Originalwährungsanzeige** — bei Fremdwährungsaktien (USD, GBP etc.) wird der Kurs in der Originalwährung klein und grau unter dem EUR-Kurs angezeigt, in Tabelle und Mobile-Card; EUR-Aktien bleiben unverändert
 - **Kaufmarkierung (K)** — ATH-Level-Kacheln (−20%, −30% usw.) sind antippbar; ein Tippen setzt ein blaues K-Badge als persönliche Notiz auf welchem Level ein Kauf stattfand; mehrere Level gleichzeitig möglich, wird dauerhaft gespeichert
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion
@@ -46,6 +47,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
+- **Tägliche ATH-Zusammenfassung** — optional pro Depot aktivierbar; fasst um 21 Uhr zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); nutzt dieselben Apprise-URLs wie normale Alarme
 - **System-Status** — Gesundheits-Dashboard im Footer; zeigt Scheduler-Status, Laufzeit, Refresh-Statistiken, Yahoo Finance-Erfolgsquote und Fehler-Log der letzten 20 Abfragefehler
 - **Verlauf** — vollständiger Aktivitätsverlauf mit Filter nach Benutzer und Eintragstyp
 - **Letzte Änderungen** — Changelog direkt in der App abrufbar (Footer-Link)
@@ -318,6 +320,15 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.7.15 / 2.12.2 | Hilfe: Kaufbudget-Tabelle (Discount-Multiplikator) durch mobile-taugliche Kartenansicht ersetzt — vorherige 3-Spalten-Tabelle lief auf iPad/Smartphone aus dem Rahmen |
+| 2.7.15 / 2.12.1 | Hilfe: neue Abschnitte für Tägliche und Wöchentliche Zusammenfassung ergänzt (fehlten bisher komplett); Kaufbudget-Abschnitt um Discount-Multiplikator-Tabelle erweitert; Apprise-Abschnitt erklärt Ein/Aus-Schalter pro Depot |
+| 2.7.15 / 2.12.0 | Neu: Tägliche ATH-Zusammenfassung — optional pro Depot aktivierbar, fasst um 21 Uhr die heutigen Discount- und ATH-Alarme zusammen (auch als „keine Alarme"-Meldung) |
+| 2.7.14 / 2.12.0 | Bugfix: undokumentierte harte 100-Einträge-Kappung im Benachrichtigungsverlauf entfernt — Verlauf wird jetzt ausschließlich über die konfigurierte Aufbewahrungsdauer begrenzt |
+| 2.7.13 / 2.11.0 | Neu: Originalwährung wird bei Fremdwährungsaktien klein unter dem EUR-Kurs angezeigt (Tabelle und Mobile-Card) |
+| 2.7.12 / 2.10.2 | Bugfix Changelog: fehlerhafter Monats-Header („UNDEFINED") behoben |
+| 2.7.11 / 2.10.1 | XETRA-Vorschlag in der Aktiensuche neu über `xetra_map.json` (First-Line-Cache) mit OpenFIGI-Fallback für unbekannte Ticker (Self-populating Cache); vorheriger toter ISIN-Lookup entfernt |
+| 2.7.9 / 2.10.0 | Suchfeld auf Smartphone: eigener Icon-Button öffnet vollbreite Suchleiste mit Abbrechen-Button |
+| 2.7.8 / 2.9.9 | Statusdot im Footer basiert jetzt auf einem Fehler-Flag pro Refresh-Zyklus statt auf der Länge des Fehler-Logs; Portfolio-Verlauf zeigt zusätzlich die absolute Wertveränderung in Euro |
 | 2.7.7 / 2.9.6 | Hilfe erweitert: neue Abschnitte für Portfolio-Verlauf/EK-Kurve, Treemap-Ansicht und System-Status; veralteter Hinweis zur Depot-Ebene in der Apprise-Sektion entfernt |
 | 2.7.6 / 2.9.3–2.9.5 | Ausstehende Bestätigungen werden jetzt korrekt protokolliert wenn der Kurs sich vor dem zweiten Refresh erholt; Übersichten unter gemeinsamem aufklappbaren Oberpunkt zusammengefasst; aktive Filter als farbige Pills im Header sichtbar |
 | 2.7.5 / 2.9.0–2.9.2 | Depot-übergreifender Yahoo-Cache beim automatischen Refresh spart redundante API-Calls wenn identische Ticker in mehreren Depots vorkommen; System-Status zeigt Cache-Statistik; Statusdot im Footer (grün/grau/rot) |
