@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.15"
+VERSION           = "2.7.17"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -533,9 +533,11 @@ def fetch_stock_data(ticker):
             "currency": currency, "market_time": mt_str, **perfs}
 
 def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
-    """Berechnet 1T/1W/1M/3M/1J/3J Performance. perf_1w wird nur noch intern für die
-    Wochenzusammenfassung ("Beste/schlechteste Woche") berechnet, ist aber kein
-    Badge mehr im Frontend (siehe perfWrap in index.html). Behandelt GBp korrekt."""
+    """Berechnet 1T/1W/1M/3M/1J/3J Performance sowie 52-Wochen-Hoch/-Tief (week52_high/
+    week52_low, seit v2.7.16). perf_1w wird nur noch intern für die Wochenzusammenfassung
+    ("Beste/schlechteste Woche") berechnet, ist aber kein Badge mehr im Frontend (siehe
+    perfWrap in index.html). Behandelt GBp korrekt. Nutzt für 52W-Hoch/-Tief dieselben
+    5-Jahres-Tagesdaten wie die Performance-Berechnung — kein zusätzlicher Yahoo-Call."""
     try:
         enc = urlquote(ticker)
         url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false"
@@ -565,10 +567,26 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
                         min_diff = diff
                         best     = float(price) / divisor * eur_rate
             result[key] = round((current_eur - best) / best * 100, 1) if best else None
+
+        # 52-Wochen-Hoch/-Tief: letzte ~252 Handelstage aus denselben 5J-Tagesdaten
+        valid_points = sorted(
+            ((ts, price) for ts, price in zip(tss, closes) if ts and price and price > 0 and ts < now - 3600),
+            key=lambda x: x[0]
+        )
+        last_52w = valid_points[-252:]
+        if last_52w:
+            prices_eur = [p / divisor * eur_rate for _, p in last_52w]
+            result["week52_high"] = round(max(prices_eur), 2)
+            result["week52_low"]  = round(min(prices_eur), 2)
+        else:
+            result["week52_high"] = None
+            result["week52_low"]  = None
+
         return result
     except Exception as e:
         log.warning(f"Performance {ticker}: {e}")
-        return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None}
+        return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
+                "week52_high": None, "week52_low": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
 EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "postmark://", "ses://")
@@ -619,6 +637,8 @@ def _make_stock(data, old=None):
         "perf_3m":       data.get("perf_3m"),
         "perf_1y":       data.get("perf_1y"),
         "perf_3y":       data.get("perf_3y"),
+        "week52_high":   data.get("week52_high"),
+        "week52_low":    data.get("week52_low"),
         # Parqet-Felder explizit beibehalten (nicht durch **base überschreiben lassen)
         "isin":          base.get("isin"),
         "buy_price_eur": base.get("buy_price_eur"),

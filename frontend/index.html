@@ -229,6 +229,8 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .pb-up{background:rgba(34,197,94,.12);color:var(--green)}
 .pb-dn{background:rgba(239,68,68,.12);color:var(--red)}
 .pb-neu{background:rgba(122,130,154,.1);color:var(--muted)}
+.w52-high{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+.w52-low{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
 .theme-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:5px 9px;color:var(--muted);cursor:pointer;font-size:15px;transition:all .15s;min-height:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center}
 .theme-btn:hover{background:var(--bg3);color:var(--text)}
 
@@ -2370,8 +2372,22 @@ function perfBadge(val, label){
   const sign = val > 0 ? "+" : "";
   return `<span class="pb ${cls}">${label} ${sign}${val.toFixed(1)}%</span>`;
 }
+// ── 52-Wochen-Hoch/-Tief Badge (seit v2.12.3/2.7.16) ──────────────
+// Toleranzzone 3% fest im Code (analog Sektor-Gap-Schwellenwert 50%), kein neues
+// Backend-Feld über week52_high/week52_low hinaus — Vergleichslogik läuft im Frontend.
+const WEEK52_TOLERANCE = 0.03;
+function week52Badge(s){
+  if(s.current_eur == null) return "";
+  if(s.week52_high != null && s.current_eur >= s.week52_high * (1 - WEEK52_TOLERANCE)){
+    return `<span class="pb w52-high" title="Nahe/auf 52-Wochen-Hoch">52W-H</span>`;
+  }
+  if(s.week52_low != null && s.current_eur <= s.week52_low * (1 + WEEK52_TOLERANCE)){
+    return `<span class="pb w52-low" title="Nahe/auf 52-Wochen-Tief">52W-T</span>`;
+  }
+  return "";
+}
 function perfWrap(s){
-  const b = perfBadge(s.perf_1d,"1T") + perfBadge(s.perf_1m,"1M") + perfBadge(s.perf_3m,"3M") + perfBadge(s.perf_1y,"1J") + perfBadge(s.perf_3y,"3J");
+  const b = perfBadge(s.perf_1d,"1T") + perfBadge(s.perf_1m,"1M") + perfBadge(s.perf_3m,"3M") + perfBadge(s.perf_1y,"1J") + perfBadge(s.perf_3y,"3J") + week52Badge(s);
   return b ? `<div class="perf-wrap">${b}</div>` : "";
 }
 
@@ -3971,6 +3987,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juni 2026",
+    versions: "Frontend v2.12.3 · Backend v2.7.16",
+    changes: [
+      "Neu: 52-Wochen-Hoch/-Tief-Badge (52W-H / 52W-T) neben den Performance-Badges — zeigt an, wenn der Kurs innerhalb 3% des 52-Wochen-Hochs bzw. -Tiefs liegt; nutzt dieselben 5-Jahres-Kursdaten wie die Performance-Berechnung, kein zusätzlicher Yahoo-Call"
+    ]
+  },{
+    label: "Juni 2026",
     versions: "Frontend v2.12.2 · Backend v2.7.15",
     changes: [
       "Hilfe: Kaufbudget-Tabelle (Discount-Multiplikator) durch kompakte Zeilen ersetzt — die vorherige 3-Spalten-Tabelle lief auf iPad/Smartphone aus dem Rahmen"
@@ -5300,7 +5322,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.3 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
