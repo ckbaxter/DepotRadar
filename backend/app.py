@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.17"
+VERSION           = "2.7.18"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -537,7 +537,12 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
     week52_low, seit v2.7.16). perf_1w wird nur noch intern für die Wochenzusammenfassung
     ("Beste/schlechteste Woche") berechnet, ist aber kein Badge mehr im Frontend (siehe
     perfWrap in index.html). Behandelt GBp korrekt. Nutzt für 52W-Hoch/-Tief dieselben
-    5-Jahres-Tagesdaten wie die Performance-Berechnung — kein zusätzlicher Yahoo-Call."""
+    5-Jahres-Tagesdaten wie die Performance-Berechnung — kein zusätzlicher Yahoo-Call.
+    perf_1d nutzt seit v2.7.18 einen festen Kalendertag-Vergleich (letzter Close vor dem
+    heutigen Tag in der App-Zeitzone) statt eines rollierenden 24h-Fensters — vorher konnte
+    der Wert im Tagesverlauf schon vor Mitternacht auf 0,0% zurückfallen, sobald der (seit
+    Handelsschluss eingefrorene) aktuelle Kurs mit dem inzwischen "eingeholten" Referenz-
+    Close übereinstimmte. Jetzt bleibt der Wert stabil und wechselt nur um 0 Uhr."""
     try:
         enc = urlquote(ticker)
         url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false"
@@ -550,7 +555,6 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
         closes = res["indicators"]["quote"][0].get("close", [])
         now    = time_mod.time()
         targets = {
-            "perf_1d": now -   1 * 86400,
             "perf_1w": now -   7 * 86400,
             "perf_1m": now -  30 * 86400,
             "perf_3m": now -  90 * 86400,
@@ -567,6 +571,16 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
                         min_diff = diff
                         best     = float(price) / divisor * eur_rate
             result[key] = round((current_eur - best) / best * 100, 1) if best else None
+
+        # perf_1d: letzter Close VOR dem heutigen Kalendertag (App-Zeitzone) — fest bis 0 Uhr,
+        # kein rollierendes 24h-Fenster mehr (siehe Docstring)
+        tz          = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+        today_local = datetime.now(tz).date()
+        best_1d = None
+        for ts, price in zip(tss, closes):
+            if ts and price and price > 0 and datetime.fromtimestamp(ts, tz=tz).date() < today_local:
+                best_1d = float(price) / divisor * eur_rate  # Liste chronologisch aufsteigend -> letzter Treffer gewinnt
+        result["perf_1d"] = round((current_eur - best_1d) / best_1d * 100, 1) if best_1d else None
 
         # 52-Wochen-Hoch/-Tief: letzte ~252 Handelstage aus denselben 5J-Tagesdaten
         valid_points = sorted(
