@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.18"
+VERSION           = "2.7.16"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -533,16 +533,9 @@ def fetch_stock_data(ticker):
             "currency": currency, "market_time": mt_str, **perfs}
 
 def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
-    """Berechnet 1T/1W/1M/3M/1J/3J Performance sowie 52-Wochen-Hoch/-Tief (week52_high/
-    week52_low, seit v2.7.16). perf_1w wird nur noch intern für die Wochenzusammenfassung
-    ("Beste/schlechteste Woche") berechnet, ist aber kein Badge mehr im Frontend (siehe
-    perfWrap in index.html). Behandelt GBp korrekt. Nutzt für 52W-Hoch/-Tief dieselben
-    5-Jahres-Tagesdaten wie die Performance-Berechnung — kein zusätzlicher Yahoo-Call.
-    perf_1d nutzt seit v2.7.18 einen festen Kalendertag-Vergleich (letzter Close vor dem
-    heutigen Tag in der App-Zeitzone) statt eines rollierenden 24h-Fensters — vorher konnte
-    der Wert im Tagesverlauf schon vor Mitternacht auf 0,0% zurückfallen, sobald der (seit
-    Handelsschluss eingefrorene) aktuelle Kurs mit dem inzwischen "eingeholten" Referenz-
-    Close übereinstimmte. Jetzt bleibt der Wert stabil und wechselt nur um 0 Uhr."""
+    """Berechnet 1T/1W/1M/3M/1J/3J Performance. perf_1w wird nur noch intern für die
+    Wochenzusammenfassung ("Beste/schlechteste Woche") berechnet, ist aber kein
+    Badge mehr im Frontend (siehe perfWrap in index.html). Behandelt GBp korrekt."""
     try:
         enc = urlquote(ticker)
         url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false"
@@ -555,6 +548,7 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
         closes = res["indicators"]["quote"][0].get("close", [])
         now    = time_mod.time()
         targets = {
+            "perf_1d": now -   1 * 86400,
             "perf_1w": now -   7 * 86400,
             "perf_1m": now -  30 * 86400,
             "perf_3m": now -  90 * 86400,
@@ -571,36 +565,10 @@ def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
                         min_diff = diff
                         best     = float(price) / divisor * eur_rate
             result[key] = round((current_eur - best) / best * 100, 1) if best else None
-
-        # perf_1d: letzter Close VOR dem heutigen Kalendertag (App-Zeitzone) — fest bis 0 Uhr,
-        # kein rollierendes 24h-Fenster mehr (siehe Docstring)
-        tz          = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
-        today_local = datetime.now(tz).date()
-        best_1d = None
-        for ts, price in zip(tss, closes):
-            if ts and price and price > 0 and datetime.fromtimestamp(ts, tz=tz).date() < today_local:
-                best_1d = float(price) / divisor * eur_rate  # Liste chronologisch aufsteigend -> letzter Treffer gewinnt
-        result["perf_1d"] = round((current_eur - best_1d) / best_1d * 100, 1) if best_1d else None
-
-        # 52-Wochen-Hoch/-Tief: letzte ~252 Handelstage aus denselben 5J-Tagesdaten
-        valid_points = sorted(
-            ((ts, price) for ts, price in zip(tss, closes) if ts and price and price > 0 and ts < now - 3600),
-            key=lambda x: x[0]
-        )
-        last_52w = valid_points[-252:]
-        if last_52w:
-            prices_eur = [p / divisor * eur_rate for _, p in last_52w]
-            result["week52_high"] = round(max(prices_eur), 2)
-            result["week52_low"]  = round(min(prices_eur), 2)
-        else:
-            result["week52_high"] = None
-            result["week52_low"]  = None
-
         return result
     except Exception as e:
         log.warning(f"Performance {ticker}: {e}")
-        return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
-                "week52_high": None, "week52_low": None}
+        return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
 EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "postmark://", "ses://")
@@ -651,8 +619,6 @@ def _make_stock(data, old=None):
         "perf_3m":       data.get("perf_3m"),
         "perf_1y":       data.get("perf_1y"),
         "perf_3y":       data.get("perf_3y"),
-        "week52_high":   data.get("week52_high"),
-        "week52_low":    data.get("week52_low"),
         # Parqet-Felder explizit beibehalten (nicht durch **base überschreiben lassen)
         "isin":          base.get("isin"),
         "buy_price_eur": base.get("buy_price_eur"),
@@ -1347,15 +1313,16 @@ def schedule_digest_job():
 
 
 def schedule_daily_ath_digest_job():
-    """Plant den täglichen ATH-Zusammenfassungs-Job auf feste 21:00 Uhr
-    (Zeitpunkt bewusst nicht konfigurierbar, siehe Absprache — nur die
-    konfigurierte Zeitzone wird berücksichtigt)."""
+    """Plant den täglichen ATH-Zusammenfassungs-Job auf feste 21:00 Uhr, nur Mo–Fr
+    (am Wochenende keine Zusammenfassung, da an Handelstagen ohnehin keine neuen
+    Alarme entstehen). Zeitpunkt bewusst nicht konfigurierbar — nur die
+    konfigurierte Zeitzone wird berücksichtigt."""
     s  = load_settings()
     tz = pytz.timezone(s.get("timezone", "Europe/Berlin"))
     scheduler.add_job(
-        send_daily_ath_digests, CronTrigger(hour=21, minute=0, timezone=tz),
+        send_daily_ath_digests, CronTrigger(hour=21, minute=0, day_of_week="mon-fri", timezone=tz),
         id="daily_ath_digest", replace_existing=True, misfire_grace_time=None)
-    log.info("Tägliche ATH-Zusammenfassung geplant: 21:00")
+    log.info("Tägliche ATH-Zusammenfassung geplant: 21:00 (Mo–Fr)")
 
 
 def start_scheduler():
