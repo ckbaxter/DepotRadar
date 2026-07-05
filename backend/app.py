@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.19"
+VERSION           = "2.7.20"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -1347,15 +1347,18 @@ def schedule_digest_job():
 
 
 def schedule_daily_ath_digest_job():
-    """Plant den täglichen ATH-Zusammenfassungs-Job auf feste 21:00 Uhr
-    (Zeitpunkt bewusst nicht konfigurierbar, siehe Absprache — nur die
-    konfigurierte Zeitzone wird berücksichtigt)."""
+    """Plant den täglichen ATH-Zusammenfassungs-Job auf feste 21:00 Uhr,
+    nur Montag–Freitag (Zeitpunkt bewusst nicht konfigurierbar, siehe Absprache
+    — nur die konfigurierte Zeitzone wird berücksichtigt). Der Job feuert am
+    Wochenende gar nicht erst, statt zu feuern und eine leere Zusammenfassung
+    zu verwerfen."""
     s  = load_settings()
     tz = pytz.timezone(s.get("timezone", "Europe/Berlin"))
     scheduler.add_job(
-        send_daily_ath_digests, CronTrigger(hour=21, minute=0, timezone=tz),
+        send_daily_ath_digests,
+        CronTrigger(hour=21, minute=0, day_of_week="mon-fri", timezone=tz),
         id="daily_ath_digest", replace_existing=True, misfire_grace_time=None)
-    log.info("Tägliche ATH-Zusammenfassung geplant: 21:00")
+    log.info("Tägliche ATH-Zusammenfassung geplant: 21:00 (Mo–Fr)")
 
 
 def start_scheduler():
