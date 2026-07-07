@@ -1528,9 +1528,6 @@ let editingWl     = null;
 let sortKey = "discount", sortDir = 1;
 let searchTimer   = null;
 
-const storedDepotId = localStorage.getItem("activeDepot");
-const storedView    = (() => { try { return JSON.parse(localStorage.getItem("activeView")); } catch { return null; } })();
-
 // ── Utils ────────────────────────────────────────────────────────
 const fmtEUR = v => new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(v);
 const fmtOrig = (val, cur) => { try { return new Intl.NumberFormat("de-DE",{style:"currency",currency:cur,minimumFractionDigits:2}).format(val); } catch(e) { return val + "\u00a0" + cur; } };
@@ -1578,7 +1575,7 @@ async function loadDepots(){
   depotsCache = allowedD ? allDepots.filter(d => allowedD.includes(d.id)) : allDepots;
   watchlistsCache = depotsCache.flatMap(d => (d.watchlists||[]).map(w => ({...w, depot_id: d.id})));
 
-  // Frisch aus localStorage lesen (nicht die page-load-Konstante storedView)
+  // Frisch aus localStorage lesen
   const savedDepotId = localStorage.getItem("activeDepot");
   let savedView = null;
   try { savedView = JSON.parse(localStorage.getItem("activeView")); } catch {}
@@ -3987,6 +3984,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.12.5 · Backend v2.7.20",
+    changes: [
+      "Code-Cleanup: zwei verwaiste Konstanten (storedDepotId, storedView) entfernt — Relikte eines früheren Umbaus, die Wiederherstellungslogik liest seither frisch aus localStorage; keine funktionale Änderung"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.12.4 · Backend v2.7.19",
     changes: [
       "Wiederherstellung: ein versehentlicher Datei-Upload hatte app.py und index.html kurzzeitig auf einen älteren Stand zurückgesetzt (52-Wochen-Hoch/-Tief-Badge und der perf_1d-Kalendertag-Fix fehlten dadurch); beide Dateien sind jetzt wieder auf dem korrekten Stand"
@@ -5328,7 +5331,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.4 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
