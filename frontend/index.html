@@ -302,6 +302,9 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .notif-item.manual_refresh{border-left:3px solid var(--muted)}
 .notif-item.test{border-left:3px solid var(--green)}
 .notif-item.fail{border-left:3px solid var(--red)}
+.notif-day-sep{display:flex;align-items:center;gap:10px;margin:14px 0 2px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.notif-day-sep:first-child{margin-top:0}
+.notif-day-sep::before,.notif-day-sep::after{content:"";flex:1;height:1px;background:var(--border)}
 .notif-title{font-weight:600;font-size:13px;margin-bottom:2px}
 .notif-body{font-size:12px;color:var(--muted);white-space:pre-wrap}
 .notif-meta{font-size:11px;color:var(--muted);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
@@ -3955,14 +3958,33 @@ function _renderNotifList(){
     list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">Keine Einträge</div>';
     return;
   }
+  let lastDay = null;
   list.innerHTML = '<div class="notif-list">' + items.map(n=>{
+    const day = n.time.split(' ')[0]; // "DD.MM.YYYY"
+    let daySep = "";
+    if(day !== lastDay){
+      daySep = `<div class="notif-day-sep">${esc(_notifDayLabel(day))}</div>`;
+      lastDay = day;
+    }
     const userTag = n.user_name ? `<span style="font-size:10px;color:var(--accent);margin-left:6px">👤 ${n.user_name}</span>` : "";
-    return `<div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
+    return `${daySep}<div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
       <div class="notif-title">${typeLabel[n.type]||n.type} &nbsp; ${n.title}${userTag}</div>
       <div class="notif-body">${n.body}</div>
       <div class="notif-meta"><span>${n.time}</span><span>${n.success?"✓ OK":"✗ Fehler"}</span></div>
     </div>`;
   }).join("") + '</div>';
+}
+
+// Wandelt "DD.MM.YYYY" in "Heute" / "Gestern" / unverändertes Datum um,
+// für die Tages-Trenner im Verlauf.
+function _notifDayLabel(dayStr){
+  const [d,m,y] = dayStr.split('.').map(Number);
+  const date = new Date(y, m-1, d);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate()-1);
+  if(date.getTime() === today.getTime()) return "Heute";
+  if(date.getTime() === yesterday.getTime()) return "Gestern";
+  return dayStr;
 }
 
 
@@ -3983,6 +4005,12 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.12.6 · Backend v2.7.20",
+    changes: [
+      "Verlauf: Einträge werden jetzt durch Tages-Trenner gruppiert (Heute / Gestern / Datum) statt ununterbrochen ineinander überzugehen"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.12.5 · Backend v2.7.20",
     changes: [
@@ -5331,7 +5359,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
