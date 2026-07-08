@@ -3449,8 +3449,8 @@ function renderSectorOverview(stocks, basisStocks){
       </span>`;
   }).join("");
 
-  // Collapsed-State aus localStorage lesen
-  const collapsed = localStorage.getItem("sectorOverviewCollapsed") === "1";
+  // Collapsed-State aus localStorage lesen (Standard: eingeklappt, wie ATH-Übersicht)
+  const collapsed = localStorage.getItem("sectorOverviewCollapsed") !== "0";
   document.getElementById("sectorOverview").style.display  = collapsed ? "none" : "block";
   document.getElementById("sectorToggleIcon").textContent  = collapsed ? "▶" : "▼";
 }
@@ -4039,6 +4039,12 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.12.11 · Backend v2.7.20",
+    changes: [
+      "Bugfix: ATH-Übersicht und Sektor-Übersicht starteten auf einem neuen Gerät (leerer localStorage) fälschlich aufgeklappt statt eingeklappt — Standard ist jetzt konsistent \"eingeklappt\", wie bei der Portfolio-Übersicht und dem Portfolio-Verlauf"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.12.10 · Backend v2.7.20",
     changes: [
@@ -5434,8 +5440,8 @@ fetch(`${API}/health`).then(r=>r.json()).then(d=>{
 }).catch(()=>{});
 // Multi-User Init → danach loadDepots
 initUsers().then(ok => { if(ok) loadDepots(); });
-// ATH-Übersicht collapsed state
-if(localStorage.getItem("athOverviewCollapsed") === "1"){
+// ATH-Übersicht collapsed state (Standard: eingeklappt, außer explizit aufgeklappt gewählt)
+if(localStorage.getItem("athOverviewCollapsed") !== "0"){
   const b=document.getElementById("athOverviewBody"); if(b) b.style.display="none";
   const i=document.getElementById("athOverviewIcon"); if(i) i.textContent="▶";
 }
@@ -5451,7 +5457,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.10 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.11 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
