@@ -57,7 +57,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .view-badge{font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(168,85,247,.15);color:var(--purple)}
 
 /* Main */
-.main{padding:16px;max-width:1400px;margin:0 auto}
+.main{padding:16px}
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:7px;border:none;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
@@ -157,7 +157,7 @@ details[open] .help-summary::after{transform:rotate(90deg)}
 .wl-banner{background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:var(--purple);display:flex;align-items:center;gap:8px}
 
 /* Table */
-.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;max-width:min(96vw,2200px);margin:0 auto}
 .table-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap}
 .tbl-scroll{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 310px);-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:800px}
@@ -185,7 +185,7 @@ tr:hover td{background:var(--zebra-hover)!important}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
 .weight-wrap{display:flex;align-items:center;gap:6px;margin-top:3px}
 .snapshot-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
-.overview-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+.overview-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;max-width:min(96vw,2200px);margin-left:auto;margin-right:auto}
 .overview-group>div+div{border-top:1px solid var(--border)}
 #overviewChildren>div+div{border-top:1px solid var(--border)}
 .overview-parent-header{display:flex;align-items:center;padding:9px 16px;cursor:pointer;user-select:none;gap:8px;font-size:13px;font-weight:700}
@@ -4040,6 +4040,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.12.10 · Backend v2.7.20",
+    changes: [
+      "Depot-Ansicht (Tabelle/Karten/Treemap) sowie die Übersichten (Portfolio/ATH/Sektor/Verlauf) nutzen auf breiten Desktop-Monitoren jetzt deutlich mehr der verfügbaren Bildschirmbreite und laufen gemeinsam auf dieselbe Breite (vorher beide hart auf 1400px gedeckelt, dadurch auf 4K-Displays viel ungenutzter Platz links/rechts); Dialoge/Modals bleiben bewusst bei der bisherigen, kompakteren Breite"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.12.8 · Backend v2.7.20",
     changes: [
       "Ansicht-Dropdown: „Tabelle\" zeigte auf dem Smartphone bisher weiterhin die Karten-Ansicht (unverändertes Alt-Verhalten) — jetzt wird bei expliziter Auswahl von „Tabelle\" auch auf Mobile wirklich die Tabelle angezeigt (horizontal scrollbar). Ohne bisherige eigene Auswahl bleibt der bewährte Start mit Karten auf Mobile / Tabelle auf Desktop erhalten; erst ein bewusster Wechsel im Dropdown gilt geräteunabhängig."
@@ -5445,7 +5451,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.10 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
