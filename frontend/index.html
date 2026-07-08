@@ -15,15 +15,13 @@
   --text:#e2e6f0;--muted:#7a829a;--accent:#4e7cf6;--accent2:#2a4db5;
   --green:#22c55e;--yellow:#eab308;--orange:#f97316;--red:#ef4444;
   --purple:#a855f7;
-  --green-bg:rgba(34,197,94,.09);--yellow-bg:rgba(234,179,8,.09);
-  --orange-bg:rgba(249,115,22,.1);--red-bg:rgba(239,68,68,.1);
+  --zebra:rgba(255,255,255,.06);--zebra-hover:rgba(255,255,255,.1);
   --radius:10px;
 }
 :root.light{
   --bg:#f4f6fb;--bg2:#ffffff;--bg3:#edf0f7;--border:#d5daea;
   --text:#1a1d2e;--muted:#6b7280;--accent:#3b6cf0;--accent2:#2a4db5;
-  --green-bg:rgba(34,197,94,.1);--yellow-bg:rgba(234,179,8,.1);
-  --orange-bg:rgba(249,115,22,.12);--red-bg:rgba(239,68,68,.1);
+  --zebra:rgba(0,0,0,.045);--zebra-hover:rgba(0,0,0,.07);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}
@@ -70,6 +68,19 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .btn-purple{background:rgba(168,85,247,.15);color:var(--purple);border:1px solid rgba(168,85,247,.3)}
 .btn-purple:hover{background:rgba(168,85,247,.25)}
 .btn-danger{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+/* Ansicht-Dropdown (Tabelle/Karten/Treemap) */
+.view-select{position:relative}
+.view-select-btn{display:inline-flex;align-items:center;gap:6px}
+.view-chev{font-size:9px;color:var(--muted);transition:transform .15s}
+.view-select-btn.open .view-chev{transform:rotate(180deg)}
+.view-menu{display:none;position:absolute;top:calc(100% + 5px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:160px;overflow:hidden;z-index:50}
+.view-menu.open{display:block}
+.view-opt{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12.5px;cursor:pointer;color:var(--text)}
+.view-opt:hover{background:var(--bg3)}
+.view-opt.active{color:var(--accent);font-weight:600}
+.view-opt-ic{width:16px;text-align:center;flex-shrink:0}
+.view-opt-chk{margin-left:auto;color:var(--accent);opacity:0}
+.view-opt.active .view-opt-chk{opacity:1}
 .btn-danger:hover{background:rgba(239,68,68,.2)}
 .btn-sm{padding:5px 10px;font-size:12px}
 .btn:disabled{opacity:.4;cursor:default}
@@ -160,11 +171,16 @@ th.sorted .sa{opacity:1;color:var(--accent)}
 td{padding:10px 12px;text-align:right;border-bottom:1px solid rgba(42,47,66,.5);vertical-align:middle}
 td:first-child{text-align:left}
 tr:last-child td{border-bottom:none}
-tr:hover td{background:rgba(255,255,255,.015)}
-.row-green{background:var(--green-bg)}
-.row-yellow{background:var(--yellow-bg)}
-.row-orange{background:var(--orange-bg)}
-.row-red{background:var(--red-bg)}
+#tBody tr:nth-child(even) td{background:var(--zebra)}
+tr:hover td{background:var(--zebra-hover)!important}
+#tBody tr.row-green td:first-child{box-shadow:inset 3px 0 0 0 var(--green)}
+#tBody tr.row-yellow td:first-child{box-shadow:inset 3px 0 0 0 var(--yellow)}
+#tBody tr.row-orange td:first-child{box-shadow:inset 3px 0 0 0 var(--orange)}
+#tBody tr.row-red td:first-child{box-shadow:inset 3px 0 0 0 var(--red)}
+.stock-card.row-green{box-shadow:inset 3px 0 0 0 var(--green)}
+.stock-card.row-yellow{box-shadow:inset 3px 0 0 0 var(--yellow)}
+.stock-card.row-orange{box-shadow:inset 3px 0 0 0 var(--orange)}
+.stock-card.row-red{box-shadow:inset 3px 0 0 0 var(--red)}
 .sn{font-weight:600}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
 .weight-wrap{display:flex;align-items:center;gap:6px;margin-top:3px}
@@ -264,7 +280,9 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .card-level.bought{border:0.5px solid rgba(24,95,165,.3);background:rgba(24,95,165,.07)}
 .card-level-bought{font-size:11px;line-height:1;margin-top:2px}
 .card-actions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap}
-@media(max-width:640px){.tbl-scroll{display:none}.cards-view{display:block}.topbar-right .btn-ghost{padding:6px 8px}.btn-label{display:none}}
+.cards-view.grid-mode{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
+.cards-view.grid-mode .stock-card{margin-bottom:0}
+@media(max-width:640px){.topbar-right .btn-ghost{padding:6px 8px}.btn-label{display:none}}
 @media(max-width:640px){#stockSearchWrap{display:none!important}#mobileSearchTrigger{display:inline-flex!important}}
 /* Empty */
 .empty{padding:48px 20px;text-align:center;color:var(--muted)}
@@ -504,7 +522,16 @@ select</style>
               style="display:none">&#128269; ATH prüfen</button>
       <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()" title="Nachkauf-Kandidaten anzeigen">🛒 Nachkauf</button>
       <button class="btn btn-ghost btn-sm" id="sectorFilterBtn" onclick="openSectorFilterDropdown(event)" title="Nach Sektor filtern" style="display:none">🏷️ Sektor</button>
-      <button class="btn btn-ghost btn-sm" id="viewToggleBtn" onclick="toggleViewMode()" title="Ansicht wechseln" style="display:none">⊞ Treemap</button>
+      <div class="view-select" id="viewSelect" style="display:none">
+        <button class="btn btn-ghost btn-sm view-select-btn" id="viewSelectBtn" onclick="toggleViewMenu(event)" title="Ansicht wechseln">
+          <span id="viewSelectLabel">☰ Tabelle</span><span class="view-chev">▾</span>
+        </button>
+        <div class="view-menu" id="viewMenu">
+          <div class="view-opt active" data-view="table" onclick="setViewMode('table')"><span class="view-opt-ic">☰</span> Tabelle <span class="view-opt-chk">✓</span></div>
+          <div class="view-opt" data-view="grid" onclick="setViewMode('grid')"><span class="view-opt-ic">🗂</span> Karten <span class="view-opt-chk">✓</span></div>
+          <div class="view-opt" id="viewOptTreemap" data-view="treemap" onclick="setViewMode('treemap')" style="display:none"><span class="view-opt-ic">⊞</span> Treemap <span class="view-opt-chk">✓</span></div>
+        </div>
+      </div>
       <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center;margin-left:auto">
         <span style="position:absolute;left:8px;font-size:13px;color:var(--muted);pointer-events:none">🔍</span>
         <input id="stockSearchInput" type="text" placeholder="Suchen…" autocomplete="off"
@@ -2460,9 +2487,16 @@ function renderTable(stocks, basisStocks){
   }
   empty.style.display="none"; tscrl.style.display="";
 
-  // View-Toggle: nur für Bestand sichtbar (nicht Watchlist), mindestens 2 Positionen
-  const vtBtn = document.getElementById("viewToggleBtn");
-  if(vtBtn) vtBtn.style.display = (!isWl() && stocks.length >= 2) ? "" : "none";
+  // Ansicht-Dropdown: immer sichtbar; Treemap-Option nur für Bestand ab 2 Positionen
+  const viewSelect = document.getElementById("viewSelect");
+  if(viewSelect) viewSelect.style.display = "";
+  const treemapAvailable = !isWl() && stocks.length >= 2;
+  const viewOptTreemap = document.getElementById("viewOptTreemap");
+  if(viewOptTreemap) viewOptTreemap.style.display = treemapAvailable ? "" : "none";
+  if(!treemapAvailable && _viewMode === "treemap"){
+    _viewMode = "table";
+    localStorage.setItem("depotViewMode", _viewMode);
+  }
   // Treemap-Daten für den Fall eines späteren Wechsels vorab speichern
   _lastStocksForTreemap = stocks;
 
@@ -4006,6 +4040,21 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.12.8 · Backend v2.7.20",
+    changes: [
+      "Ansicht-Dropdown: „Tabelle\" zeigte auf dem Smartphone bisher weiterhin die Karten-Ansicht (unverändertes Alt-Verhalten) — jetzt wird bei expliziter Auswahl von „Tabelle\" auch auf Mobile wirklich die Tabelle angezeigt (horizontal scrollbar). Ohne bisherige eigene Auswahl bleibt der bewährte Start mit Karten auf Mobile / Tabelle auf Desktop erhalten; erst ein bewusster Wechsel im Dropdown gilt geräteunabhängig."
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.12.7 · Backend v2.7.20",
+    changes: [
+      "Discount-Stufen (grün/gelb/orange/rot) werden in Tabelle und Karten jetzt als schmaler linker Farb-Akzent statt als Vollflächen-Tönung dargestellt — dadurch wirkt die Übersicht ruhiger und lässt Raum für ein Zebra-Muster",
+      "Neu: dezentes Zebra-Muster in der Depot-Tabelle (jede zweite Zeile leicht abgesetzt) für bessere Zeilen-Zuordnung beim Scannen; Kontrast im Dark Mode kräftiger als im Light Mode abgestimmt",
+      "Neu: Kartenraster-Ansicht auch für Desktop — bisher nur auf Mobilgeräten verfügbar, jetzt als mehrspaltiges Grid auch am großen Bildschirm wählbar (identische Felder wie Tabelle/Mobile-Karte, keine Informationslücke)",
+      "Der bisherige einzelne „⊞ Treemap\"-Button in der Aktionsleiste ist einem „Ansicht\"-Dropdown gewichen, das zwischen Tabelle, Karten und Treemap umschaltet (Häkchen zeigt die aktive Ansicht); Treemap bleibt wie bisher auf den Bestand ab 2 Positionen beschränkt, Karten und Tabelle sind auch für Watchlists wählbar"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.12.6 · Backend v2.7.20",
     changes: [
       "Verlauf: Einträge werden jetzt durch Tages-Trenner gruppiert (Heute / Gestern / Datum) statt ununterbrochen ineinander überzugehen"
@@ -4341,36 +4390,73 @@ async function updateHealthStatusDot(){
   } catch(e){ /* Bei Netzwerkfehler Dot grau lassen */ }
 }
 
-// ── Treemap-Ansicht ───────────────────────────────────────────────
-let _viewMode = localStorage.getItem("depotViewMode") || "table"; // "table" | "treemap"
+// ── Ansicht-Dropdown (Tabelle / Karten / Treemap) ─────────────────
+// Ohne bisherige explizite Auswahl: Mobile startet mit Karten (bisheriges Verhalten
+// für Bestandsnutzer), Desktop mit Tabelle. Einmal explizit gewählt (setViewMode),
+// gilt die Wahl geräteunabhängig — inkl. echter, horizontal scrollbarer Tabelle auf Mobile.
+let _viewMode = localStorage.getItem("depotViewMode") || (window.innerWidth <= 640 ? "grid" : "table");
 
-function toggleViewMode(){
-  _viewMode = _viewMode === "table" ? "treemap" : "table";
+function toggleViewMenu(e){
+  e.stopPropagation();
+  const menu = document.getElementById("viewMenu");
+  const btn = document.getElementById("viewSelectBtn");
+  const isOpen = menu.classList.toggle("open");
+  btn.classList.toggle("open", isOpen);
+}
+document.addEventListener("click", ()=>{
+  document.getElementById("viewMenu")?.classList.remove("open");
+  document.getElementById("viewSelectBtn")?.classList.remove("open");
+});
+
+function setViewMode(mode){
+  const viewOptTreemap = document.getElementById("viewOptTreemap");
+  if(mode === "treemap" && viewOptTreemap && viewOptTreemap.style.display === "none") return;
+  _viewMode = mode;
   localStorage.setItem("depotViewMode", _viewMode);
   _applyViewMode();
   if(_viewMode === "treemap" && typeof d3 !== "undefined") renderTreemap(_lastStocksForTreemap||[]);
+  document.getElementById("viewMenu")?.classList.remove("open");
+  document.getElementById("viewSelectBtn")?.classList.remove("open");
+}
+
+function _updateViewMenuUI(){
+  const labels = {table:"☰ Tabelle", grid:"🗂 Karten", treemap:"⊞ Treemap"};
+  const lbl = document.getElementById("viewSelectLabel");
+  if(lbl) lbl.textContent = labels[_viewMode] || labels.table;
+  document.querySelectorAll(".view-opt").forEach(o=>{
+    o.classList.toggle("active", o.dataset.view === _viewMode);
+  });
 }
 
 function _applyViewMode(){
-  const btn = document.getElementById("viewToggleBtn");
   const tblWrap = document.querySelector(".tbl-scroll");
   const cardsView = document.getElementById("cardsView");
   const treemapView = document.getElementById("treemapView");
   const sortBar = document.getElementById("sortBar");
   const isMobile = window.innerWidth <= 640;
+
+  if(cardsView) cardsView.classList.remove("grid-mode");
+
   if(_viewMode === "treemap"){
     if(tblWrap) tblWrap.style.display = "none";
     if(cardsView) cardsView.style.display = "none";
     if(sortBar) sortBar.style.display = "none";
     if(treemapView) treemapView.style.display = "block";
-    if(btn) btn.innerHTML = "☰ Tabelle";
-  } else {
-    if(tblWrap) tblWrap.style.display = isMobile ? "none" : "";
-    if(cardsView) cardsView.style.display = isMobile ? "" : "none";
-    if(sortBar) sortBar.style.display = isMobile ? "flex" : "none";
+  } else if(_viewMode === "grid"){
+    if(tblWrap) tblWrap.style.display = "none";
     if(treemapView) treemapView.style.display = "none";
-    if(btn) btn.innerHTML = "⊞ Treemap";
+    if(cardsView){
+      cardsView.style.display = isMobile ? "block" : "grid";
+      if(!isMobile) cardsView.classList.add("grid-mode");
+    }
+    if(sortBar) sortBar.style.display = "flex";
+  } else { // "table" — echte Tabelle, auf Mobile mit horizontalem Scroll (.tbl-scroll unterstützt das bereits)
+    if(tblWrap) tblWrap.style.display = "";
+    if(cardsView) cardsView.style.display = "none";
+    if(treemapView) treemapView.style.display = "none";
+    if(sortBar) sortBar.style.display = isMobile ? "flex" : "none";
   }
+  _updateViewMenuUI();
 }
 
 let _lastStocksForTreemap = [];
@@ -5359,7 +5445,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.8 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
