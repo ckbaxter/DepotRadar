@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.7.15-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.12.2-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.7.21-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.12.14-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -31,7 +31,11 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Kompakte Übersichten** — ATH-, Portfolio- und Sektor-Übersicht sowie Portfolio-Verlauf in einer gemeinsam einklappbaren Ansicht, jede Sektion unabhängig auf-/zuklappbar
 - **Portfolio-Gewichtung** — Balken und %-Wert pro Aktie zeigen die relative Gewichtung im Depot; sortierbar
 - **Portfolio-Verlauf** — täglicher Snapshot des Gesamtwerts; interaktives Liniendiagramm mit Zeitraum-Filter (1W/1M/3M/6M/1J/Alles); Datenpunkte per Antippen/Hovern abrufbar (Datum + exakter Wert), lange Zeiträume werden automatisch reduziert; **Invested-Capital-Kurve** zeigt den kumulierten Einstandswert als gestrichelte Linie (nur bei Positionen mit bekanntem Einstandskurs)
-- **Treemap-Ansicht** — alternative Darstellung des Depots als Flächenkarte; Kachelgröße = Positionswert, Farbe = ATH-Discount-Stufe; Toggle ⊞ Treemap / ☰ Tabelle in der Aktionsleiste (nur Bestand, ab 2 Positionen)
+- **Ansicht-Dropdown (Tabelle / Karten / Treemap)** — ein Dropdown in der Aktionsleiste schaltet zwischen drei gleichwertigen Darstellungen um; die Wahl wird geräteunabhängig gemerkt (`localStorage`). Ohne bisherige Auswahl startet Mobile mit Karten, Desktop mit Tabelle
+- **Kartenraster** — vollwertige Kartenansicht mit identischen Feldern wie die Tabelle, jetzt auch auf Desktop als mehrspaltiges Grid wählbar (vorher nur Mobile-Ansicht)
+- **Treemap-Ansicht** — alternative Darstellung des Depots als Flächenkarte; Kachelgröße = Positionswert, Farbe = ATH-Discount-Stufe (nur Bestand, ab 2 Positionen, nicht für Watchlists)
+- **Zeilenfarben** — Discount-Stufen werden als schmaler linker Farb-Akzent statt Vollflächen-Tönung dargestellt; zusätzlich dezentes Zebra-Muster in der Depot-Tabelle für bessere Lesbarkeit
+- **52-Wochen-Hoch/-Tief-Badge** — `52W-H`/`52W-T` neben den Performance-Badges, wenn der Kurs innerhalb 3% des 52-Wochen-Hochs bzw. -Tiefs liegt
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
 - **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
@@ -47,9 +51,10 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
-- **Tägliche ATH-Zusammenfassung** — optional pro Depot aktivierbar; fasst um 21 Uhr zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); nutzt dieselben Apprise-URLs wie normale Alarme
-- **System-Status** — Gesundheits-Dashboard im Footer; zeigt Scheduler-Status, Laufzeit, Refresh-Statistiken, Yahoo Finance-Erfolgsquote und Fehler-Log der letzten 20 Abfragefehler
-- **Verlauf** — vollständiger Aktivitätsverlauf mit Filter nach Benutzer und Eintragstyp
+- **Tägliche ATH-Zusammenfassung** — optional pro Depot aktivierbar, läuft nur Montag–Freitag; fasst zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); nutzt dieselben Apprise-URLs wie normale Alarme
+- **Zeitplanung pro Benutzer** — Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen Zusammenfassung werden im eigenen Benutzerprofil eingestellt, nicht mehr global — jeder Benutzer im Haushalt kann so einen eigenen Zeitpunkt wählen
+- **System-Status** — Gesundheits-Dashboard im Footer; zeigt Scheduler-Status, Laufzeit, Refresh-Statistiken, Yahoo Finance-Erfolgsquote, Yahoo-Cache-Trefferquote und Fehler-Log der letzten 20 Abfragefehler
+- **Verlauf** — vollständiger Aktivitätsverlauf mit Filter nach Benutzer und Eintragstyp, gruppiert nach Tages-Trennern (Heute/Gestern/Datum)
 - **Letzte Änderungen** — Changelog direkt in der App abrufbar (Footer-Link)
 - **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten und Wochenbericht direkt in der App konfigurierbar
 - **Dark / Light Mode**
@@ -183,8 +188,10 @@ Beim ersten Start wird das erste Benutzerprofil angelegt — ein PIN ist dabei o
 - Sobald ein PIN gesetzt ist oder mehrere Benutzer existieren, erscheint die Benutzerauswahl
 - Nach dem Login sieht man nur die eigenen Depots und Watchlists
 - Benachrichtigungs-Einstellungen (Apprise-URLs, Mention, Bestätigungsmodus) werden ausschließlich pro Benutzer konfiguriert — es gibt keine separate Depot-Ebene dafür
-- Ein/Aus-Schalter und Wochenbericht-Teilnahme bleiben pro Depot konfigurierbar (unabhängig vom Benutzer-Modell, da ein Benutzer mehrere Depots mit unterschiedlichem Bedarf haben kann)
-- Neue Depots werden automatisch dem eingeloggten Benutzer zugeordnet
+- Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen ATH-Zusammenfassung liegen ebenfalls auf dem Benutzer (Standard: Sonntag 20:00 bzw. 21:00) — jeder Benutzer kann so einen eigenen Zeitpunkt wählen
+- Ein/Aus-Schalter sowie Wochenbericht-/Tageszusammenfassung-Teilnahme bleiben pro Depot konfigurierbar (unabhängig vom Benutzer-Modell, da ein Benutzer mehrere Depots mit unterschiedlichem Bedarf haben kann)
+- Das Benutzer-Bearbeiten-Formular ist in aufklappbare Sektionen gegliedert (👤 Profil, 🔔 Benachrichtigungen, 🕘 Zusammenfassungen)
+- Neue Depots werden automatisch dem eingeloggten Benutzer zugeordnet; die Depot-Zuordnungsauswahl beim Neu-Anlegen eines Benutzers erscheint nur noch, solange es tatsächlich unzugeordnete Depots gibt
 - Jeder Benutzer kann neue Benutzer anlegen; eigene Einstellungen und PIN kann jeder selbst verwalten
 
 -----
@@ -199,11 +206,10 @@ Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
 | Zeitzone                      | Für korrekte Handelszeiten-Berechnung                     |
 | Handelstage                   | An welchen Tagen aktualisiert wird                        |
 | Handelszeiten                 | Zwischen welchen Uhrzeiten aktualisiert wird              |
-| Wöchentliche Zusammenfassung  | Wochentag und Uhrzeit (Ein/Aus läuft pro Depot, siehe unten) |
 | Verlaufsbereinigung           | Aufbewahrungszeitraum für Benachrichtigungshistorie       |
 | Aktiensplits                  | Splits hinzufügen und verwalten                           |
 
-Benachrichtigungen selbst werden **nicht** global geschaltet: Apprise-URLs, Mention und Bestätigungsmodus liegen ausschließlich beim Benutzer (Benutzer-Icon oben rechts), Ein/Aus sowie Wochenbericht-Teilnahme bleiben pro Depot (Depot-Einstellungen → ⚙).
+Benachrichtigungen selbst werden **nicht** global geschaltet: Apprise-URLs, Mention und Bestätigungsmodus liegen ausschließlich beim Benutzer (Benutzer-Icon oben rechts). Dort werden auch Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen ATH-Zusammenfassung eingestellt (pro Benutzer, Standard So 20:00 bzw. 21:00). Ein/Aus sowie Wochenbericht-/Tageszusammenfassung-Teilnahme bleiben pro Depot (Depot-Einstellungen → ⚙).
 
 -----
 
@@ -288,8 +294,9 @@ Vor jedem Sync wird automatisch ein Backup der Depot-Datei angelegt. Rückgängi
 
 ## Benachrichtigungen (Apprise)
 
-- **Apprise-URLs, Mention, Bestätigungsmodus** — ausschließlich pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten)
-- **Ein/Aus, Wochenbericht-Teilnahme** — pro Depot (Depot-Einstellungen → ⚙)
+- **Apprise-URLs, Mention, Bestätigungsmodus, Zeitplan (Wochenbericht-Tag/-Uhrzeit, Uhrzeit der täglichen Zusammenfassung)** — ausschließlich pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten, gegliedert in die Sektionen 👤 Profil / 🔔 Benachrichtigungen / 🕘 Zusammenfassungen)
+- **Ein/Aus, Wochenbericht-/Tageszusammenfassung-Teilnahme** — pro Depot (Depot-Einstellungen → ⚙)
+- Die tägliche ATH-Zusammenfassung läuft grundsätzlich nur Montag–Freitag
 
 Unterstützte Dienste (Auswahl):
 
@@ -320,6 +327,17 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.7.21 / 2.12.14 | Depot-Zuordnungsauswahl beim Neuer-Benutzer-Dialog erscheint nur noch, solange es unzugeordnete Depots gibt — neue Benutzer legen sich ihr Depot künftig selbst an |
+| 2.7.21 / 2.12.13 | Benutzer-Bearbeiten-Formular in drei aufklappbare Sektionen gegliedert (👤 Profil / 🔔 Benachrichtigungen / 🕘 Zusammenfassungen); zugeklappte Sektionen zeigen den Ist-Zustand kompakt im Header |
+| 2.7.21 / 2.12.12 | Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen ATH-Zusammenfassung liegen jetzt userbezogen auf dem Benutzerprofil statt global; der bisherige globale Enable-Schalter entfällt; neue Defaults So 20:00 / 21:00 |
+| 2.7.20 / 2.12.11 | Bugfix: ATH-Übersicht und Sektor-Übersicht starteten auf einem neuen Gerät fälschlich aufgeklappt statt eingeklappt |
+| 2.7.20 / 2.12.10 | Depot-Ansicht und Übersichten nutzen auf breiten Desktop-Monitoren mehr der verfügbaren Bildschirmbreite (vorher hart auf 1400px gedeckelt) |
+| 2.7.20 / 2.12.8 | Bugfix Ansicht-Dropdown: „Tabelle" zeigte auf dem Smartphone weiterhin die Karten-Ansicht — bei expliziter Auswahl wird jetzt auch auf Mobile die echte, horizontal scrollbare Tabelle gerendert |
+| 2.7.20 / 2.12.7 | Discount-Stufen als schmaler linker Farb-Akzent statt Vollflächen-Tönung + neues Zebra-Muster in der Tabelle; Kartenraster jetzt auch für Desktop; bisheriger Treemap-Toggle-Button durch „Ansicht"-Dropdown (Tabelle/Karten/Treemap) ersetzt |
+| 2.7.20 / 2.12.6 | Verlauf: Einträge werden durch Tages-Trenner gruppiert (Heute/Gestern/Datum) |
+| 2.7.20 / 2.12.5 | Code-Cleanup: zwei verwaiste Konstanten entfernt, keine funktionale Änderung |
+| 2.7.19 / 2.12.4 | Wiederherstellung nach versehentlichem GitHub-Web-UI-Upload, der app.py/index.html kurzzeitig auf einen älteren Stand zurückgesetzt hatte (52-Wochen-Badge und perf_1d-Fix waren dadurch kurzzeitig verschwunden) |
+| 2.7.16 / 2.12.3 | Neu: 52-Wochen-Hoch/-Tief-Badge (`52W-H`/`52W-T`) neben den Performance-Badges; zusätzlich `perf_1d`-Kalendertag-Fix (kein rollierendes 24h-Fenster mehr, sondern fester Vergleich gegen den letzten Schlusskurs vor dem heutigen Kalendertag) |
 | 2.7.15 / 2.12.2 | Hilfe: Kaufbudget-Tabelle (Discount-Multiplikator) durch mobile-taugliche Kartenansicht ersetzt — vorherige 3-Spalten-Tabelle lief auf iPad/Smartphone aus dem Rahmen |
 | 2.7.15 / 2.12.1 | Hilfe: neue Abschnitte für Tägliche und Wöchentliche Zusammenfassung ergänzt (fehlten bisher komplett); Kaufbudget-Abschnitt um Discount-Multiplikator-Tabelle erweitert; Apprise-Abschnitt erklärt Ein/Aus-Schalter pro Depot |
 | 2.7.15 / 2.12.0 | Neu: Tägliche ATH-Zusammenfassung — optional pro Depot aktivierbar, fasst um 21 Uhr die heutigen Discount- und ATH-Alarme zusammen (auch als „keine Alarme"-Meldung) |
