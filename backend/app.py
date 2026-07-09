@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.20"
+VERSION           = "2.7.21"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -118,6 +118,32 @@ def hash_pin(pin):
 def load_users():  return _load_json(USERS_FILE, [])
 def save_users(u): _save_json(USERS_FILE, u)
 
+# Defaults für die (seit v2.7.21) userbezogene Wochenbericht-/Tageszusammenfassungs-Zeit.
+# Die Aktivierung selbst bleibt weiterhin ausschließlich pro Depot (weekly_digest/daily_ath_digest).
+_DIGEST_DAY_DEFAULT         = 6        # 0=Mo … 6=So
+_DIGEST_TIME_DEFAULT        = "20:00"
+_DAILY_DIGEST_TIME_DEFAULT  = "21:00"
+
+def _parse_hhmm(value, fallback):
+    try:
+        h, m = map(int, str(value).split(":"))
+        if 0 <= h <= 23 and 0 <= m <= 59: return h, m
+    except Exception:
+        pass
+    fh, fm = map(int, fallback.split(":"))
+    return fh, fm
+
+def get_user_digest_settings(user):
+    """Liefert (digest_day, digest_time, daily_digest_time) für einen User inkl. Defaults —
+    Sonntag 20:00 für den Wochenbericht, 21:00 für die tägliche ATH-Zusammenfassung."""
+    day  = user.get("digest_day", _DIGEST_DAY_DEFAULT)
+    try: day = int(day)
+    except Exception: day = _DIGEST_DAY_DEFAULT
+    if not (0 <= day <= 6): day = _DIGEST_DAY_DEFAULT
+    time_  = user.get("digest_time", _DIGEST_TIME_DEFAULT) or _DIGEST_TIME_DEFAULT
+    dtime_ = user.get("daily_digest_time", _DAILY_DIGEST_TIME_DEFAULT) or _DAILY_DIGEST_TIME_DEFAULT
+    return day, time_, dtime_
+
 def get_depot_user(depot_id):
     for u in load_users():
         if depot_id in u.get("depots", []):
@@ -142,9 +168,6 @@ def load_settings():
     s = {
         "refresh_interval":      _CFG_DEF["refresh_interval_seconds"],
         "notifications_enabled": True,
-        "digest_enabled":        False,
-        "digest_day":            6,
-        "digest_time":           "18:00",
         "verlauf_retention_days": 60,
         "timezone":              _CFG_DEF["timezone"],
         "trading":               {
@@ -159,7 +182,7 @@ def load_settings():
         with open(SETTINGS_FILE, encoding="utf-8") as f:
             saved = json.load(f)
         for key in ("notifications_enabled", "refresh_interval", "timezone", "next_refresh_ts",
-                    "verlauf_retention_days", "digest_enabled", "digest_day", "digest_time"):
+                    "verlauf_retention_days"):
             if key in saved: s[key] = saved[key]
         if "trading" in saved:
             s["trading"].update(saved["trading"])
@@ -235,9 +258,44 @@ def delete_user_from_env():
     log.info(f"User '{target['name']}' via DELETE_USER gelöscht ({len(exclusive)} Depot(s) entfernt)")
 
 def migrate_if_needed():
-    """Stellt sicher dass splits.json existiert. Alle Datenmigration bereits abgeschlossen."""
+    """Stellt sicher dass splits.json existiert. Migriert außerdem einmalig die bisherigen
+    globalen Wochenbericht-Einstellungen (digest_day/digest_time aus settings.json) auf alle
+    bestehenden User (seit v2.7.21 sind Wochentag/Uhrzeit userbezogen). Ein Marker in
+    settings.json verhindert, dass diese Migration bei späteren Neustarts spätere manuelle
+    User-Änderungen überschreibt."""
     if not os.path.exists(SPLITS_FILE):
         load_splits()
+
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+    else:
+        raw = {}
+
+    if not raw.get("_migrated_user_digest_settings", False):
+        legacy_day  = raw.get("digest_day",  _DIGEST_DAY_DEFAULT)
+        legacy_time = raw.get("digest_time", _DIGEST_TIME_DEFAULT)
+        users = load_users()
+        changed = False
+        for u in users:
+            if "digest_day" not in u:
+                u["digest_day"] = legacy_day
+                changed = True
+            if "digest_time" not in u:
+                u["digest_time"] = legacy_time
+                changed = True
+            if "daily_digest_time" not in u:
+                u["daily_digest_time"] = _DAILY_DIGEST_TIME_DEFAULT
+                changed = True
+        if changed:
+            save_users(users)
+            log.info("Migration: Wochenbericht-Tag/-Zeit von settings.json auf bestehende User übertragen")
+
+        raw.pop("digest_enabled", None)
+        raw.pop("digest_day", None)
+        raw.pop("digest_time", None)
+        raw["_migrated_user_digest_settings"] = True
+        _save_json(SETTINGS_FILE, raw)
 
 # ── Discount / Notification logic ─────────────────────────────────
 def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
@@ -1287,12 +1345,18 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits):
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
-def send_daily_ath_digests():
-    """Sendet die tägliche 21-Uhr-Zusammenfassung (Discount- + ATH-Alarme, auch bei
-    null Treffern) an alle Depots die daily_ath_digest aktiviert haben."""
-    log.info("Tägliche ATH-Zusammenfassung wird versendet…")
+def send_daily_ath_digests(user_id):
+    """Sendet die tägliche ATH-Zusammenfassung (Discount- + ATH-Alarme, auch bei null
+    Treffern) für alle Depots eines einzelnen Users, die daily_ath_digest aktiviert haben.
+    Seit v2.7.21 ein Job pro User (Uhrzeit ist userbezogen konfigurierbar), daher hier auf
+    die Depots des jeweiligen Users beschränkt statt global über alle Depots zu iterieren."""
+    users = load_users()
+    user  = next((u for u in users if u["id"] == user_id), None)
+    if not user: return
+    log.info(f"Tägliche ATH-Zusammenfassung wird versendet (User '{user.get('name','?')}')…")
     depots = load_depots()
     for dc in depots:
+        if dc["id"] not in user.get("depots", []): continue
         if not dc.get("daily_ath_digest", False): continue
         did = dc["id"]
         urls, mention, _confirm = resolve_notification_settings(did)
@@ -1306,13 +1370,17 @@ def send_daily_ath_digests():
         send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc["id"])
 
 
-def send_weekly_digests():
-    """Sendet den Wochenbericht an alle Depots die es aktiviert haben."""
-    s = load_settings()
-    if not s.get("digest_enabled", False): return
-    log.info("Wöchentlicher Digest wird versendet…")
+def send_weekly_digests(user_id):
+    """Sendet den Wochenbericht für alle Depots eines einzelnen Users, die ihn aktiviert
+    haben. Seit v2.7.21 ein Job pro User (Wochentag/Uhrzeit sind userbezogen konfigurierbar),
+    daher hier auf die Depots des jeweiligen Users beschränkt."""
+    users = load_users()
+    user  = next((u for u in users if u["id"] == user_id), None)
+    if not user: return
+    log.info(f"Wöchentlicher Digest wird versendet (User '{user.get('name','?')}')…")
     depots = load_depots()
     for dc in depots:
+        if dc["id"] not in user.get("depots", []): continue
         if not dc.get("weekly_digest", False): continue
         did = dc["id"]
         urls, mention, _confirm = resolve_notification_settings(did)
@@ -1326,39 +1394,48 @@ def send_weekly_digests():
             send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id'])
 
 
-def schedule_digest_job():
-    """Plant den Digest-Job anhand der aktuellen Einstellungen."""
-    s        = load_settings()
-    tz       = pytz.timezone(s.get("timezone", "Europe/Berlin"))
-    enabled  = s.get("digest_enabled", False)
-    day      = int(s.get("digest_day", 6))          # 0=Mo … 6=So
-    t        = s.get("digest_time", "18:00")
-    try:
-        hour, minute = map(int, t.split(":"))
-    except Exception:
-        hour, minute = 18, 0
-    # APScheduler day_of_week: 0=Mon … 6=Sun
-    dow_map  = {0:"mon",1:"tue",2:"wed",3:"thu",4:"fri",5:"sat",6:"sun"}
+# APScheduler day_of_week: 0=Mon … 6=Sun (gleiche Reihenfolge wie unser digest_day 0=Mo…6=So)
+_DOW_MAP = {0:"mon",1:"tue",2:"wed",3:"thu",4:"fri",5:"sat",6:"sun"}
+
+def schedule_user_digest_jobs(user):
+    """Plant Wochenbericht- und Tageszusammenfassungs-Job für genau einen User anhand seiner
+    eigenen digest_day/digest_time/daily_digest_time-Einstellungen (Default: So 20:00 bzw.
+    21:00). Die Aktivierung selbst bleibt pro Depot (weekly_digest/daily_ath_digest) — die
+    Jobs laufen für jeden User unabhängig davon, ob aktuell ein Depot angehakt ist, und prüfen
+    das erst beim Versand (analog zum bisherigen globalen Verhalten)."""
+    uid  = user["id"]
+    s    = load_settings()
+    tz   = pytz.timezone(s.get("timezone", "Europe/Berlin"))
+    day, wtime, dtime = get_user_digest_settings(user)
+    wh, wm = _parse_hhmm(wtime, _DIGEST_TIME_DEFAULT)
+    dh, dm = _parse_hhmm(dtime, _DAILY_DIGEST_TIME_DEFAULT)
+
     scheduler.add_job(
         send_weekly_digests, CronTrigger(
-            day_of_week=dow_map[day], hour=hour, minute=minute, timezone=tz),
-        id="weekly_digest", replace_existing=True, misfire_grace_time=None)
-    log.info(f"Digest-Job geplant: {dow_map[day]} {hour:02d}:{minute:02d} ({'aktiv' if enabled else 'inaktiv — Job läuft, prüft intern'})")
+            day_of_week=_DOW_MAP[day], hour=wh, minute=wm, timezone=tz),
+        args=[uid], id=f"weekly_digest_{uid}", replace_existing=True, misfire_grace_time=None)
 
-
-def schedule_daily_ath_digest_job():
-    """Plant den täglichen ATH-Zusammenfassungs-Job auf feste 21:00 Uhr,
-    nur Montag–Freitag (Zeitpunkt bewusst nicht konfigurierbar, siehe Absprache
-    — nur die konfigurierte Zeitzone wird berücksichtigt). Der Job feuert am
-    Wochenende gar nicht erst, statt zu feuern und eine leere Zusammenfassung
-    zu verwerfen."""
-    s  = load_settings()
-    tz = pytz.timezone(s.get("timezone", "Europe/Berlin"))
     scheduler.add_job(
         send_daily_ath_digests,
-        CronTrigger(hour=21, minute=0, day_of_week="mon-fri", timezone=tz),
-        id="daily_ath_digest", replace_existing=True, misfire_grace_time=None)
-    log.info("Tägliche ATH-Zusammenfassung geplant: 21:00 (Mo–Fr)")
+        CronTrigger(hour=dh, minute=dm, day_of_week="mon-fri", timezone=tz),
+        args=[uid], id=f"daily_ath_digest_{uid}", replace_existing=True, misfire_grace_time=None)
+
+    log.info(f"Digest-Jobs für User '{user.get('name','?')}' geplant: "
+             f"Wochenbericht {_DOW_MAP[day]} {wh:02d}:{wm:02d}, Tageszusammenfassung {dh:02d}:{dm:02d} (Mo–Fr)")
+
+
+def unschedule_user_digest_jobs(user_id):
+    """Entfernt beide Digest-Jobs eines Users (z.B. bei Löschung)."""
+    for job_id in (f"weekly_digest_{user_id}", f"daily_ath_digest_{user_id}"):
+        try: scheduler.remove_job(job_id)
+        except Exception: pass
+
+
+def schedule_all_user_digest_jobs():
+    """Plant die Digest-Jobs für alle vorhandenen User neu (z.B. beim Start oder wenn sich
+    die globale Zeitzone ändert, da die Cron-Trigger daran hängen)."""
+    for u in load_users():
+        schedule_user_digest_jobs(u)
 
 
 def start_scheduler():
@@ -1366,8 +1443,7 @@ def start_scheduler():
     _restore_last_refresh()
     scheduler.add_job(trading_window_check, "cron", minute="*", id="trading_check",
                       replace_existing=True, misfire_grace_time=None)
-    schedule_digest_job()
-    schedule_daily_ath_digest_job()
+    schedule_all_user_digest_jobs()
     if not scheduler.running: scheduler.start()
     log.info("Scheduler gestartet")
 
@@ -2502,10 +2578,13 @@ def update_settings():
         if "start_minute" in t: s["trading"]["start_minute"] = int(t["start_minute"])
         if "end_hour"     in t: s["trading"]["end_hour"]      = int(t["end_hour"])
         if "end_minute"   in t: s["trading"]["end_minute"]    = int(t["end_minute"])
-    if "digest_enabled" in body: s["digest_enabled"] = bool(body["digest_enabled"])
-    if "digest_day"     in body: s["digest_day"]     = int(body["digest_day"])
-    if "digest_time"    in body: s["digest_time"]    = str(body["digest_time"])
-    save_settings(s); schedule_digest_job(); schedule_daily_ath_digest_job(); return jsonify(s)
+    tz_changed = "timezone" in body and str(body["timezone"]) != load_settings().get("timezone")
+    save_settings(s)
+    # Wochenbericht/Tageszusammenfassung sind seit v2.7.21 userbezogen (siehe /api/users) —
+    # nur bei geänderter Zeitzone müssen die pro-User-Jobs neu geplant werden, da die
+    # Cron-Trigger daran hängen.
+    if tz_changed: schedule_all_user_digest_jobs()
+    return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
 def get_notifications(): return jsonify(list(reversed(load_notifications())))
@@ -2539,8 +2618,15 @@ def api_create_user():
         "apprise_urls":          body.get("apprise_urls", []),
         "notification_mention":  body.get("notification_mention", ""),
         "notification_confirm":  bool(body.get("notification_confirm", False)),
+        "digest_day":            _DIGEST_DAY_DEFAULT,
+        "digest_time":           _DIGEST_TIME_DEFAULT,
+        "daily_digest_time":     _DAILY_DIGEST_TIME_DEFAULT,
     }
+    if "digest_day"        in body: new_user["digest_day"]        = int(body["digest_day"])
+    if "digest_time"       in body: new_user["digest_time"]       = str(body["digest_time"])
+    if "daily_digest_time" in body: new_user["daily_digest_time"] = str(body["daily_digest_time"])
     users.append(new_user); save_users(users)
+    schedule_user_digest_jobs(new_user)
     return jsonify({**{k: v for k, v in new_user.items() if k != "pin_hash"},
                     "has_pin": bool(new_user.get("pin_hash"))}), 201
 
@@ -2556,7 +2642,15 @@ def api_update_user(user_id):
     if "apprise_urls"         in body: user["apprise_urls"]        = body["apprise_urls"]
     if "notification_mention" in body: user["notification_mention"]= body["notification_mention"]
     if "notification_confirm" in body: user["notification_confirm"]= bool(body["notification_confirm"])
+    digest_changed = False
+    if "digest_day" in body:
+        user["digest_day"] = int(body["digest_day"]); digest_changed = True
+    if "digest_time" in body:
+        user["digest_time"] = str(body["digest_time"]); digest_changed = True
+    if "daily_digest_time" in body:
+        user["daily_digest_time"] = str(body["daily_digest_time"]); digest_changed = True
     save_users(users)
+    if digest_changed: schedule_user_digest_jobs(user)
     return jsonify({**{k: v for k, v in user.items() if k != "pin_hash"},
                     "has_pin": bool(user.get("pin_hash"))})
 
@@ -2567,6 +2661,7 @@ def api_delete_user(user_id):
     if not remaining:
         return jsonify({"error": "Letzten Benutzer kann nicht löschen"}), 400
     save_users(remaining)
+    unschedule_user_digest_jobs(user_id)
     return jsonify({"ok": True})
 
 @app.route("/api/users/<user_id>/verify-pin", methods=["POST"])
