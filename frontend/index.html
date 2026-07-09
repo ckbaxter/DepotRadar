@@ -331,6 +331,21 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .url-item span{flex:1;font-size:12px;word-break:break-all}
 .url-item button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0;min-width:28px;min-height:28px}
 .url-item button:hover{color:var(--red)}
+/* Benutzer-Einstellungen: aufklappbare Themen-Sektionen (seit v2.12.13) */
+.usr-section{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg3);margin-bottom:10px;overflow:hidden}
+.usr-section summary{list-style:none;cursor:pointer;user-select:none;padding:12px 14px;
+  display:flex;align-items:center;gap:10px;-webkit-tap-highlight-color:transparent}
+.usr-section summary::-webkit-details-marker{display:none}
+.usr-arrow{font-size:10px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.usr-section[open] .usr-arrow{transform:rotate(90deg)}
+.usr-title{font-size:13px;font-weight:600;flex-shrink:0}
+.usr-state{font-size:11.5px;color:var(--muted);margin-left:auto;text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.usr-section[open] .usr-state{display:none}
+.usr-body{padding:2px 14px 14px;border-top:1px solid var(--border)}
+.usr-body > :first-child{margin-top:12px}
+.usr-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:8px}
+.usr-label{font-size:12px;font-weight:600;margin-bottom:6px}
 .info-box{background:rgba(78,124,246,.08);border:1px solid rgba(78,124,246,.2);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--muted);margin-bottom:12px}
 .toast-wrap{position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:7px;max-width:320px}
 .toast{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:11px 15px;font-size:13px;animation:slideIn .2s ease;box-shadow:0 4px 20px rgba(0,0,0,.4)}
@@ -705,7 +720,7 @@ select</style>
         </div>
       </div>
         <!-- Wöchentliche Zusammenfassung Toggle -->
-        <div id="depotDigestRow" style="margin-top:12px;display:none">
+        <div id="depotDigestRow" style="margin-top:12px">
           <div style="display:flex;align-items:center;gap:10px">
             <label class="toggle-switch">
               <input type="checkbox" id="depotDigestToggle"/>
@@ -720,7 +735,8 @@ select</style>
             <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
               Sendet einmal pro Woche eine Zusammenfassung dieses Depots per Apprise —
               ATH-Verteilung, Nachkauf-Kandidaten und Wochenperformance.<br>
-              Zeitpunkt global einstellbar unter <b style="color:var(--text)">⚙ Einstellungen → Wöchentliche Zusammenfassung</b>.
+              Wochentag und Uhrzeit stellst du userbezogen ein unter
+              <b style="color:var(--text)">Benutzer-Icon oben rechts → Bearbeiten</b> (Standard: Sonntag 20 Uhr).
             </div>
           </details>
         </div>
@@ -731,18 +747,20 @@ select</style>
               <input type="checkbox" id="depotDailyAthDigestToggle"/>
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </label>
-            <span style="font-size:13px">Tägliche Zusammenfassung senden (21 Uhr)</span>
+            <span style="font-size:13px">Tägliche Zusammenfassung senden</span>
           </div>
           <details style="margin-top:8px">
             <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
               <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
             </summary>
             <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
-              Fasst täglich um 21 Uhr per Apprise zusammen, welche Discount- und
+              Fasst täglich per Apprise zusammen, welche Discount- und
               ATH-Alarme heute für dieses Depot gesendet wurden — praktisch als
               Erinnerung, falls du tagsüber keine Zeit zum Reagieren hattest.
               Kommt auch wenn es keine Alarme gab ("Heute keine Benachrichtigung").
-              Zeitpunkt ist fest auf 21 Uhr eingestellt, am Wochenende wird keine Zusammenfassung verschickt.
+              Uhrzeit stellst du userbezogen ein unter
+              <b style="color:var(--text)">Benutzer-Icon oben rechts → Bearbeiten</b> (Standard: 21 Uhr).
+              Läuft nur Montag–Freitag, am Wochenende wird keine Zusammenfassung verschickt.
             </div>
           </details>
         </div>
@@ -1122,9 +1140,11 @@ select</style>
       <details class="help-section">
         <summary class="help-summary">🌙 Tägliche ATH-Zusammenfassung</summary>
         <div class="help-body">
-          Pro Depot aktivierbar (Depot-Einstellungen → ⚙) — fasst jeden Tag um <b>21 Uhr</b>
-          per Apprise zusammen, welche Discount- und ATH-Alarme heute für dieses Depot
-          ausgelöst wurden.<br><br>
+          Pro Depot aktivierbar (Depot-Einstellungen → ⚙) — fasst jeden Tag (Mo–Fr) per
+          Apprise zusammen, welche Discount- und ATH-Alarme heute für dieses Depot
+          ausgelöst wurden. Die Uhrzeit stellst du userbezogen ein unter
+          <b>Benutzer-Icon oben rechts → Bearbeiten</b> (Standard: 21 Uhr) — jeder Benutzer
+          kann also eine eigene Uhrzeit für seine Depots wählen.<br><br>
           Gedacht als Erinnerung falls tagsüber keine Zeit war, auf einen Alarm zu reagieren.
           Gab es an dem Tag keine Alarme, kommt trotzdem eine kurze Meldung — so weißt du,
           dass die Zusammenfassung nicht einfach ausgeblieben ist.<br><br>
@@ -1139,8 +1159,9 @@ select</style>
         <summary class="help-summary">📊 Wöchentliche Zusammenfassung</summary>
         <div class="help-body">
           Pro Depot aktivierbar (Depot-Einstellungen → ⚙ → Apprise-Bereich) — Wochentag und
-          Uhrzeit werden zentral in den App-Einstellungen (⚙ oben) festgelegt und gelten für
-          alle teilnehmenden Depots gemeinsam.<br><br>
+          Uhrzeit stellst du userbezogen ein unter <b>Benutzer-Icon oben rechts → Bearbeiten</b>
+          (Standard: Sonntag 20 Uhr). Jeder Benutzer kann also einen eigenen Zeitpunkt für
+          seine Depots wählen.<br><br>
           Der Bericht wird als HTML-formatierte E-Mail bzw. entsprechend dem gewählten
           Apprise-Dienst versendet und enthält:
           <ul style="margin:8px 0 0 16px;padding:0;line-height:1.8">
@@ -1254,35 +1275,6 @@ http://depotradar.example.lan</div>
       <button class="close-btn" onclick="closeModal('settingsModal')">&#215;</button>
     </div>
     <div class="modal-body">
-      <!-- Wöchentliche Zusammenfassung -->
-      <div id="digestSection" style="margin-bottom:10px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📊 Wöchentliche Zusammenfassung</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
-          <span style="font-size:13px;color:var(--muted)">Zusammenfassung aktivieren</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="digestEnabled" onchange="onDigestEnabledChange()"/>
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </label>
-        </div>
-        <div id="digestConfig" style="display:none;display:flex;gap:8px;align-items:center">
-          <select class="form-input" id="digestDay" style="flex:1;font-size:13px">
-            <option value="0">Montag</option>
-            <option value="1">Dienstag</option>
-            <option value="2">Mittwoch</option>
-            <option value="3">Donnerstag</option>
-            <option value="4">Freitag</option>
-            <option value="5">Samstag</option>
-            <option value="6" selected>Sonntag</option>
-          </select>
-          <input type="time" class="form-input" id="digestTime" value="18:00" style="width:100px;font-size:13px"/>
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">
-          Pro Depot aktivierbar unter ⚙ → Apprise-Bereich.<br>
-          Der Digest enthält: ATH-Verteilung, Nachkauf-Kandidaten, beste/schlechteste Wochenperfomance und Aktien nahe am nächsten Level.
-        </div>
-      </div>
-
-      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0"/>
       <!-- Refresh -->
       <div class="form-group">
         <label class="form-label">Automatischer Refresh</label>
@@ -2904,11 +2896,6 @@ function openDepotSettings(depot){
   document.getElementById("depotNotifsEnabled").checked = depot.notifications_enabled !== false;
   document.getElementById("depotDigestToggle").checked  = !!depot.weekly_digest;
   document.getElementById("depotDailyAthDigestToggle").checked = !!depot.daily_ath_digest;
-  // Digest-Zeile nur zeigen wenn global aktiviert
-  fetch(`${API}/settings`).then(r=>r.json()).then(s=>{
-    const row = document.getElementById("depotDigestRow");
-    if(row) row.style.display = s.digest_enabled ? "block" : "none";
-  });
   openModal("depotSettingsModal");
   setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
@@ -2918,6 +2905,7 @@ function renderUserUrlList(){
   el.innerHTML = userUrls.length===0
     ? '<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
     : userUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeUserUrl(${i})">&#215;</button></div>`).join("");
+  if(typeof updateUserSectionStates === "function") updateUserSectionStates();
 }
 function addUserUrl(){
   const v=document.getElementById("newUserUrlInput").value.trim(); if(!v) return;
@@ -3073,13 +3061,6 @@ function updateDayButtons(){
 async function openSettingsModal(){
   const r=await fetch(`${API}/settings`); const s=await r.json();
   document.getElementById("refreshInterval").value = s.refresh_interval||3600;
-  // Digest
-  const digestEnabled = s.digest_enabled===true;
-  document.getElementById("digestSection").style.display = "block";
-  document.getElementById("digestEnabled").checked = digestEnabled;
-  document.getElementById("digestConfig").style.display = digestEnabled ? "flex" : "none";
-  document.getElementById("digestDay").value  = s.digest_day  ?? 6;
-  document.getElementById("digestTime").value = s.digest_time || "18:00";
   document.getElementById("verlaufRetention").value = s.verlauf_retention_days ?? 60;
   // Timezone
   const tzEl = document.getElementById("settingsTimezone");
@@ -3109,17 +3090,8 @@ async function saveSettings(){
       verlauf_retention_days: parseInt(document.getElementById("verlaufRetention").value) || 60,
       timezone:              document.getElementById("settingsTimezone").value,
       trading:               {days: _tradingDays, start_hour: startH, start_minute: startM, end_hour: endH, end_minute: endM},
-      digest_enabled:        document.getElementById("digestEnabled").checked,
-      digest_day:            parseInt(document.getElementById("digestDay").value),
-      digest_time:           document.getElementById("digestTime").value,
     })});
   toast("Einstellungen gespeichert"); closeModal("settingsModal"); loadSchedulerStatus();
-}
-
-
-function onDigestEnabledChange(){
-  const on = document.getElementById("digestEnabled").checked;
-  document.getElementById("digestConfig").style.display = on ? "flex" : "none";
 }
 
 function toggleBlur(id){
@@ -3828,72 +3800,158 @@ async function editUser(userId){
   const user = _usersCache.find(u=>u.id===userId);
   if(!user) return;
   userUrls = [...(user.apprise_urls||[])];
-  const mention    = user.notification_mention || "";
-  const confirmChk = !!user.notification_confirm;
+  const mention      = user.notification_mention || "";
+  const confirmChk   = !!user.notification_confirm;
+  const digestDay    = user.digest_day ?? 6;
+  const digestTime   = user.digest_time || "20:00";
+  const dailyDigestT = user.daily_digest_time || "21:00";
+  const hasPin       = !!user.has_pin;
 
   document.getElementById("userFormArea").innerHTML = `
-    <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-top:8px">
+    <div style="margin-top:8px">
       <div style="font-size:13px;font-weight:600;margin-bottom:10px">✏️ ${esc(user.name)} bearbeiten</div>
-      <input class="form-input" id="editUserName" value="${esc(user.name)}" style="margin-bottom:8px">
-      <input class="form-input" id="editUserPin" placeholder="Neuer PIN (leer = unverändert)" maxlength="4" inputmode="numeric" style="margin-bottom:12px">
 
-      <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
-      <div style="font-size:12px;font-weight:600;margin-bottom:4px">Apprise-URLs</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
-      <div class="url-list" id="userUrlList"></div>
-      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
-        <input class="form-input" id="newUserUrlInput" placeholder="Neue Apprise-URL …"
-               style="flex:1" oninput="toggleUserAddUrlBtn(this)"/>
-        <button class="btn btn-ghost btn-sm" id="addUserUrlBtn" onclick="addUserUrl()"
-                style="display:none;white-space:nowrap">+ Hinzufügen</button>
-      </div>
-
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <input class="form-input" id="editUserMention" value="${esc(mention)}"
-               placeholder="z.B. @everyone, @here"
-               style="flex:1;max-width:220px;font-size:12px;font-family:monospace"/>
-        <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
-      </div>
-
-      <div style="margin-top:12px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <label class="toggle-switch">
-            <input type="checkbox" id="editUserConfirm" ${confirmChk?"checked":""}/>
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </label>
-          <span style="font-size:13px">Bestätigung beim nächsten Refresh</span>
+      <details class="usr-section" open>
+        <summary>
+          <span class="usr-arrow">▶</span>
+          <span class="usr-title">👤 Profil</span>
+          <span class="usr-state" id="usrStateProfile"></span>
+        </summary>
+        <div class="usr-body">
+          <input class="form-input" id="editUserName" value="${esc(user.name)}" style="margin-bottom:8px"
+                 oninput="updateUserSectionStates()">
+          <input class="form-input" id="editUserPin" placeholder="Neuer PIN (leer = unverändert)"
+                 maxlength="4" inputmode="numeric">
         </div>
-        <details style="margin-top:8px">
-          <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
-            <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
-          </summary>
-          <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg2);border-radius:6px;padding:10px 12px">
+      </details>
+
+      <details class="usr-section">
+        <summary>
+          <span class="usr-arrow">▶</span>
+          <span class="usr-title">🔔 Benachrichtigungen</span>
+          <span class="usr-state" id="usrStateNotif"></span>
+        </summary>
+        <div class="usr-body">
+          <div class="usr-label">Apprise-URLs</div>
+          <div class="usr-hint" style="margin-top:0">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
+          <div class="url-list" id="userUrlList"></div>
+          <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+            <input class="form-input" id="newUserUrlInput" placeholder="Neue Apprise-URL …"
+                   style="flex:1" oninput="toggleUserAddUrlBtn(this)"/>
+            <button class="btn btn-ghost btn-sm" id="addUserUrlBtn" onclick="addUserUrl()"
+                    style="display:none;white-space:nowrap">+ Hinzufügen</button>
+          </div>
+
+          <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input class="form-input" id="editUserMention" value="${esc(mention)}"
+                   placeholder="z.B. @everyone, @here"
+                   style="flex:1;max-width:220px;font-size:12px;font-family:monospace"/>
+            <span style="font-size:11px;color:var(--muted)">Mention (nur Discord)</span>
+          </div>
+
+          <div style="margin-top:14px;display:flex;align-items:center;gap:10px">
+            <label class="toggle-switch">
+              <input type="checkbox" id="editUserConfirm" ${confirmChk?"checked":""}
+                     onchange="updateUserSectionStates()"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">Bestätigung beim nächsten Refresh</span>
+          </div>
+          <div class="usr-hint">
             Eine Aktie muss <b style="color:var(--text)">zwei aufeinanderfolgende Refreshes</b>
             unter dem ATH-Level liegen bevor eine Benachrichtigung gesendet wird.
             Vermeidet Fehlalarme bei kurzen Kursausreißern.
           </div>
-        </details>
-        <div style="margin-top:10px">
-          <button class="btn btn-ghost btn-sm" onclick="testUserNotification()">🔔 Benachrichtigung testen</button>
         </div>
-      </div>
+      </details>
 
-      <div style="display:flex;gap:8px;margin-top:14px">
+      <details class="usr-section">
+        <summary>
+          <span class="usr-arrow">▶</span>
+          <span class="usr-title">🕘 Zusammenfassungen</span>
+          <span class="usr-state" id="usrStateDigest"></span>
+        </summary>
+        <div class="usr-body">
+          <div class="usr-label">📊 Wöchentliche Zusammenfassung</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select class="form-input" id="editUserDigestDay" style="flex:1;font-size:13px"
+                    onchange="updateUserSectionStates()">
+              <option value="0" ${digestDay===0?"selected":""}>Montag</option>
+              <option value="1" ${digestDay===1?"selected":""}>Dienstag</option>
+              <option value="2" ${digestDay===2?"selected":""}>Mittwoch</option>
+              <option value="3" ${digestDay===3?"selected":""}>Donnerstag</option>
+              <option value="4" ${digestDay===4?"selected":""}>Freitag</option>
+              <option value="5" ${digestDay===5?"selected":""}>Samstag</option>
+              <option value="6" ${digestDay===6?"selected":""}>Sonntag</option>
+            </select>
+            <input type="time" class="form-input" id="editUserDigestTime" value="${esc(digestTime)}"
+                   style="width:104px;font-size:13px" onchange="updateUserSectionStates()"/>
+          </div>
+
+          <div class="usr-label" style="margin-top:14px">🌙 Tägliche ATH-Zusammenfassung</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="time" class="form-input" id="editUserDailyDigestTime" value="${esc(dailyDigestT)}"
+                   style="width:104px;font-size:13px" onchange="updateUserSectionStates()"/>
+            <span style="font-size:12px;color:var(--muted)">nur Montag–Freitag</span>
+          </div>
+
+          <div class="usr-hint">
+            Die Aktivierung läuft weiterhin pro Depot (Depot-Einstellungen → ⚙) — hier stellst du nur ein,
+            <b style="color:var(--text)">wann</b> deine Zusammenfassungen gesendet werden.
+          </div>
+        </div>
+      </details>
+
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="saveEditUser('${userId}')" style="flex:1">Speichern</button>
+        <button class="btn btn-ghost btn-sm" onclick="testUserNotification()">🔔 Testen</button>
         <button class="btn btn-ghost btn-sm" onclick="openUserModal()">Abbrechen</button>
       </div>
     </div>`;
 
+  _editUserHasPin = hasPin;
   renderUserUrlList();
+  updateUserSectionStates();
   setTimeout(initUserScrollBtn, 150);
 }
 
+// Merkt sich für die Zustands-Anzeige, ob der bearbeitete User einen PIN hat
+let _editUserHasPin = false;
+const _USR_DAYS_SHORT = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+
+function updateUserSectionStates(){
+  /* Aktualisiert die kompakten Ist-Zustands-Texte in den zugeklappten
+     Sektions-Headern des Benutzer-Bearbeiten-Formulars. */
+  const prof = document.getElementById("usrStateProfile");
+  if(prof){
+    const name = document.getElementById("editUserName")?.value.trim() || "—";
+    const pinNew = document.getElementById("editUserPin")?.value.trim();
+    prof.textContent = `${name} · ${(pinNew || _editUserHasPin) ? "PIN gesetzt" : "kein PIN"}`;
+  }
+  const notif = document.getElementById("usrStateNotif");
+  if(notif){
+    const conf = document.getElementById("editUserConfirm")?.checked;
+    notif.textContent = `${userUrls.length} URL${userUrls.length===1?"":"s"} · Bestätigung ${conf?"an":"aus"}`;
+  }
+  const dig = document.getElementById("usrStateDigest");
+  if(dig){
+    const d  = _USR_DAYS_SHORT[parseInt(document.getElementById("editUserDigestDay")?.value ?? "6")] || "So";
+    const wt = document.getElementById("editUserDigestTime")?.value || "20:00";
+    const dt = document.getElementById("editUserDailyDigestTime")?.value || "21:00";
+    dig.textContent = `📊 ${d} ${wt} · 🌙 ${dt}`;
+  }
+}
+
 async function saveEditUser(userId){
-  const name    = document.getElementById("editUserName")?.value.trim();
-  const pin     = document.getElementById("editUserPin")?.value.trim();
-  const mention = document.getElementById("editUserMention")?.value.trim()||"";
-  const confirm = document.getElementById("editUserConfirm")?.checked||false;
-  const body    = {name, apprise_urls:userUrls, notification_mention:mention, notification_confirm:confirm};
+  const name       = document.getElementById("editUserName")?.value.trim();
+  const pin        = document.getElementById("editUserPin")?.value.trim();
+  const mention    = document.getElementById("editUserMention")?.value.trim()||"";
+  const confirm    = document.getElementById("editUserConfirm")?.checked||false;
+  const digestDay  = parseInt(document.getElementById("editUserDigestDay")?.value ?? "6");
+  const digestTime = document.getElementById("editUserDigestTime")?.value || "20:00";
+  const dailyDigestTime = document.getElementById("editUserDailyDigestTime")?.value || "21:00";
+  const body    = {name, apprise_urls:userUrls, notification_mention:mention, notification_confirm:confirm,
+                   digest_day:digestDay, digest_time:digestTime, daily_digest_time:dailyDigestTime};
   if(pin) body.pin = pin;
   await fetch(`${API}/users/${userId}`, {method:"PATCH",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
@@ -4039,6 +4097,18 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.12.13 · Backend v2.7.21",
+    changes: [
+      "Benutzer-Einstellungen neu gegliedert: das Bearbeiten-Formular ist jetzt in drei aufklappbare Sektionen unterteilt (👤 Profil, 🔔 Benachrichtigungen, 🕘 Zusammenfassungen) statt einer langen Liste — nur Profil startet aufgeklappt. Zugeklappte Sektionen zeigen den aktuellen Zustand kompakt im Kopf an (z.B. \"2 URLs · Bestätigung an\" oder \"📊 So 20:00 · 🌙 21:00\"). Der Test-Button (🔔 Testen) liegt jetzt dauerhaft sichtbar neben Speichern/Abbrechen"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.12.12 · Backend v2.7.21",
+    changes: [
+      "Wochentag/Uhrzeit der wöchentlichen Zusammenfassung sowie die Uhrzeit der täglichen ATH-Zusammenfassung sind jetzt userbezogen einstellbar (Benutzer-Icon oben rechts → Bearbeiten) statt global — jeder Benutzer kann so einen eigenen Zeitpunkt für seine Depots wählen; die Aktivierung selbst bleibt unverändert pro Depot. Der bisherige globale Ein/Aus-Schalter in den App-Einstellungen entfällt. Neue Defaults: Sonntag 20 Uhr (Wochenbericht) bzw. 21 Uhr (Tageszusammenfassung, weiterhin Mo–Fr); bestehende globale Werte wurden beim Update automatisch auf alle vorhandenen Benutzer übertragen"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.12.11 · Backend v2.7.20",
     changes: [
@@ -5457,7 +5527,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.11 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.13 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
