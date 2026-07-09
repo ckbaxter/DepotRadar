@@ -3761,18 +3761,25 @@ async function openUserModal(isSetup=false){
 async function renderAddUserForm(isFirst=false){
   // Depots live laden damit sie im Formular erscheinen
   const allDepots = await fetch(`${API}/depots`).then(r=>r.json()).catch(()=>[]);
+  // Depots sind i.d.R. persönlich: die Zuordnungs-Auswahl ist nur relevant, solange es
+  // noch unzugeordnete Depots gibt (z.B. Setup ohne User, oder Depots die vor Anlegen
+  // eines weiteren Users entstanden sind). Sobald jedes Depot schon einem User gehört,
+  // legt sich ein neuer User sein eigenes Depot später selbst an — kein Zuordnungs-UI nötig.
+  const assignedIds = new Set(_usersCache.flatMap(u => u.depots || []));
+  const unassignedDepots = allDepots.filter(d => !assignedIds.has(d.id));
+  const depotPickerHtml = unassignedDepots.length ? `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Unzugeordnete Depots zuordnen:</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+        ${unassignedDepots.map(d => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="new-user-depot" value="${d.id}" ${isFirst?"checked":""}> ${esc(d.name)}
+        </label>`).join("")}
+      </div>` : "";
   document.getElementById("userFormArea").innerHTML = `
     <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-top:8px">
       <div style="font-size:13px;font-weight:600;margin-bottom:10px">${isFirst ? "Ersten Benutzer anlegen" : "Neuer Benutzer"}</div>
       <input class="form-input" id="newUserName" placeholder="Name" style="margin-bottom:8px">
       <input class="form-input" id="newUserPin" placeholder="PIN (optional, 4-stellig)" maxlength="4" inputmode="numeric" style="margin-bottom:8px">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Depots zuordnen:</div>
-      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
-        ${allDepots.map(d => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-          <input type="checkbox" class="new-user-depot" value="${d.id}" ${isFirst?"checked":""}> ${esc(d.name)}
-        </label>`).join("")}
-        ${!allDepots.length ? '<div style="color:var(--muted);font-size:12px">Keine Depots vorhanden</div>' : ""}
-      </div>
+      ${depotPickerHtml}
       <button class="btn btn-primary btn-sm" onclick="saveNewUser(${isFirst})" style="width:100%">Speichern</button>
     </div>`;
 }
@@ -4097,6 +4104,12 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.12.14 · Backend v2.7.21",
+    changes: [
+      "Beim Anlegen eines neuen Benutzers erscheint die Depot-Zuordnungsauswahl jetzt nur noch, solange es tatsächlich unzugeordnete Depots gibt (z.B. beim Ersteinrichten oder wenn Depots vor dem nächsten Benutzer angelegt wurden). Sobald jedes Depot bereits einem Benutzer zugeordnet ist, entfällt die Auswahl komplett — neue Benutzer legen sich ihr Depot künftig selbst an, da Depots i.d.R. persönlich sind"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.12.13 · Backend v2.7.21",
     changes: [
@@ -5527,7 +5540,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.13 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.14 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
