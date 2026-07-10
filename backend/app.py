@@ -23,7 +23,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.21"
+VERSION           = "2.7.22"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -1808,9 +1808,22 @@ def parqet_sync(depot_id):
 
     # 4) Splitbereinigten Einstand berechnen und abgleichen
     holdings = calculate_holdings(all_activities)
+    # ISINs, für die überhaupt Aktivitäten bei Parqet vorliegen (auch komplett verkaufte,
+    # die calculate_holdings bei Stückzahl 0 bereits herausfiltert) — nötig, um "komplett
+    # verkauft" von "nie bei Parqet getrackt" zu unterscheiden.
+    isins_with_activity = {a.get("asset", {}).get("isin") for a in all_activities if a.get("asset", {}).get("isin")}
     stocks   = load_stocks(depot_id)
     src = depot_file(depot_id); bak = depot_backup_file(depot_id)
-    updated, new_stocks, mismatches = [], [], []
+    updated, new_stocks, mismatches, removed = [], [], [], []
+
+    # 4a) Bei Parqet komplett verkaufte Positionen erkennen (Stückzahl dort jetzt 0,
+    # aber im ATH-Tracker noch vorhanden) → nicht automatisch löschen, nur zur
+    # Bestätigung vormerken (siehe apply-removal).
+    for s in stocks:
+        isin = s.get("isin")
+        if isin and isin in isins_with_activity and isin not in holdings:
+            removed.append({"isin": isin, "name": s["name"], "ticker": s.get("ticker", ""),
+                            "shares": s.get("shares"), "buy_price_eur": s.get("buy_price_eur")})
 
     for isin, h in holdings.items():
         match = next((s for s in stocks if s.get("isin") == isin), None)
@@ -1846,8 +1859,23 @@ def parqet_sync(depot_id):
             break
     save_depots(depots)
     add_log("manual_refresh", f"Parqet Sync: {depot['name']}",
-            f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)}", True, depot_id=depot_id)
-    return jsonify({"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches})
+            f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)} | Verkauft: {len(removed)}",
+            True, depot_id=depot_id)
+    return jsonify({"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches, "removed": removed})
+
+@app.route("/api/depots/<depot_id>/parqet/apply-removal", methods=["POST"])
+def parqet_apply_removal(depot_id):
+    """Löscht eine Aktie, die laut Parqet-Sync komplett verkauft wurde, nach expliziter
+    Nutzerbestätigung (siehe removed[] in parqet_sync) aus dem Depot."""
+    body   = request.get_json() or {}
+    isin   = body.get("isin", "")
+    stocks = load_stocks(depot_id)
+    match  = next((s for s in stocks if s.get("isin") == isin), None)
+    if not match: return jsonify({"error": "Nicht gefunden"}), 404
+    stocks.remove(match); save_stocks(depot_id, stocks)
+    add_log("manual_refresh", f"Parqet: Position entfernt", f"{match['name']} (verkauft, per Sync bestätigt)",
+            True, depot_id=depot_id)
+    return jsonify({"ok": True})
 
 @app.route("/api/depots/<depot_id>/parqet/apply-mismatch", methods=["POST"])
 def parqet_apply_mismatch(depot_id):
