@@ -1483,6 +1483,28 @@ http://depotradar.example.lan</div>
   </div>
 </div>
 
+<!-- Modal: Parqet komplett verkauft -->
+<div class="overlay" id="parqetRemovedModal" style="display:none" onclick="closeIfOverlay(event,'parqetRemovedModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title">&#128683; Bei Parqet verkauft — Prüfung erforderlich</span>
+      <button class="close-btn" onclick="closeModal('parqetRemovedModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+        Diese Positionen wurden bei Parqet komplett verkauft, sind im ATH-Tracker aber noch vorhanden.
+        Klicke bei jeder Position auf „Entfernen", damit sie hier ebenfalls gelöscht wird — oder nutze
+        unten „Alle entfernen", falls du sie tatsächlich alle löschen möchtest.
+      </p>
+      <div id="removedList" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('parqetRemovedModal')">Schließen</button>
+      <button class="btn btn-danger" id="removeAllBtn" onclick="applyRemovalAll()">&#10003; Alle entfernen</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Parqet Import -->
 <div class="overlay" id="parqetImportModal" style="display:none" onclick="closeIfOverlay(event,'parqetImportModal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:580px">
@@ -4105,6 +4127,18 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.12.16 · Backend v2.7.22",
+    changes: [
+      "Dialog „Bei Parqet verkauft” überarbeitet: klarerer Hinweistext, dass pro Position ein eigener Klick auf „Entfernen” nötig ist, sowie ein neuer „Alle entfernen”-Button im Footer (mit Zähler der noch offenen Positionen), falls man tatsächlich alle löschen möchte statt einzeln durchzuklicken"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.12.15 · Backend v2.7.22",
+    changes: [
+      "Bugfix Parqet-Sync: komplett verkaufte Positionen wurden bisher nicht erkannt — Parqet zeigte den Verkauf korrekt an, der Sync meldete aber \"keine Änderungen\" und die Aktie blieb unverändert im ATH-Tracker. Solche Fälle werden jetzt erkannt und in einem eigenen Dialog zur Bestätigung angezeigt (\"Bei Parqet verkauft\"), bevor die Position auf Wunsch entfernt wird — analog zum bestehenden ISIN-Konflikt-Dialog"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.12.14 · Backend v2.7.21",
     changes: [
       "Beim Anlegen eines neuen Benutzers erscheint die Depot-Zuordnungsauswahl jetzt nur noch, solange es tatsächlich unzugeordnete Depots gibt (z.B. beim Ersteinrichten oder wenn Depots vor dem nächsten Benutzer angelegt wurden). Sobald jedes Depot bereits einem Benutzer zugeordnet ist, entfällt die Auswahl komplett — neue Benutzer legen sich ihr Depot künftig selbst an, da Depots i.d.R. persönlich sind"
@@ -4870,9 +4904,12 @@ async function doParqetSync(){
     if(d.mismatches && d.mismatches.length > 0){
       openMismatchModal(d.mismatches);
     }
+    if(d.removed && d.removed.length > 0){
+      openRemovedModal(d.removed);
+    }
     if(d.new_stocks && d.new_stocks.length > 0){
       openParqetImportModal(d.new_stocks);
-    } else if(!d.updated || d.updated.length === 0){
+    } else if((!d.updated || d.updated.length === 0) && (!d.removed || d.removed.length === 0)){
       toast("Sync abgeschlossen — keine Änderungen");
     }
   } catch(e){ toast("Sync Fehler: "+e.message, false); }
@@ -5242,6 +5279,73 @@ async function applyMismatch(idx, m){
   } catch(e){ toast("Fehler: "+e.message, false); }
 }
 
+let _removedItems = [];
+
+function openRemovedModal(removed){
+  _removedItems = removed.map(r => ({...r, done:false}));
+  const list = document.getElementById("removedList");
+  list.innerHTML = _removedItems.map((r,i) => `
+    <div id="removedItem${i}" style="background:var(--bg3);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:12px 14px">
+      <div style="font-size:11px;color:var(--red);font-weight:600;margin-bottom:6px">
+        &#128683; ISIN: ${r.isin}
+      </div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${r.name}${r.ticker ? " ("+r.ticker+")" : ""}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Noch im ATH-Tracker: ${r.shares ?? "?"} Stk. · Einstand: ${r.buy_price_eur != null ? fmtEUR(r.buy_price_eur) : "—"}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-danger btn-sm" id="removedBtn${i}"
+          onclick="applyRemoval(${i})">
+          &#10003; Entfernen
+        </button>
+        <button class="btn btn-ghost btn-sm"
+          onclick="document.getElementById('removedItem${i}').style.opacity='0.4';document.getElementById('removedItem${i}').style.pointerEvents='none'">
+          &#215; Behalten
+        </button>
+      </div>
+    </div>`).join("");
+  _updateRemoveAllBtn();
+  openModal("parqetRemovedModal");
+}
+
+function _updateRemoveAllBtn(){
+  const btn = document.getElementById("removeAllBtn");
+  if(!btn) return;
+  const open = _removedItems.filter(r => !r.done).length;
+  btn.textContent = open > 0 ? `✓ Alle entfernen (${open})` : "✓ Alle entfernt";
+  btn.disabled = open === 0;
+}
+
+async function applyRemoval(idx){
+  if(!activeDepot) return;
+  const r = _removedItems[idx];
+  if(!r || r.done) return;
+  try {
+    const resp = await fetch(`${API}/depots/${activeDepot.id}/parqet/apply-removal`, {
+      method: "POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({isin: r.isin})
+    });
+    if(!resp.ok) throw new Error((await resp.json()).error);
+    r.done = true;
+    const box = document.getElementById(`removedItem${idx}`);
+    if(box){ box.style.opacity = "0.4"; box.style.pointerEvents = "none"; }
+    _updateRemoveAllBtn();
+    loadCurrentStocks();
+    return true;
+  } catch(e){ toast("Fehler: "+e.message, false); return false; }
+}
+
+async function applyRemovalAll(){
+  if(!activeDepot) return;
+  const pending = _removedItems.map((r,i) => i).filter(i => !_removedItems[i].done);
+  if(pending.length === 0) return;
+  let ok = 0;
+  for(const idx of pending){
+    if(await applyRemoval(idx)) ok++;
+  }
+  toast(ok === pending.length ? `${ok} Position(en) entfernt` : `${ok} von ${pending.length} entfernt — Fehler siehe Meldung`, ok === pending.length);
+}
+
 // ── Handelsplatz wechseln ─────────────────────────────────────────
 let _ctStock = null;
 let _ctSelected = null;
@@ -5540,7 +5644,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.14 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.16 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
