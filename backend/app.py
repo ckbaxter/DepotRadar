@@ -1,4 +1,5 @@
-import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, shutil, uuid as _uuid
+import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, shutil, uuid as _uuid, threading
+from contextlib import contextmanager
 from collections import Counter
 from datetime import datetime, timedelta
 from urllib.parse import quote as urlquote
@@ -23,7 +24,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.22"
+VERSION           = "2.7.23"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -75,6 +76,41 @@ def _safe(s):            return re.sub(r'[^a-z0-9_\-]', '_', s.lower())
 def depot_file(d):        return os.path.join(DATA_DIR, f"depot_{_safe(d)}.json")
 def depot_backup_file(d): return os.path.join(DATA_DIR, f"depot_{_safe(d)}_backup.json")
 def watchlist_file(d,w): return os.path.join(DATA_DIR, f"wl_{_safe(d)}_{_safe(w)}.json")
+
+# ── Pro-Datei-Locking ─────────────────────────────────────────────
+# Verhindert Lost-Updates zwischen dem Scheduler-Thread (Auto-Refresh, Snapshots,
+# Digests) und HTTP-Request-Threads: ohne Lock können beide dieselbe Datei laden,
+# unabhängig ändern und speichern — der zweite Save überschreibt den ersten
+# komplett, ohne dass ein Fehler sichtbar wird. _save_json selbst ist zwar durch
+# atomares os.replace vor kaputten Dateien geschützt, das verhindert aber keine
+# verlorenen Änderungen, da die Race schon beim Laden beginnt. Der Lock muss
+# daher den gesamten load-modify-save-Block umschließen, nicht nur das Schreiben.
+_file_locks = {}
+_locks_meta_lock = threading.Lock()
+
+def _lock_for(path):
+    """Gibt einen threading.Lock für genau diesen Dateipfad zurück (lazy angelegt).
+    Das Meta-Lock schützt nur das Anlegen des Locks selbst, nicht den Dateizugriff."""
+    with _locks_meta_lock:
+        if path not in _file_locks:
+            _file_locks[path] = threading.Lock()
+        return _file_locks[path]
+
+@contextmanager
+def file_lock(path):
+    """Kontextmanager: with file_lock(depot_file(did)): ... umschließt den
+    kompletten load-modify-save-Zyklus für genau diese Datei mit einem Lock,
+    der pro Dateipfad separat vergeben wird (z.B. pro Depot, nicht global)."""
+    lock = _lock_for(path)
+    with lock:
+        yield
+
+def depot_lock(depot_id):
+    """Ein Lock pro Depot-ID statt pro exaktem Dateipfad — deckt Bestand UND alle
+    Watchlists dieses Depots gemeinsam ab, da _refresh_depot beide zusammen in
+    einem Zyklus liest/schreibt. HTTP-Routen für Stocks/Watchlists desselben
+    Depots nutzen denselben Key und werden so gegen den Scheduler serialisiert."""
+    return file_lock(f"depot:{depot_id}")
 
 def _load_json(path, default):
     if not os.path.exists(path):
@@ -850,46 +886,51 @@ def _refresh_depot(depot, trigger="auto", price_cache=None):
     budget    = depot.get("buy_budget") or None
     raw_t = depot.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else 30
 
-    # ── Phase 1: Alle Kurse holen ─────────────────────────────────
-    stocks = load_stocks(did)
-    stocks, ok, err, ath_hits = _fetch_prices(stocks, price_cache)
+    # Der komplette load-modify-save-Zyklus (inkl. der Yahoo-Netzwerk-Calls) läuft
+    # unter dem Depot-Lock, damit ein paralleler HTTP-Request auf denselben Bestand
+    # oder dieselbe Watchlist (z.B. manueller Stock-Refresh, Parqet-Sync, K-Badge)
+    # nicht auf einer veralteten Kopie speichert und so diesen Zyklus überschreibt.
+    with depot_lock(did):
+        # ── Phase 1: Alle Kurse holen ─────────────────────────────────
+        stocks = load_stocks(did)
+        stocks, ok, err, ath_hits = _fetch_prices(stocks, price_cache)
 
-    # Watchlist-Preise holen
-    wl_data = {}
-    for wl in depot.get("watchlists", []):
-        wls, wok, werr, wl_ath_hits = _fetch_prices(load_wl_stocks(did, wl["id"]), price_cache)
-        wl_data[wl["id"]] = (wl, wls, wok, werr, wl_ath_hits)
-        ok += wok; err += werr
+        # Watchlist-Preise holen
+        wl_data = {}
+        for wl in depot.get("watchlists", []):
+            wls, wok, werr, wl_ath_hits = _fetch_prices(load_wl_stocks(did, wl["id"]), price_cache)
+            wl_data[wl["id"]] = (wl, wls, wok, werr, wl_ath_hits)
+            ok += wok; err += werr
 
-    # Nachkauf-Sets berechnen
-    nachkauf_set = calc_nachkauf_set(stocks, threshold)
-    wl_nachkauf  = {wl_id: calc_nachkauf_set(wls, threshold)
-                    for wl_id, (_, wls, _, _, _) in wl_data.items()}
+        # Nachkauf-Sets berechnen
+        nachkauf_set = calc_nachkauf_set(stocks, threshold)
+        wl_nachkauf  = {wl_id: calc_nachkauf_set(wls, threshold)
+                        for wl_id, (_, wls, _, _, _) in wl_data.items()}
 
-    # Sektor-Lücke berechnen — Basis ist immer der echte Bestand, auch für Watchlists
-    # (eine Watchlist-Aktie kann eine Lücke im Bestand füllen, auch wenn ihr Sektor
-    # innerhalb der Watchlist selbst nicht knapp ist)
-    sector_gap_set = calc_sector_gap_set(stocks)
-    wl_sector_gap  = {wl_id: calc_sector_gap_set(stocks, wls)
-                      for wl_id, (_, wls, _, _, _) in wl_data.items()}
+        # Sektor-Lücke berechnen — Basis ist immer der echte Bestand, auch für Watchlists
+        # (eine Watchlist-Aktie kann eine Lücke im Bestand füllen, auch wenn ihr Sektor
+        # innerhalb der Watchlist selbst nicht knapp ist)
+        sector_gap_set = calc_sector_gap_set(stocks)
+        wl_sector_gap  = {wl_id: calc_sector_gap_set(stocks, wls)
+                          for wl_id, (_, wls, _, _, _) in wl_data.items()}
 
-    # Benachrichtigungen — nur wenn für dieses Depot aktiviert
-    if depot.get("notifications_enabled", True):
-        stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set,
-                                      sector_gap_set, mention, confirm, depot_id=did)
-        send_ath_alerts(ath_hits, f"Bestand: {dname}", urls, mention, depot_id=did)
-        for wl_id, (wl, wls, _, _, wl_ath_hits) in wl_data.items():
-            wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
-                                      urls, budget, wl_nachkauf[wl_id], wl_sector_gap[wl_id],
-                                      mention, confirm, depot_id=did)
-            send_ath_alerts(wl_ath_hits, f"Beobachtung: {wl['name']} ({dname})", urls, mention, depot_id=did)
-            save_wl_stocks(did, wl_id, wls)
-    else:
-        for wl_id, (wl, wls, _, _, _) in wl_data.items():
-            save_wl_stocks(did, wl_id, wls)
+        # Benachrichtigungen — nur wenn für dieses Depot aktiviert
+        if depot.get("notifications_enabled", True):
+            stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set,
+                                          sector_gap_set, mention, confirm, depot_id=did)
+            send_ath_alerts(ath_hits, f"Bestand: {dname}", urls, mention, depot_id=did)
+            for wl_id, (wl, wls, _, _, wl_ath_hits) in wl_data.items():
+                wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
+                                          urls, budget, wl_nachkauf[wl_id], wl_sector_gap[wl_id],
+                                          mention, confirm, depot_id=did)
+                send_ath_alerts(wl_ath_hits, f"Beobachtung: {wl['name']} ({dname})", urls, mention, depot_id=did)
+                save_wl_stocks(did, wl_id, wls)
+        else:
+            for wl_id, (wl, wls, _, _, _) in wl_data.items():
+                save_wl_stocks(did, wl_id, wls)
 
-    save_stocks(did, stocks)
-    return ok, err
+        save_stocks(did, stocks)
+        return ok, err
 
 def take_snapshot():
     """Erstellt einen täglichen Portfolio-Snapshot (einmal pro Tag beim Auto-Refresh)."""
@@ -1677,8 +1718,9 @@ def parqet_undo_sync(depot_id):
     bak = depot_backup_file(depot_id)
     if not os.path.exists(bak):
         return jsonify({"error": "Kein Backup vorhanden"}), 404
-    shutil.copy2(bak, depot_file(depot_id))
-    os.remove(bak)
+    with depot_lock(depot_id):
+        shutil.copy2(bak, depot_file(depot_id))
+        os.remove(bak)
     add_log("manual_refresh", "Sync rückgängig gemacht",
             f"Depot {depot_id} auf Stand vor letztem Sync zurückgesetzt", True, depot_id=depot_id)
     log.info(f"Parqet Sync rückgängig: {depot_id}")
@@ -1785,83 +1827,87 @@ def parqet_sync(depot_id):
     isin_map = {ph.get("asset", {}).get("isin"): ph.get("asset", {}).get("name", "")
                 for ph in pq_holdings if ph.get("asset", {}).get("isin")}
 
-    # 2) Fehlende ISINs in Depot-Aktien ergänzen (strenger Namens-Abgleich)
-    stocks = load_stocks(depot_id); enriched = 0
-    for s in stocks:
-        if s.get("isin"): continue
-        for isin, pname in isin_map.items():
-            if _names_match(s["name"], pname):
-                s["isin"] = isin; enriched += 1
-                log.info(f"ISIN ergänzt: '{s['name']}' → {isin} (via '{pname}')")
-                break
-    if enriched: save_stocks(depot_id, stocks); log.info(f"{enriched} ISINs ergänzt")
+    # Ab hier zwei aufeinanderfolgende load-modify-save-Zyklen auf derselben Depot-Datei
+    # (ISIN-Ergänzung, dann der eigentliche Merge) — unter einem gemeinsamen Lock, damit
+    # kein anderer Request (oder der Scheduler) dazwischen auf einer alten Kopie speichert.
+    with depot_lock(depot_id):
+        # 2) Fehlende ISINs in Depot-Aktien ergänzen (strenger Namens-Abgleich)
+        stocks = load_stocks(depot_id); enriched = 0
+        for s in stocks:
+            if s.get("isin"): continue
+            for isin, pname in isin_map.items():
+                if _names_match(s["name"], pname):
+                    s["isin"] = isin; enriched += 1
+                    log.info(f"ISIN ergänzt: '{s['name']}' → {isin} (via '{pname}')")
+                    break
+        if enriched: save_stocks(depot_id, stocks); log.info(f"{enriched} ISINs ergänzt")
 
-    # 3) Aktivitäten laden (paginiert)
-    try:
-        all_activities = _fetch_all_parqet_activities(depot, depot_id, pid)
-    except Exception as e:
-        err = str(e)
-        if "401" in err or "Unauthorized" in err: return handle_401(e)
-        return jsonify({"error": f"Parqet API Fehler: {e}"}), 502
+        # 3) Aktivitäten laden (paginiert)
+        try:
+            all_activities = _fetch_all_parqet_activities(depot, depot_id, pid)
+        except Exception as e:
+            err = str(e)
+            if "401" in err or "Unauthorized" in err: return handle_401(e)
+            return jsonify({"error": f"Parqet API Fehler: {e}"}), 502
 
-    log.info(f"Parqet Sync {depot['name']}: {len(all_activities)} Aktivitäten")
+        log.info(f"Parqet Sync {depot['name']}: {len(all_activities)} Aktivitäten")
 
-    # 4) Splitbereinigten Einstand berechnen und abgleichen
-    holdings = calculate_holdings(all_activities)
-    # ISINs, für die überhaupt Aktivitäten bei Parqet vorliegen (auch komplett verkaufte,
-    # die calculate_holdings bei Stückzahl 0 bereits herausfiltert) — nötig, um "komplett
-    # verkauft" von "nie bei Parqet getrackt" zu unterscheiden.
-    isins_with_activity = {a.get("asset", {}).get("isin") for a in all_activities if a.get("asset", {}).get("isin")}
-    stocks   = load_stocks(depot_id)
-    src = depot_file(depot_id); bak = depot_backup_file(depot_id)
-    updated, new_stocks, mismatches, removed = [], [], [], []
+        # 4) Splitbereinigten Einstand berechnen und abgleichen
+        holdings = calculate_holdings(all_activities)
+        # ISINs, für die überhaupt Aktivitäten bei Parqet vorliegen (auch komplett verkaufte,
+        # die calculate_holdings bei Stückzahl 0 bereits herausfiltert) — nötig, um "komplett
+        # verkauft" von "nie bei Parqet getrackt" zu unterscheiden.
+        isins_with_activity = {a.get("asset", {}).get("isin") for a in all_activities if a.get("asset", {}).get("isin")}
+        stocks   = load_stocks(depot_id)
+        src = depot_file(depot_id); bak = depot_backup_file(depot_id)
+        updated, new_stocks, mismatches, removed = [], [], [], []
 
-    # 4a) Bei Parqet komplett verkaufte Positionen erkennen (Stückzahl dort jetzt 0,
-    # aber im ATH-Tracker noch vorhanden) → nicht automatisch löschen, nur zur
-    # Bestätigung vormerken (siehe apply-removal).
-    for s in stocks:
-        isin = s.get("isin")
-        if isin and isin in isins_with_activity and isin not in holdings:
-            removed.append({"isin": isin, "name": s["name"], "ticker": s.get("ticker", ""),
-                            "shares": s.get("shares"), "buy_price_eur": s.get("buy_price_eur")})
+        # 4a) Bei Parqet komplett verkaufte Positionen erkennen (Stückzahl dort jetzt 0,
+        # aber im ATH-Tracker noch vorhanden) → nicht automatisch löschen, nur zur
+        # Bestätigung vormerken (siehe apply-removal).
+        for s in stocks:
+            isin = s.get("isin")
+            if isin and isin in isins_with_activity and isin not in holdings:
+                removed.append({"isin": isin, "name": s["name"], "ticker": s.get("ticker", ""),
+                                "shares": s.get("shares"), "buy_price_eur": s.get("buy_price_eur")})
 
-    for isin, h in holdings.items():
-        match = next((s for s in stocks if s.get("isin") == isin), None)
-        if match:
-            # ISIN stimmt überein → direkt aktualisieren (kein Namens-Check nötig)
-            new_price  = h["avg_price_eur"]
-            new_shares = round(h["shares"], 6)
-            # Nur als geändert markieren wenn sich Werte wirklich unterscheiden
-            actually_changed = (
-                round(match.get("buy_price_eur") or 0, 4) != round(new_price or 0, 4) or
-                round(match.get("shares") or 0, 6) != new_shares
-            )
-            match["buy_price_eur"] = new_price
-            match["shares"]        = new_shares
-            match["isin"]          = isin
-            if actually_changed:
-                updated.append(match["name"])
-                log.info(f"Sync GEÄNDERT: {match['name']} Einstand={new_price:.2f}€ Stk={new_shares:.4f}")
+        for isin, h in holdings.items():
+            match = next((s for s in stocks if s.get("isin") == isin), None)
+            if match:
+                # ISIN stimmt überein → direkt aktualisieren (kein Namens-Check nötig)
+                new_price  = h["avg_price_eur"]
+                new_shares = round(h["shares"], 6)
+                # Nur als geändert markieren wenn sich Werte wirklich unterscheiden
+                actually_changed = (
+                    round(match.get("buy_price_eur") or 0, 4) != round(new_price or 0, 4) or
+                    round(match.get("shares") or 0, 6) != new_shares
+                )
+                match["buy_price_eur"] = new_price
+                match["shares"]        = new_shares
+                match["isin"]          = isin
+                if actually_changed:
+                    updated.append(match["name"])
+                    log.info(f"Sync GEÄNDERT: {match['name']} Einstand={new_price:.2f}€ Stk={new_shares:.4f}")
+                else:
+                    log.debug(f"Sync unverändert: {match['name']}")
             else:
-                log.debug(f"Sync unverändert: {match['name']}")
-        else:
-            new_stocks.append({"isin": isin, "name": h["name"],
-                               "shares": round(h["shares"], 6), "buy_price_eur": h["avg_price_eur"]})
+                new_stocks.append({"isin": isin, "name": h["name"],
+                                   "shares": round(h["shares"], 6), "buy_price_eur": h["avg_price_eur"]})
 
-    # Backup nur wenn sich etwas ändert
-    if (updated or new_stocks) and os.path.exists(src):
-        shutil.copy2(src, bak)
-    save_stocks(depot_id, stocks)
-    for d in depots:
-        if d["id"] == depot_id:
-            d["parqet"]["last_sync"] = datetime.now().strftime("%d.%m.%Y %H:%M")
-            d["parqet"].pop("needs_reconnect", None)
-            break
-    save_depots(depots)
-    add_log("manual_refresh", f"Parqet Sync: {depot['name']}",
-            f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)} | Verkauft: {len(removed)}",
-            True, depot_id=depot_id)
-    return jsonify({"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches, "removed": removed})
+        # Backup nur wenn sich etwas ändert
+        if (updated or new_stocks) and os.path.exists(src):
+            shutil.copy2(src, bak)
+        save_stocks(depot_id, stocks)
+        for d in depots:
+            if d["id"] == depot_id:
+                d["parqet"]["last_sync"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+                d["parqet"].pop("needs_reconnect", None)
+                break
+        save_depots(depots)
+        add_log("manual_refresh", f"Parqet Sync: {depot['name']}",
+                f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)} | Verkauft: {len(removed)}",
+                True, depot_id=depot_id)
+        return jsonify({"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches, "removed": removed})
 
 @app.route("/api/depots/<depot_id>/parqet/apply-removal", methods=["POST"])
 def parqet_apply_removal(depot_id):
@@ -1869,10 +1915,11 @@ def parqet_apply_removal(depot_id):
     Nutzerbestätigung (siehe removed[] in parqet_sync) aus dem Depot."""
     body   = request.get_json() or {}
     isin   = body.get("isin", "")
-    stocks = load_stocks(depot_id)
-    match  = next((s for s in stocks if s.get("isin") == isin), None)
-    if not match: return jsonify({"error": "Nicht gefunden"}), 404
-    stocks.remove(match); save_stocks(depot_id, stocks)
+    with depot_lock(depot_id):
+        stocks = load_stocks(depot_id)
+        match  = next((s for s in stocks if s.get("isin") == isin), None)
+        if not match: return jsonify({"error": "Nicht gefunden"}), 404
+        stocks.remove(match); save_stocks(depot_id, stocks)
     add_log("manual_refresh", f"Parqet: Position entfernt", f"{match['name']} (verkauft, per Sync bestätigt)",
             True, depot_id=depot_id)
     return jsonify({"ok": True})
@@ -1883,11 +1930,13 @@ def parqet_apply_mismatch(depot_id):
     isin      = body.get("isin", "")
     buy_price = float(body.get("buy_price_eur") or 0)
     shares    = float(body.get("shares") or 0)
-    stocks    = load_stocks(depot_id)
-    match     = next((s for s in stocks if s.get("isin") == isin), None)
-    if not match: return jsonify({"error": "Nicht gefunden"}), 404
-    match["buy_price_eur"] = buy_price; match["shares"] = round(shares, 6)
-    save_stocks(depot_id, stocks); return jsonify({"ok": True})
+    with depot_lock(depot_id):
+        stocks    = load_stocks(depot_id)
+        match     = next((s for s in stocks if s.get("isin") == isin), None)
+        if not match: return jsonify({"error": "Nicht gefunden"}), 404
+        match["buy_price_eur"] = buy_price; match["shares"] = round(shares, 6)
+        save_stocks(depot_id, stocks)
+    return jsonify({"ok": True})
 
 @app.route("/api/depots/<depot_id>/parqet/import-bulk", methods=["POST"])
 def parqet_import_bulk(depot_id):
@@ -1895,48 +1944,49 @@ def parqet_import_bulk(depot_id):
     Gibt Ergebnisse als Liste zurück — Index entspricht Input-Index."""
     items  = request.get_json()
     if not items: return jsonify({"error": "Keine Daten"}), 400
-    stocks          = load_stocks(depot_id)
-    # Backup vor Import anlegen (Import = immer Änderung)
-    src = depot_file(depot_id); bak = depot_backup_file(depot_id)
-    if os.path.exists(src): shutil.copy2(src, bak)
-    existing_isins  = {s.get("isin","").upper() for s in stocks if s.get("isin")}
-    existing_ticker = {s["ticker"].upper() for s in stocks}
-    results = []
-    for item in items:
-        ticker = item.get("ticker","").strip()
-        isin   = (item.get("isin") or "").strip().upper()
-        # Duplikat-Check: ISIN oder Ticker bereits vorhanden
-        if isin and isin in existing_isins:
-            results.append({"ok": False, "skipped": True, "reason": "ISIN bereits im Depot"})
-            continue
-        if ticker.upper() in existing_ticker:
-            # Ticker existiert — ISIN nachträglich ergänzen falls fehlend
-            if isin:
-                for s in stocks:
-                    if s["ticker"].upper() == ticker.upper() and not s.get("isin"):
-                        s["isin"] = item.get("isin","")
-                        log.info(f"ISIN nachträglich gesetzt: {ticker} → {isin}")
-                        break
-            results.append({"ok": False, "skipped": True, "reason": "Ticker bereits im Depot"})
-            continue
-        if not ticker:
-            results.append({"ok": False, "error": "Kein Ticker"})
-            continue
-        try:
-            data  = fetch_stock_data(ticker)
-            stock = _make_stock(data, {
-                "ticker": ticker, "name": item.get("name",""), "exchange": item.get("exchange",""),
-                "isin": item.get("isin",""), "buy_price_eur": item.get("buy_price_eur"),
-                "shares": item.get("shares"), "last_notified_block": 0
-            })
-            stocks.append(stock)
-            existing_ticker.add(ticker.upper())
-            if isin: existing_isins.add(isin)
-            results.append({"ok": True})
-        except Exception as e:
-            results.append({"ok": False, "error": str(e)})
-    save_stocks(depot_id, stocks)
-    return jsonify(results)
+    with depot_lock(depot_id):
+        stocks          = load_stocks(depot_id)
+        # Backup vor Import anlegen (Import = immer Änderung)
+        src = depot_file(depot_id); bak = depot_backup_file(depot_id)
+        if os.path.exists(src): shutil.copy2(src, bak)
+        existing_isins  = {s.get("isin","").upper() for s in stocks if s.get("isin")}
+        existing_ticker = {s["ticker"].upper() for s in stocks}
+        results = []
+        for item in items:
+            ticker = item.get("ticker","").strip()
+            isin   = (item.get("isin") or "").strip().upper()
+            # Duplikat-Check: ISIN oder Ticker bereits vorhanden
+            if isin and isin in existing_isins:
+                results.append({"ok": False, "skipped": True, "reason": "ISIN bereits im Depot"})
+                continue
+            if ticker.upper() in existing_ticker:
+                # Ticker existiert — ISIN nachträglich ergänzen falls fehlend
+                if isin:
+                    for s in stocks:
+                        if s["ticker"].upper() == ticker.upper() and not s.get("isin"):
+                            s["isin"] = item.get("isin","")
+                            log.info(f"ISIN nachträglich gesetzt: {ticker} → {isin}")
+                            break
+                results.append({"ok": False, "skipped": True, "reason": "Ticker bereits im Depot"})
+                continue
+            if not ticker:
+                results.append({"ok": False, "error": "Kein Ticker"})
+                continue
+            try:
+                data  = fetch_stock_data(ticker)
+                stock = _make_stock(data, {
+                    "ticker": ticker, "name": item.get("name",""), "exchange": item.get("exchange",""),
+                    "isin": item.get("isin",""), "buy_price_eur": item.get("buy_price_eur"),
+                    "shares": item.get("shares"), "last_notified_block": 0
+                })
+                stocks.append(stock)
+                existing_ticker.add(ticker.upper())
+                if isin: existing_isins.add(isin)
+                results.append({"ok": True})
+            except Exception as e:
+                results.append({"ok": False, "error": str(e)})
+        save_stocks(depot_id, stocks)
+        return jsonify(results)
 
 @app.route("/api/depots/<depot_id>/parqet/import", methods=["POST"])
 def parqet_import_stock(depot_id):
@@ -1948,23 +1998,24 @@ def parqet_import_stock(depot_id):
     buy_price = float(body.get("buy_price_eur") or 0)
     shares    = float(body.get("shares") or 0)
     if not ticker or not name: return jsonify({"error": "ticker und name erforderlich"}), 400
-    stocks   = load_stocks(depot_id)
-    existing = next((s for s in stocks if s["ticker"] == ticker), None)
-    if existing:
-        existing.update({"isin": isin, "buy_price_eur": buy_price, "shares": shares})
-        save_stocks(depot_id, stocks)
-        return jsonify({"ok": True, "action": "updated", "stock": existing})
-    try: data = fetch_stock_data(ticker)
-    except ValueError as e:
-        msg = str(e)
-        code = 404 if "nicht gefunden" in msg else 502
-        return jsonify({"error": msg, "ticker_not_found": code == 404}), code
-    except Exception as e: return jsonify({"error": str(e)}), 502
-    stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
-             "isin": isin, "buy_price_eur": buy_price, "shares": shares,
-             "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
-    stocks.append(stock); save_stocks(depot_id, stocks)
-    return jsonify({"ok": True, "action": "added", "stock": stock}), 201
+    with depot_lock(depot_id):
+        stocks   = load_stocks(depot_id)
+        existing = next((s for s in stocks if s["ticker"] == ticker), None)
+        if existing:
+            existing.update({"isin": isin, "buy_price_eur": buy_price, "shares": shares})
+            save_stocks(depot_id, stocks)
+            return jsonify({"ok": True, "action": "updated", "stock": existing})
+        try: data = fetch_stock_data(ticker)
+        except ValueError as e:
+            msg = str(e)
+            code = 404 if "nicht gefunden" in msg else 502
+            return jsonify({"error": msg, "ticker_not_found": code == 404}), code
+        except Exception as e: return jsonify({"error": str(e)}), 502
+        stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
+                 "isin": isin, "buy_price_eur": buy_price, "shares": shares,
+                 "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
+        stocks.append(stock); save_stocks(depot_id, stocks)
+        return jsonify({"ok": True, "action": "added", "stock": stock}), 201
 
 @app.route("/api/depots/<depot_id>/parqet/debug", methods=["GET"])
 def parqet_debug(depot_id):
@@ -2061,20 +2112,21 @@ def ath_correct(depot_id):
     corrections = request.get_json()  # [{ticker, new_ath}]
     if not corrections:
         return jsonify({"error": "Keine Korrekturen übergeben"}), 400
-    stocks  = load_stocks(depot_id)
     depots  = load_depots()
     depot   = next((d for d in depots if d["id"] == depot_id), {})
     updated = []
     details = []
-    for c in corrections:
-        for s in stocks:
-            if s["ticker"] == c["ticker"]:
-                old_ath = s.get("ath_eur", 0)
-                s["ath_eur"] = round(float(c["new_ath"]), 2)
-                updated.append(s["ticker"])
-                details.append(f"{s['name']}: {old_ath:.2f} → {s['ath_eur']:.2f} EUR")
-                break
-    save_stocks(depot_id, stocks)
+    with depot_lock(depot_id):
+        stocks  = load_stocks(depot_id)
+        for c in corrections:
+            for s in stocks:
+                if s["ticker"] == c["ticker"]:
+                    old_ath = s.get("ath_eur", 0)
+                    s["ath_eur"] = round(float(c["new_ath"]), 2)
+                    updated.append(s["ticker"])
+                    details.append(f"{s['name']}: {old_ath:.2f} → {s['ath_eur']:.2f} EUR")
+                    break
+        save_stocks(depot_id, stocks)
     if updated:
         add_log("manual_refresh",
                 f"ATH-Korrektur: {depot.get('name', depot_id)}",
@@ -2160,24 +2212,25 @@ def clear_pending_flags(depot_id):
     früheren Phase (z.B. vor dem Deaktivieren) nicht später fälschlich als 'jetzt gerade
     bestätigt' interpretiert wird."""
     PENDING_PREFIX = "pending_notify_"
-    stocks = load_stocks(depot_id)
-    changed = False
-    for s in stocks:
-        for key in [k for k in s if k.startswith(PENDING_PREFIX)]:
-            del s[key]; changed = True
-    if changed:
-        save_stocks(depot_id, stocks)
-
-    depots = load_depots()
-    depot  = next((d for d in depots if d["id"] == depot_id), None)
-    for wl in (depot.get("watchlists", []) if depot else []):
-        wls = load_wl_stocks(depot_id, wl["id"])
-        wl_changed = False
-        for s in wls:
+    with depot_lock(depot_id):
+        stocks = load_stocks(depot_id)
+        changed = False
+        for s in stocks:
             for key in [k for k in s if k.startswith(PENDING_PREFIX)]:
-                del s[key]; wl_changed = True
-        if wl_changed:
-            save_wl_stocks(depot_id, wl["id"], wls)
+                del s[key]; changed = True
+        if changed:
+            save_stocks(depot_id, stocks)
+
+        depots = load_depots()
+        depot  = next((d for d in depots if d["id"] == depot_id), None)
+        for wl in (depot.get("watchlists", []) if depot else []):
+            wls = load_wl_stocks(depot_id, wl["id"])
+            wl_changed = False
+            for s in wls:
+                for key in [k for k in s if k.startswith(PENDING_PREFIX)]:
+                    del s[key]; wl_changed = True
+            if wl_changed:
+                save_wl_stocks(depot_id, wl["id"], wls)
 
 @app.route("/api/depots/<depot_id>", methods=["PUT"])
 def update_depot(depot_id):
@@ -2260,8 +2313,9 @@ def delete_watchlist(depot_id, wl_id):
     depots = load_depots()
     depot = next((d for d in depots if d["id"] == depot_id), None)
     if not depot: return jsonify({"error": "Nicht gefunden"}), 404
-    f = watchlist_file(depot_id, wl_id)
-    if os.path.exists(f): os.remove(f)
+    with depot_lock(depot_id):
+        f = watchlist_file(depot_id, wl_id)
+        if os.path.exists(f): os.remove(f)
     depot["watchlists"] = [w for w in depot.get("watchlists", []) if w["id"] != wl_id]
     save_depots(depots); return jsonify({"ok": True})
 
@@ -2280,49 +2334,52 @@ def api_add_stock():
     isin     = body.get("isin", "").strip()
     if not did or not ticker or not name:
         return jsonify({"error": "depot, ticker, name erforderlich"}), 400
-    stocks = load_stocks(did)
-    if any(s["ticker"] == ticker for s in stocks):
-        return jsonify({"error": f"{name} bereits im Depot"}), 409
-    try: data = fetch_stock_data(ticker)
-    except ValueError as e:
-        msg = str(e)
-        code = 404 if "nicht gefunden" in msg else 502
-        return jsonify({"error": msg, "ticker_not_found": code == 404}), code
-    except Exception as e: return jsonify({"error": str(e)}), 502
-    stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
-             "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
-    stocks.append(stock); save_stocks(did, stocks); return jsonify(stock), 201
+    with depot_lock(did):
+        stocks = load_stocks(did)
+        if any(s["ticker"] == ticker for s in stocks):
+            return jsonify({"error": f"{name} bereits im Depot"}), 409
+        try: data = fetch_stock_data(ticker)
+        except ValueError as e:
+            msg = str(e)
+            code = 404 if "nicht gefunden" in msg else 502
+            return jsonify({"error": msg, "ticker_not_found": code == 404}), code
+        except Exception as e: return jsonify({"error": str(e)}), 502
+        stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
+                 "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
+        stocks.append(stock); save_stocks(did, stocks); return jsonify(stock), 201
 
 @app.route("/api/stocks/<ticker>", methods=["DELETE"])
 def api_delete_stock(ticker):
     did = request.args.get("depot", "")
-    save_stocks(did, [s for s in load_stocks(did) if s["ticker"] != ticker.upper()])
+    with depot_lock(did):
+        save_stocks(did, [s for s in load_stocks(did) if s["ticker"] != ticker.upper()])
     return jsonify({"ok": True})
 
 @app.route("/api/stocks/<ticker>/refresh", methods=["POST"])
 def api_refresh_stock(ticker):
     did    = request.args.get("depot", ""); depots = load_depots()
     depot  = next((d for d in depots if d["id"] == did), {"id": did, "name": did})
-    stocks = load_stocks(did)
-    idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
-    if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
-    try:
-        data    = fetch_stock_data(ticker); s = stocks[idx]
-        old_ath = float(s.get("ath_eur") or 0)
-        new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-        u_urls, u_ment, u_conf = resolve_notification_settings(did)
-        new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Bestand: {depot['name']}", u_urls,
-                                   mention=u_ment, confirm=u_conf)
-        stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
-        if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
-                and depot.get("notifications_enabled", True)):
-            send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
-                             f"Bestand: {depot['name']}", u_urls, u_ment, depot_id=did)
-        save_stocks(did, stocks)
-        add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True, depot_id=did)
-        return jsonify(stocks[idx])
-    except Exception as e: return jsonify({"error": str(e)}), 502
+    with depot_lock(did):
+        stocks = load_stocks(did)
+        idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
+        if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
+        try:
+            data    = fetch_stock_data(ticker); s = stocks[idx]
+            old_ath = float(s.get("ath_eur") or 0)
+            new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
+            u_urls, u_ment, u_conf = resolve_notification_settings(did)
+            new_blk = check_and_notify(s, data["current_eur"], new_ath,
+                                       f"Bestand: {depot['name']}", u_urls,
+                                       mention=u_ment, confirm=u_conf)
+            stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
+            if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
+                    and depot.get("notifications_enabled", True)):
+                send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
+                                 f"Bestand: {depot['name']}", u_urls, u_ment, depot_id=did)
+            save_stocks(did, stocks)
+            add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True, depot_id=did)
+            return jsonify(stocks[idx])
+        except Exception as e: return jsonify({"error": str(e)}), 502
 
 @app.route("/api/stocks/refresh-all", methods=["POST"])
 def api_refresh_all():
@@ -2342,15 +2399,16 @@ def change_ticker(ticker):
     new_tick  = body.get("ticker", "").strip().upper()
     new_name  = body.get("name", "").strip(); new_exch = body.get("exchange", "").strip()
     if not new_tick: return jsonify({"error": "Neuer Ticker erforderlich"}), 400
-    stocks = load_stocks(did)
-    idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
-    if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
-    old = stocks[idx]
-    try: data = fetch_stock_data(new_tick)
-    except Exception as e: return jsonify({"error": str(e)}), 502
-    stocks[idx] = {**_make_stock(data, old), "name": new_name or old["name"], "ticker": new_tick,
-                   "exchange": new_exch or old.get("exchange", ""), "last_notified_block": old.get("last_notified_block", 0)}
-    save_stocks(did, stocks)
+    with depot_lock(did):
+        stocks = load_stocks(did)
+        idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
+        if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
+        old = stocks[idx]
+        try: data = fetch_stock_data(new_tick)
+        except Exception as e: return jsonify({"error": str(e)}), 502
+        stocks[idx] = {**_make_stock(data, old), "name": new_name or old["name"], "ticker": new_tick,
+                       "exchange": new_exch or old.get("exchange", ""), "last_notified_block": old.get("last_notified_block", 0)}
+        save_stocks(did, stocks)
     depots = load_depots()
     depot  = next((d for d in depots if d["id"] == did), {})
     add_log("manual_refresh", f"Ticker geändert: {old['name']} ({depot.get('name', did)})", f"{ticker} → {new_tick}", True, depot_id=did)
@@ -2360,29 +2418,31 @@ def change_ticker(ticker):
 def patch_stock(depot_id, ticker):
     """Aktualisiert einzelne Felder eines Stocks direkt in der Depot-Datei."""
     body   = request.get_json() or {}
-    stocks = load_stocks(depot_id)
-    stock  = next((s for s in stocks if s["ticker"] == ticker), None)
-    if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
-    # Erlaubte Felder die per PATCH gesetzt werden dürfen
-    ALLOWED = {"bought_levels", "notes", "sector", "ath_alert_enabled"}
-    for key, val in body.items():
-        if key in ALLOWED:
-            stock[key] = val
-    save_stocks(depot_id, stocks)
-    return jsonify(stock)
+    with depot_lock(depot_id):
+        stocks = load_stocks(depot_id)
+        stock  = next((s for s in stocks if s["ticker"] == ticker), None)
+        if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
+        # Erlaubte Felder die per PATCH gesetzt werden dürfen
+        ALLOWED = {"bought_levels", "notes", "sector", "ath_alert_enabled"}
+        for key, val in body.items():
+            if key in ALLOWED:
+                stock[key] = val
+        save_stocks(depot_id, stocks)
+        return jsonify(stock)
 
 @app.route("/api/stocks/<ticker>/move-to-watchlist", methods=["POST"])
 def move_to_watchlist(ticker):
     body  = request.get_json() or {}; did = body.get("depot_id", ""); wl_id = body.get("wl_id", "")
-    stocks = load_stocks(did); stock = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
-    if not stock: return jsonify({"error": "Nicht gefunden"}), 404
-    wl_stocks = load_wl_stocks(did, wl_id)
-    if any(s["ticker"] == ticker.upper() for s in wl_stocks):
-        return jsonify({"error": "Bereits in dieser Liste"}), 409
-    s = dict(stock); s["last_notified_block"] = initial_block(s["current_eur"], s["ath_eur"])
-    wl_stocks.append(s); save_wl_stocks(did, wl_id, wl_stocks)
-    save_stocks(did, [s for s in stocks if s["ticker"] != ticker.upper()])
-    return jsonify({"ok": True})
+    with depot_lock(did):
+        stocks = load_stocks(did); stock = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
+        if not stock: return jsonify({"error": "Nicht gefunden"}), 404
+        wl_stocks = load_wl_stocks(did, wl_id)
+        if any(s["ticker"] == ticker.upper() for s in wl_stocks):
+            return jsonify({"error": "Bereits in dieser Liste"}), 409
+        s = dict(stock); s["last_notified_block"] = initial_block(s["current_eur"], s["ath_eur"])
+        wl_stocks.append(s); save_wl_stocks(did, wl_id, wl_stocks)
+        save_stocks(did, [s for s in stocks if s["ticker"] != ticker.upper()])
+        return jsonify({"ok": True})
 
 # ── Watchlist Stocks ──────────────────────────────────────────────
 @app.route("/api/watchlist/<depot_id>/<wl_id>/stocks", methods=["GET"])
@@ -2394,71 +2454,76 @@ def wl_add_stock(depot_id, wl_id):
     ticker   = body.get("ticker", "").strip().upper(); name = body.get("name", "").strip()
     exchange = body.get("exchange", "").strip(); isin = body.get("isin", "").strip()
     if not ticker or not name: return jsonify({"error": "ticker und name erforderlich"}), 400
-    stocks = load_wl_stocks(depot_id, wl_id)
-    if any(s["ticker"] == ticker for s in stocks): return jsonify({"error": "Bereits in dieser Liste"}), 409
-    try: data = fetch_stock_data(ticker)
-    except ValueError as e:
-        msg = str(e)
-        code = 404 if "nicht gefunden" in msg else 502
-        return jsonify({"error": msg, "ticker_not_found": code == 404}), code
-    except Exception as e: return jsonify({"error": str(e)}), 502
-    stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
-             "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
-    stocks.append(stock); save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stock), 201
+    with depot_lock(depot_id):
+        stocks = load_wl_stocks(depot_id, wl_id)
+        if any(s["ticker"] == ticker for s in stocks): return jsonify({"error": "Bereits in dieser Liste"}), 409
+        try: data = fetch_stock_data(ticker)
+        except ValueError as e:
+            msg = str(e)
+            code = 404 if "nicht gefunden" in msg else 502
+            return jsonify({"error": msg, "ticker_not_found": code == 404}), code
+        except Exception as e: return jsonify({"error": str(e)}), 502
+        stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
+                 "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
+        stocks.append(stock); save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stock), 201
 
 @app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>", methods=["PATCH"])
 def wl_patch_stock(depot_id, wl_id, ticker):
     body   = request.get_json() or {}
-    stocks = load_wl_stocks(depot_id, wl_id)
-    stock  = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
-    if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
-    ALLOWED = {"sector", "notes", "ath_alert_enabled"}
-    for key, val in body.items():
-        if key in ALLOWED:
-            stock[key] = val
-    save_wl_stocks(depot_id, wl_id, stocks)
-    return jsonify(stock)
+    with depot_lock(depot_id):
+        stocks = load_wl_stocks(depot_id, wl_id)
+        stock  = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
+        if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
+        ALLOWED = {"sector", "notes", "ath_alert_enabled"}
+        for key, val in body.items():
+            if key in ALLOWED:
+                stock[key] = val
+        save_wl_stocks(depot_id, wl_id, stocks)
+        return jsonify(stock)
 
 @app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>", methods=["DELETE"])
 def wl_delete_stock(depot_id, wl_id, ticker):
-    save_wl_stocks(depot_id, wl_id, [s for s in load_wl_stocks(depot_id, wl_id) if s["ticker"] != ticker.upper()])
+    with depot_lock(depot_id):
+        save_wl_stocks(depot_id, wl_id, [s for s in load_wl_stocks(depot_id, wl_id) if s["ticker"] != ticker.upper()])
     return jsonify({"ok": True})
 
 @app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>/refresh", methods=["POST"])
 def wl_refresh_stock(depot_id, wl_id, ticker):
     depots  = load_depots(); depot = next((d for d in depots if d["id"] == depot_id), {"name": depot_id})
     wl_name = next((w["name"] for w in depot.get("watchlists", []) if w["id"] == wl_id), wl_id)
-    stocks  = load_wl_stocks(depot_id, wl_id)
-    idx     = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
-    if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
-    try:
-        data    = fetch_stock_data(ticker); s = stocks[idx]
-        old_ath = float(s.get("ath_eur") or 0)
-        new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-        u_urls, u_ment, u_conf = resolve_notification_settings(depot_id)
-        new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                   f"Beobachtung: {wl_name}", u_urls,
-                                   mention=u_ment, confirm=u_conf)
-        stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
-        if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
-                and depot.get("notifications_enabled", True)):
-            send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
-                             f"Beobachtung: {wl_name}", u_urls, u_ment, depot_id=depot_id)
-        save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stocks[idx])
-    except Exception as e: return jsonify({"error": str(e)}), 502
+    with depot_lock(depot_id):
+        stocks  = load_wl_stocks(depot_id, wl_id)
+        idx     = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
+        if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
+        try:
+            data    = fetch_stock_data(ticker); s = stocks[idx]
+            old_ath = float(s.get("ath_eur") or 0)
+            new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
+            u_urls, u_ment, u_conf = resolve_notification_settings(depot_id)
+            new_blk = check_and_notify(s, data["current_eur"], new_ath,
+                                       f"Beobachtung: {wl_name}", u_urls,
+                                       mention=u_ment, confirm=u_conf)
+            stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
+            if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
+                    and depot.get("notifications_enabled", True)):
+                send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
+                                 f"Beobachtung: {wl_name}", u_urls, u_ment, depot_id=depot_id)
+            save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stocks[idx])
+        except Exception as e: return jsonify({"error": str(e)}), 502
 
 @app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>/move", methods=["POST"])
 def wl_move_to_depot(depot_id, wl_id, ticker):
-    wl_stocks    = load_wl_stocks(depot_id, wl_id)
-    stock        = next((s for s in wl_stocks if s["ticker"] == ticker.upper()), None)
-    if not stock: return jsonify({"error": "Nicht gefunden"}), 404
-    depot_stocks = load_stocks(depot_id)
-    if any(s["ticker"] == ticker.upper() for s in depot_stocks):
-        return jsonify({"error": "Bereits im Depot"}), 409
-    s = dict(stock); s["last_notified_block"] = initial_block(s["current_eur"], s["ath_eur"])
-    depot_stocks.append(s); save_stocks(depot_id, depot_stocks)
-    save_wl_stocks(depot_id, wl_id, [s for s in wl_stocks if s["ticker"] != ticker.upper()])
-    return jsonify({"ok": True, "stock": s})
+    with depot_lock(depot_id):
+        wl_stocks    = load_wl_stocks(depot_id, wl_id)
+        stock        = next((s for s in wl_stocks if s["ticker"] == ticker.upper()), None)
+        if not stock: return jsonify({"error": "Nicht gefunden"}), 404
+        depot_stocks = load_stocks(depot_id)
+        if any(s["ticker"] == ticker.upper() for s in depot_stocks):
+            return jsonify({"error": "Bereits im Depot"}), 409
+        s = dict(stock); s["last_notified_block"] = initial_block(s["current_eur"], s["ath_eur"])
+        depot_stocks.append(s); save_stocks(depot_id, depot_stocks)
+        save_wl_stocks(depot_id, wl_id, [s for s in wl_stocks if s["ticker"] != ticker.upper()])
+        return jsonify({"ok": True, "stock": s})
 
 XETRA_MAP_FILE = os.path.join(DATA_DIR, "xetra_map.json")
 
