@@ -182,6 +182,8 @@ tr:hover td{background:var(--zebra-hover)!important}
 .stock-card.row-orange{box-shadow:inset 3px 0 0 0 var(--orange)}
 .stock-card.row-red{box-shadow:inset 3px 0 0 0 var(--red)}
 .sn{font-weight:600}
+.stock-name-link{cursor:pointer}
+.stock-name-link:hover{text-decoration:underline}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
 .weight-wrap{display:flex;align-items:center;gap:6px;margin-top:3px}
 .snapshot-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
@@ -355,6 +357,26 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .next-refresh{font-size:11px;color:var(--accent)}
 .badge-buy{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3);font-size:11px;padding:3px 7px;border-radius:4px;font-weight:600;display:inline-block;margin-top:3px}
+
+/* Aktien-Detail-Modal (öffnet über Klick auf Name in Tabelle/Karte/Treemap) */
+.sd-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px}
+.sd-name{font-size:17px;font-weight:700}
+.sd-ticker{font-size:12px;color:var(--muted);margin-top:2px}
+.sd-price{text-align:right}
+.sd-price .val{font-size:18px;font-weight:700}
+.sd-price .orig{font-size:11px;color:var(--muted)}
+.sd-perf-wrap{margin-bottom:16px}
+.sd-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:18px}
+.sd-item .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
+.sd-item .v{font-size:13px;font-weight:600}
+.sd-divider{border-top:1px solid var(--border);margin:16px 0}
+.sd-section-lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.sd-summary{font-size:13px;line-height:1.55;color:var(--text)}
+.sd-summary.loading{color:var(--muted);display:flex;align-items:center;gap:8px}
+.sd-summary.empty{color:var(--muted);font-style:italic}
+.sd-spinner{width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sd-spin .7s linear infinite;flex-shrink:0}
+@keyframes sd-spin{to{transform:rotate(360deg)}}
+.sd-source{font-size:10px;color:var(--muted);margin-top:10px;opacity:.7}
 .btn-buy-filter{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.3);border-radius:6px;cursor:pointer}
 .btn.btn-ghost.btn-sm.active{background:rgba(78,124,246,.15);color:var(--accent);border-color:var(--accent)}
 .btn-buy-filter.active{background:rgba(34,197,94,.25);border-color:#22c55e}
@@ -861,6 +883,20 @@ select</style>
 </div>
 
 <!-- Modal: Beobachtungsliste Einstellungen -->
+<!-- Modal: Aktien-Detail (Klick auf Name in Tabelle/Karte/Treemap) -->
+<div class="overlay" id="stockDetailModal" style="display:none" onclick="closeIfOverlay(event,'stockDetailModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">&#128204; Aktien-Detail</span>
+      <button class="close-btn" onclick="closeModal('stockDetailModal')">&#215;</button>
+    </div>
+    <div class="modal-body" id="sdBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('stockDetailModal')">Schließen</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="wlSettingsModal" style="display:none" onclick="closeIfOverlay(event,'wlSettingsModal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:400px">
     <div class="modal-header">
@@ -2550,7 +2586,7 @@ function renderTable(stocks, basisStocks){
          <button class="icon-btn" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')" title="Entfernen">&#128465;</button>`;
     return `<tr class="${c.row}">
       <td>
-        <div class="sn">${esc(nm)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+        <div class="sn stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(nm)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
         <div class="ss">${s.ticker} · ${s.exchange}${s.isin?` · <span class="isin-tag">${s.isin}</span>`:""}</div>
         ${sectorBadgeHtml(s, did, wl, wlId)}
         ${weightBarHtml(s)}
@@ -2603,7 +2639,7 @@ function renderTable(stocks, basisStocks){
       <div class="card-top">
         <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
         <div>
-          <div class="card-name">${esc(s.name)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+          <div class="card-name stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(s.name)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
           <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
           ${sectorBadgeHtml(s, did, wl, wlId)}
           ${weightBarHtml(s, true)}
@@ -4127,6 +4163,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.12.18 · Backend v2.7.25",
+    changes: [
+      "Neu: Aktien-Detail-Modal — Klick auf den Aktiennamen in Tabelle oder Karte (sowie Tap auf eine Treemap-Kachel) zeigt Sektor, ATH-Abstand, 52W-Bereich, P&amp;L und eine kurze Unternehmensbeschreibung von Wikipedia (Deutsch, Fallback Englisch), wird bei Öffnung nachgeladen. Ursprünglich über Yahoo Finance geplant — dessen quoteSummary-Endpunkt verlangt inzwischen einen GDPR-Consent-Cookie-Flow, der aus Docker/EU-Umgebungen nicht zuverlässig automatisierbar ist"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.12.16 · Backend v2.7.22",
     changes: [
       "Dialog „Bei Parqet verkauft” überarbeitet: klarerer Hinweistext, dass pro Position ein eigener Klick auf „Entfernen” nötig ist, sowie ein neuer „Alle entfernen”-Button im Footer (mit Zähler der noch offenen Positionen), falls man tatsächlich alle löschen möchte statt einzeln durchzuklicken"
@@ -4732,6 +4774,67 @@ function closeModal(id){
   }
 }
 function closeIfOverlay(e,id){if(e.target===document.getElementById(id))closeModal(id);}
+
+// ── Aktien-Detail-Modal ─────────────────────────────────────────
+// Aufruf über Klick auf den Aktiennamen in Tabelle/Karte sowie (bestehend) beim
+// Antippen einer Treemap-Kachel (_showTreemapDetail). depotId/wlId werden aktuell
+// nicht ausgewertet — Lookup erfolgt über den Ticker in stocksCache, das immer den
+// zuletzt gerenderten Bestand bzw. die zuletzt gerenderte Watchlist enthält.
+let _sdActiveTicker = null;
+function openStockDetail(ticker, depotId, wlId){
+  const s = stocksCache.find(x => x.ticker === ticker);
+  if(!s) return;
+  _sdActiveTicker = ticker;
+
+  const d = disc(s), c = dcls(d);
+  document.getElementById("sdBody").innerHTML = `
+    <div class="sd-head">
+      <div>
+        <div class="sd-name">${esc(s.name)}</div>
+        <div class="sd-ticker">${esc(s.ticker)} · ${esc(s.exchange)}${s.isin?` · ${esc(s.isin)}`:""}</div>
+      </div>
+      <div class="sd-price">
+        <div class="val">${fmtEUR(s.current_eur)}</div>
+        ${s.currency && s.currency !== "EUR" && s.current_orig ? `<div class="orig">${fmtOrig(s.current_orig, s.currency)}</div>` : ""}
+      </div>
+    </div>
+    <div class="sd-perf-wrap">${perfWrap(s)}</div>
+    <div class="sd-grid">
+      <div class="sd-item"><div class="lbl">Sektor</div><div class="v">${esc(s.sector || "—")}</div></div>
+      <div class="sd-item"><div class="lbl">ATH-Abstand</div><div class="v"><span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span></div></div>
+      <div class="sd-item"><div class="lbl">Allzeithoch</div><div class="v">${fmtEUR(s.ath_eur)}${s.ath_date?` <span style="color:var(--muted);font-weight:400">(${s.ath_date})</span>`:""}</div></div>
+      <div class="sd-item"><div class="lbl">52W-Bereich</div><div class="v">${s.week52_low!=null && s.week52_high!=null ? `${fmtEUR(s.week52_low)} – ${fmtEUR(s.week52_high)}` : "—"}</div></div>
+      ${s.buy_price_eur ? `<div class="sd-item"><div class="lbl">Einstandskurs</div><div class="v">${fmtEUR(s.buy_price_eur)}</div></div>` : ""}
+      ${s.buy_price_eur && s.shares ? (()=>{const pnl_pct=((s.current_eur-s.buy_price_eur)/s.buy_price_eur*100);const pnl_eur=(s.current_eur-s.buy_price_eur)*s.shares;const pos=pnl_eur>=0;return `<div class="sd-item"><div class="lbl">P&amp;L</div><div class="v" style="color:${pos?"var(--green)":"var(--red)"}">${pos?"+":""}${pnl_pct.toFixed(1)}% · ${pos?"+":""}${fmtEUR(pnl_eur)}</div></div>`;})() : ""}
+    </div>
+    <div class="sd-divider"></div>
+    <div class="sd-section-lbl">&#127970; Über das Unternehmen</div>
+    <div class="sd-summary loading" id="sdCompanyInfo"><div class="sd-spinner"></div> Firmeninfo wird geladen…</div>
+  `;
+  openModal("stockDetailModal");
+  loadCompanyInfo(ticker, s.name);
+}
+
+async function loadCompanyInfo(ticker, name){
+  try{
+    const r = await fetch(`${API}/stocks/${encodeURIComponent(ticker)}/info?name=${encodeURIComponent(name)}`);
+    const j = await r.json();
+    if(_sdActiveTicker !== ticker) return; // inzwischen anderen Ticker geöffnet/Modal gewechselt
+    const el = document.getElementById("sdCompanyInfo");
+    if(!el) return;
+    if(j.summary){
+      el.className = "sd-summary";
+      el.innerHTML = `${esc(j.summary)}<div class="sd-source">Quelle: Wikipedia</div>`;
+    } else {
+      el.className = "sd-summary empty";
+      el.innerHTML = "Keine Unternehmensbeschreibung verfügbar.";
+    }
+  } catch(e){
+    if(_sdActiveTicker !== ticker) return;
+    const el = document.getElementById("sdCompanyInfo");
+    if(el){ el.className = "sd-summary empty"; el.innerHTML = "Firmeninfo konnte nicht geladen werden."; }
+  }
+}
 
 // ── Parqet Integration ───────────────────────────────────────────
 let _parqetDepotId = null;
@@ -5644,7 +5747,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.16 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.12.18 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
