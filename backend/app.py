@@ -24,7 +24,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.23"
+VERSION           = "2.7.26"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -473,6 +473,50 @@ YH = {
 
 _STATIC_EUR_FALLBACK = {"USD":0.92,"GBP":1.17,"CHF":1.05,"JPY":0.0062,
                         "CAD":0.68,"AUD":0.60,"DKK":0.134,"HKD":0.118}
+
+# ── Firmeninfo (Kurzbeschreibung fürs Aktien-Detail-Modal) ─────────
+# Ursprünglich über Yahoo quoteSummary/assetProfile geplant — verworfen, da Yahoo dafür seit
+# einem Cookie/Crumb-Auth-Umbau einen echten GDPR-Consent-Cookie-Flow (guce.yahoo.com) verlangt,
+# der aus Docker/EU-Umgebungen nicht zuverlässig automatisierbar ist (getestet: "Invalid Cookie"
+# selbst mit Cookies von finance.yahoo.com bzw. dem funktionierenden chart-Endpoint). Stattdessen
+# Wikipedia-REST-API: kein Auth nötig, stabiler, liefert auf Deutsch (Fallback Englisch).
+_company_info_cache = {}   # {name: (summary_or_None, timestamp)} — Cache-Key ist der Firmenname
+COMPANY_INFO_TTL     = 24 * 3600  # 24h — Kurzbeschreibungen ändern sich praktisch nie
+
+def fetch_company_info(name):
+    """Kurze Unternehmensbeschreibung von Wikipedia (zuerst DE, dann EN als Fallback), on-demand
+    beim Öffnen des Aktien-Detail-Modals. Sucht per Volltextsuche (list=search) nach dem
+    Firmennamen, holt dann den Extract-Text über die REST-Summary-API. Volltextsuche statt
+    opensearch (Titel-Präfix-Match), weil Aktiennamen oft Rechtsform-Suffixe tragen ("Apple Inc.",
+    "Amazon.com, Inc.", "NVIDIA Corporation") und Wikipedia-Artikel meist ohne diese Suffixe heißen
+    ("Apple", "Amazon (Unternehmen)", "Nvidia") — ein reiner Präfix-Match schlägt dann fehl,
+    Volltextsuche findet den Artikel trotzdem über die Relevanz-Wertung. Disambiguation-Seiten
+    (Mehrdeutigkeit) und Firmen ohne Wikipedia-Artikel liefern None — Frontend zeigt dafür
+    einen Hinweistext."""
+    cached = _company_info_cache.get(name)
+    if cached and (time_mod.time() - cached[1]) < COMPANY_INFO_TTL:
+        return cached[0]
+    summary = None
+    for lang in ("de", "en"):
+        try:
+            search_url = (f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
+                          f"&srsearch={urlquote(name)}&srlimit=1&format=json")
+            r = requests.get(search_url, headers=YH, timeout=10); r.raise_for_status()
+            hits = r.json().get("query", {}).get("search") or []
+            if not hits: continue
+            title = hits[0]["title"]
+            sum_url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{urlquote(title)}"
+            r2 = requests.get(sum_url, headers=YH, timeout=10); r2.raise_for_status()
+            j = r2.json()
+            if j.get("type") == "disambiguation": continue
+            if j.get("extract"):
+                summary = j["extract"]
+                break
+        except Exception as e:
+            log.debug(f"Wikipedia-Info für '{name}' ({lang}) nicht abrufbar: {e}")
+    _company_info_cache[name] = (summary, time_mod.time())
+    return summary
+
 
 def get_eur_rate(currency):
     """Gibt EUR-Umrechnungskurs zurück. Normalisiert GBp → GBP automatisch.
@@ -2563,6 +2607,18 @@ def _xetra_lookup(name, ticker):
     return entry
 
 # ── Search ────────────────────────────────────────────────────────
+@app.route("/api/stocks/<ticker>/info", methods=["GET"])
+def api_stock_info(ticker):
+    """Kurze Unternehmensbeschreibung fürs Aktien-Detail-Modal (Wikipedia, siehe fetch_company_info),
+    on-demand, kein Datei-Schreibzugriff, daher kein depot_lock nötig. Erwartet den Firmennamen als
+    Query-Parameter (?name=...), da Wikipedia namensbasiert gesucht wird, nicht über den Ticker."""
+    name = request.args.get("name", "").strip() or ticker
+    try:
+        return jsonify({"summary": fetch_company_info(name)})
+    except Exception as e:
+        log.warning(f"Firmeninfo '{name}': {e}")
+        return jsonify({"summary": None})
+
 @app.route("/api/search", methods=["GET"])
 def search_companies():
     q = request.args.get("q", "").strip()
