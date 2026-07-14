@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.7.21-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.12.14-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.7.26-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.12.18-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -36,6 +36,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Treemap-Ansicht** — alternative Darstellung des Depots als Flächenkarte; Kachelgröße = Positionswert, Farbe = ATH-Discount-Stufe (nur Bestand, ab 2 Positionen, nicht für Watchlists)
 - **Zeilenfarben** — Discount-Stufen werden als schmaler linker Farb-Akzent statt Vollflächen-Tönung dargestellt; zusätzlich dezentes Zebra-Muster in der Depot-Tabelle für bessere Lesbarkeit
 - **52-Wochen-Hoch/-Tief-Badge** — `52W-H`/`52W-T` neben den Performance-Badges, wenn der Kurs innerhalb 3% des 52-Wochen-Hochs bzw. -Tiefs liegt
+- **Aktien-Detail-Modal** — Klick auf den Aktiennamen (Tabelle, Karte oder Treemap-Kachel) öffnet ein Modal mit Sektor, ATH-Abstand/-Datum, 52-Wochen-Bereich, P&L, Performance-Badges sowie einer kurzen Unternehmensbeschreibung (Wikipedia)
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
 - **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
@@ -45,7 +46,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Originalwährungsanzeige** — bei Fremdwährungsaktien (USD, GBP etc.) wird der Kurs in der Originalwährung klein und grau unter dem EUR-Kurs angezeigt, in Tabelle und Mobile-Card; EUR-Aktien bleiben unverändert
 - **Kaufmarkierung (K)** — ATH-Level-Kacheln (−20%, −30% usw.) sind antippbar; ein Tippen setzt ein blaues K-Badge als persönliche Notiz auf welchem Level ein Kauf stattfand; mehrere Level gleichzeitig möglich, wird dauerhaft gespeichert
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
-- **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion
+- **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion; bei Parqet komplett verkaufte Positionen werden erkannt und erst nach Bestätigung (einzeln oder gesammelt über „Alle entfernen") aus dem ATH-Tracker gelöscht
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance (inkl. Watchlist-Aktien); Korrekturen direkt in der App möglich
 - **XETRA-Unterstützung** — bei der Aktiensuche wird automatisch das passende XETRA-Listing vorgeschlagen; bekannte Aktien sofort aus lokalem Cache (`xetra_map.json`), unbekannte dynamisch via OpenFIGI und dann gecacht
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
@@ -327,6 +328,9 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.7.24–2.7.26 / 2.12.17–2.12.18 | Neu: Aktien-Detail-Modal — Klick auf den Aktiennamen (Tabelle, Karte, Treemap) öffnet ein Modal mit Sektor, ATH-Abstand/-Datum, 52-Wochen-Bereich, P&L, Performance-Badges sowie einer nachgeladenen Kurzbeschreibung des Unternehmens von Wikipedia (Yahoo-Unternehmensdaten waren wegen eines GDPR-Consent-Cookie-Flows nicht zuverlässig automatisierbar) |
+| 2.7.23 / 2.12.14 | Depot-Locking gegen Lost Updates: ein Lock pro Depot sichert den kompletten Lese-/Schreibzyklus (Bestand + Watchlists) zwischen automatischem Refresh und HTTP-Requests ab — verhindert, dass gleichzeitige Änderungen sich gegenseitig überschreiben |
+| 2.7.22 / 2.12.15–2.12.16 | Neu: Erkennung komplett bei Parqet verkaufter Positionen beim Sync — Bestätigungsmodal (einzeln oder gesammelt über „Alle entfernen") statt stillschweigend unverändert bleibender Position |
 | 2.7.21 / 2.12.14 | Depot-Zuordnungsauswahl beim Neuer-Benutzer-Dialog erscheint nur noch, solange es unzugeordnete Depots gibt — neue Benutzer legen sich ihr Depot künftig selbst an |
 | 2.7.21 / 2.12.13 | Benutzer-Bearbeiten-Formular in drei aufklappbare Sektionen gegliedert (👤 Profil / 🔔 Benachrichtigungen / 🕘 Zusammenfassungen); zugeklappte Sektionen zeigen den Ist-Zustand kompakt im Header |
 | 2.7.21 / 2.12.12 | Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen ATH-Zusammenfassung liegen jetzt userbezogen auf dem Benutzerprofil statt global; der bisherige globale Enable-Schalter entfällt; neue Defaults So 20:00 / 21:00 |
