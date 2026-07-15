@@ -24,7 +24,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.26"
+VERSION           = "2.7.27"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -404,7 +404,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         multiplier = get_multiplier(cb)
         nk_icon    = "🛒 " if is_nachkauf else ""
         gap_icon   = "⚖️ " if is_sector_gap else ""
-        title      = f"ATH-Alarm [{label}]: {nk_icon}{gap_icon}{stock['name']} -{cb}%-Block"
+        title      = f"ATH-Alarm [{label}]: {nk_icon}{gap_icon}{stock['name']} ({stock['ticker']}) -{cb}%-Block"
         # Kaufempfehlung wenn Budget definiert
         buy_line = ""
         if buy_budget:
@@ -414,9 +414,16 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 cost       = round(qty * new_cur, 2)
                 buy_line   = (f"\nKaufempfehlung:  {qty} Stk. "
                               f"(~{cost:.2f} EUR / Budget {multiplier}×{buy_budget:.0f}={eff_budget:.0f} EUR)")
-        nk_line  = "\n🛒 Nachkauf-Kandidat" if is_nachkauf else ""
-        gap_line = "\n⚖️ Sektor unterrepräsentiert" if is_sector_gap else ""
-        body = (f"{stock['name']} ({stock['ticker']}) — {label}{nk_line}{gap_line}\n\n"
+        # Name/Ticker/Depot stehen bereits vollständig im Titel — Body startet direkt
+        # mit den Kennzahlen, um die Dopplung in Apprise-Clients zu vermeiden, die
+        # Titel+Body direkt untereinander anzeigen (z.B. ntfy/Gotify).
+        extra_lines = []
+        if is_nachkauf:
+            extra_lines.append("🛒 Nachkauf-Kandidat")
+        if is_sector_gap:
+            extra_lines.append("⚖️ Sektor unterrepräsentiert")
+        extra_block = ("\n".join(extra_lines) + "\n\n") if extra_lines else ""
+        body = (f"{extra_block}"
                 f"Aktueller Kurs:  {new_cur:.2f} EUR\n"
                 f"ATH:             {new_ath:.2f} EUR\n"
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
@@ -896,9 +903,10 @@ def send_ath_alerts(hits, label, urls, mention="", depot_id=None):
     if not urls: return
     for s in hits:
         prev_ath = s.get("_prev_ath", 0)
-        title = f"🎉 Neues ATH — {s['name']}"
-        body  = (f"{s['name']} ({s['ticker']}) — {label}\n\n"
-                 f"Neues ATH:      {s['ath_eur']:.2f} EUR\n"
+        title = f"🎉 Neues ATH [{label}] — {s['name']} ({s['ticker']})"
+        # Name/Ticker/Depot stehen bereits vollständig im Titel — Body startet direkt
+        # mit den Kennzahlen, um die Dopplung in Apprise-Clients zu vermeiden.
+        body  = (f"Neues ATH:      {s['ath_eur']:.2f} EUR\n"
                  f"Bisheriges ATH: {prev_ath:.2f} EUR\n"
                  f"Kursstand:      {s.get('market_time', '—')}")
         html_body = build_ath_reached_html(s, prev_ath)
@@ -1357,7 +1365,7 @@ def build_digest_html(depot, stocks):
     </body></html>"""
 
 
-_DAILY_DIGEST_ATH_RE      = re.compile(r"^🎉 Neues ATH — (.+)$")
+_DAILY_DIGEST_ATH_RE      = re.compile(r"^🎉 Neues ATH \[.*?\] — (.+)$")
 _DAILY_DIGEST_DISCOUNT_RE = re.compile(r"^ATH-Alarm \[.*?\]: (.+)$")
 
 def _daily_digest_line(entry):
