@@ -762,7 +762,7 @@ select</style>
             </div>
           </details>
         </div>
-        <!-- Tägliche ATH-Zusammenfassung Toggle -->
+        <!-- Tägliche Depot-Zusammenfassung Toggle -->
         <div style="margin-top:12px">
           <div style="display:flex;align-items:center;gap:10px">
             <label class="toggle-switch">
@@ -1183,7 +1183,7 @@ select</style>
       </details>
 
       <details class="help-section">
-        <summary class="help-summary">🌙 Tägliche ATH-Zusammenfassung</summary>
+        <summary class="help-summary">🌙 Tägliche Depot-Zusammenfassung</summary>
         <div class="help-body">
           Pro Depot aktivierbar (Depot-Einstellungen → ⚙) — fasst jeden Tag (Mo–Fr) per
           Apprise zusammen, welche Discount- und ATH-Alarme heute für dieses Depot
@@ -3881,6 +3881,7 @@ async function editUser(userId){
   const digestDay    = user.digest_day ?? 6;
   const digestTime   = user.digest_time || "20:00";
   const dailyDigestT = user.daily_digest_time || "21:00";
+  const wlDigestChk  = !!user.daily_watchlist_digest;
   const hasPin       = !!user.has_pin;
 
   document.getElementById("userFormArea").innerHTML = `
@@ -3964,12 +3965,29 @@ async function editUser(userId){
                    style="width:104px;font-size:13px" onchange="updateUserSectionStates()"/>
           </div>
 
-          <div class="usr-label" style="margin-top:14px">🌙 Tägliche ATH-Zusammenfassung</div>
+          <div class="usr-label" style="margin-top:14px">🌙 Tägliche Depot-Zusammenfassung</div>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="time" class="form-input" id="editUserDailyDigestTime" value="${esc(dailyDigestT)}"
                    style="width:104px;font-size:13px" onchange="updateUserSectionStates()"/>
             <span style="font-size:12px;color:var(--muted)">nur Montag–Freitag</span>
           </div>
+
+          <div style="margin-top:14px;display:flex;align-items:center;gap:10px">
+            <label class="toggle-switch">
+              <input type="checkbox" id="editUserWlDigest" ${wlDigestChk?"checked":""} onchange="updateUserSectionStates()"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">📋 Watchlist-Zusammenfassung</span>
+          </div>
+          <details style="margin-top:6px">
+            <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none">
+              ℹ️ Was bedeutet das?
+            </summary>
+            <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6;background:var(--bg3);border-radius:6px;padding:10px 12px">
+              Eine gebündelte Nachricht über alle deine Watchlists (nicht pro Watchlist einzeln), zur gleichen Uhrzeit
+              wie die tägliche Depot-Zusammenfassung oben.
+            </div>
+          </details>
 
           <div class="usr-hint">
             Die Aktivierung läuft weiterhin pro Depot (Depot-Einstellungen → ⚙) — hier stellst du nur ein,
@@ -4014,7 +4032,8 @@ function updateUserSectionStates(){
     const d  = _USR_DAYS_SHORT[parseInt(document.getElementById("editUserDigestDay")?.value ?? "6")] || "So";
     const wt = document.getElementById("editUserDigestTime")?.value || "20:00";
     const dt = document.getElementById("editUserDailyDigestTime")?.value || "21:00";
-    dig.textContent = `📊 ${d} ${wt} · 🌙 ${dt}`;
+    const wl = document.getElementById("editUserWlDigest")?.checked;
+    dig.textContent = `📊 ${d} ${wt} · 🌙 ${dt}${wl?" · 📋":""}`;
   }
 }
 
@@ -4026,8 +4045,10 @@ async function saveEditUser(userId){
   const digestDay  = parseInt(document.getElementById("editUserDigestDay")?.value ?? "6");
   const digestTime = document.getElementById("editUserDigestTime")?.value || "20:00";
   const dailyDigestTime = document.getElementById("editUserDailyDigestTime")?.value || "21:00";
+  const wlDigest   = document.getElementById("editUserWlDigest")?.checked||false;
   const body    = {name, apprise_urls:userUrls, notification_mention:mention, notification_confirm:confirm,
-                   digest_day:digestDay, digest_time:digestTime, daily_digest_time:dailyDigestTime};
+                   digest_day:digestDay, digest_time:digestTime, daily_digest_time:dailyDigestTime,
+                   daily_watchlist_digest:wlDigest};
   if(pin) body.pin = pin;
   await fetch(`${API}/users/${userId}`, {method:"PATCH",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
@@ -4054,8 +4075,8 @@ function getUserWatchlistIds(){
 }
 
 // ── Verlauf ───────────────────────────────────────────────────────
-const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung"};
-const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh"};
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung",daily_watchlist_digest:"📋 Watchlist-Zusammenfassung"};
+const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh",daily_watchlist_digest:"auto_refresh"};
 let _notifItems = [];
 let _notifTypeFilter = "all";
 let _notifUserFilter = "all";
@@ -4180,6 +4201,24 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.5 · Backend v2.8.3",
+    changes: [
+      "„Tägliche ATH-Zusammenfassung” in „Tägliche Depot-Zusammenfassung” umbenannt (Depot-Einstellungen-Hilfe, Benutzer-Formular) — der alte Name war missverständlich, da die Zusammenfassung sowohl Discount- als auch ATH-Alarme enthält, nicht nur neue Höchststände. Grenzt sich jetzt außerdem klar von der neuen „Watchlist-Zusammenfassung” ab. Reine Textänderung, keine Funktions-/API-Änderung"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.4 · Backend v2.8.2",
+    changes: [
+      "Hinweistext zur Watchlist-Zusammenfassung ist jetzt ausklappbar (ℹ️ Was bedeutet das?) statt fest sichtbar, analog zu anderen Erklärungen in der App"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.3 · Backend v2.8.2",
+    changes: [
+      "Neu: gebündelte tägliche Watchlist-Zusammenfassung — ein Schalter im Benutzerprofil (Sektion 🕘 Zusammenfassungen) fasst alle Discount- und ATH-Alarme über sämtliche eigenen Watchlists hinweg in einer einzigen Nachricht zusammen (statt pro Watchlist einzeln), zur gleichen Uhrzeit wie die tägliche Depot-Zusammenfassung. Default: aus"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.13.2 · Backend v2.8.1",
     changes: [
@@ -5783,7 +5822,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.13.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
