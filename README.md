@@ -5,7 +5,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
 ![Version Backend](https://img.shields.io/badge/Backend-v2.8.1-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.1-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.2-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -330,6 +330,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.1 / 2.13.2 | Neu: Ein/Aus-Schalter für Benachrichtigungen in den Watchlist-Einstellungen (Default: an) — das Backend-Feld gab es bereits seit der Watchlist-Entkopplung (v2.8.0), es fehlte bisher nur der UI-Schalter dafür |
 | 2.8.1 / 2.13.1 | ATH-Prüfung und -Korrektur funktionieren jetzt auch in der Watchlist-Ansicht, nicht mehr nur im Bestand — prüft/korrigiert immer den gerade aktiven Kontext |
 | 2.8.0 / 2.13.0 | Watchlists sind kein Unterobjekt eines Depots mehr, sondern eigenständig und direkt Benutzern zugeordnet (analog zu Depots, mehrere Benutzer pro Watchlist möglich). Verschieben in den Bestand jetzt mit expliziter Depot-Auswahl statt automatischem Ziel-Depot. ATH-Alarme zeigen kein Depot-Suffix mehr im Label; ⚖️ Sektor-Lücke entfällt in Watchlist-Benachrichtigungen. Alarm-Titel neu formatiert (📉 statt „ATH-Alarm [Depot]: …", Bestand/Beobachtung-Angabe steht jetzt als erste Body-Zeile) |
 | 2.7.24–2.7.26 / 2.12.17–2.12.18 | Neu: Aktien-Detail-Modal — Klick auf den Aktiennamen (Tabelle, Karte, Treemap) öffnet ein Modal mit Sektor, ATH-Abstand/-Datum, 52-Wochen-Bereich, P&L, Performance-Badges sowie einer nachgeladenen Kurzbeschreibung des Unternehmens von Wikipedia (Yahoo-Unternehmensdaten waren wegen eines GDPR-Consent-Cookie-Flows nicht zuverlässig automatisierbar) |
