@@ -15,6 +15,7 @@ app = Flask(__name__)
 
 DATA_DIR      = "/data"
 DEPOTS_FILE   = os.path.join(DATA_DIR, "depots.json")
+WATCHLISTS_FILE = os.path.join(DATA_DIR, "watchlists.json")
 NOTIF_FILE     = os.path.join(DATA_DIR, "notifications.json")
 SPLITS_FILE    = os.path.join(DATA_DIR, "splits.json")
 SETTINGS_FILE  = os.path.join(DATA_DIR, "settings.json")
@@ -24,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.7.27"
+VERSION           = "2.8.0"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -75,7 +76,7 @@ _CFG_DEF = {
 def _safe(s):            return re.sub(r'[^a-z0-9_\-]', '_', s.lower())
 def depot_file(d):        return os.path.join(DATA_DIR, f"depot_{_safe(d)}.json")
 def depot_backup_file(d): return os.path.join(DATA_DIR, f"depot_{_safe(d)}_backup.json")
-def watchlist_file(d,w): return os.path.join(DATA_DIR, f"wl_{_safe(d)}_{_safe(w)}.json")
+def watchlist_file(w):    return os.path.join(DATA_DIR, f"wl_{_safe(w)}.json")
 
 # ── Pro-Datei-Locking ─────────────────────────────────────────────
 # Verhindert Lost-Updates zwischen dem Scheduler-Thread (Auto-Refresh, Snapshots,
@@ -106,11 +107,16 @@ def file_lock(path):
         yield
 
 def depot_lock(depot_id):
-    """Ein Lock pro Depot-ID statt pro exaktem Dateipfad — deckt Bestand UND alle
-    Watchlists dieses Depots gemeinsam ab, da _refresh_depot beide zusammen in
-    einem Zyklus liest/schreibt. HTTP-Routen für Stocks/Watchlists desselben
-    Depots nutzen denselben Key und werden so gegen den Scheduler serialisiert."""
+    """Ein Lock pro Depot-ID für den Bestand dieses Depots. Seit der Entkopplung von
+    Watchlists (Watchlists sind kein Depot-Unterobjekt mehr) deckt dieser Lock nur
+    noch die Depot-eigene Bestandsdatei ab — für Watchlists siehe watchlist_lock()."""
     return file_lock(f"depot:{depot_id}")
+
+def watchlist_lock(wl_id):
+    """Analog zu depot_lock, aber pro Watchlist-ID — deckt den load-modify-save-Zyklus
+    einer einzelnen, jetzt depot-unabhängigen Watchlist ab (Scheduler-Refresh vs.
+    HTTP-Routen auf derselben Watchlist)."""
+    return file_lock(f"wl:{wl_id}")
 
 def _load_json(path, default):
     if not os.path.exists(path):
@@ -138,10 +144,12 @@ def _save_json(path, data):
 
 def load_stocks(d):       return _load_json(depot_file(d), [])
 def save_stocks(d, s):    _save_json(depot_file(d), s)
-def load_wl_stocks(d, w): return _load_json(watchlist_file(d, w), [])
-def save_wl_stocks(d,w,s):_save_json(watchlist_file(d, w), s)
+def load_wl_stocks(w):    return _load_json(watchlist_file(w), [])
+def save_wl_stocks(w,s):  _save_json(watchlist_file(w), s)
 def load_depots():        return _load_json(DEPOTS_FILE, [])
 def save_depots(d):       _save_json(DEPOTS_FILE, d)
+def load_watchlists():    return _load_json(WATCHLISTS_FILE, [])
+def save_watchlists(w):   _save_json(WATCHLISTS_FILE, w)
 def load_notifications(): return _load_json(NOTIF_FILE, [])
 def load_snapshots():     return _load_json(SNAPSHOTS_FILE, [])
 def save_snapshots(s):    _save_json(SNAPSHOTS_FILE, s)
@@ -186,6 +194,14 @@ def get_depot_user(depot_id):
             return u
     return None
 
+def get_watchlist_user(wl_id):
+    """Analog zu get_depot_user: erster User, dessen watchlists-Liste diese
+    Watchlist-ID enthält (gleiche 'erster Treffer gewinnt'-Logik wie bei Depots)."""
+    for u in load_users():
+        if wl_id in u.get("watchlists", []):
+            return u
+    return None
+
 def resolve_notification_settings(depot_id):
     """Liefert (urls, mention, confirm) für ein Depot. Da jedes Depot immer genau
     einem Benutzer gehört (Benutzer sind jetzt Pflicht), kommen diese Werte
@@ -193,6 +209,16 @@ def resolve_notification_settings(depot_id):
     Die leeren Defaults greifen nur defensiv falls ein Depot wider Erwarten
     keinem Benutzer zugeordnet ist."""
     user = get_depot_user(depot_id)
+    if not user:
+        return [], "", False
+    return (user.get("apprise_urls", []),
+            user.get("notification_mention", ""),
+            user.get("notification_confirm", False))
+
+def resolve_watchlist_notification_settings(wl_id):
+    """Analog zu resolve_notification_settings, aber für eine (seit der Entkopplung
+    eigenständige) Watchlist statt eines Depots."""
+    user = get_watchlist_user(wl_id)
     if not user:
         return [], "", False
     return (user.get("apprise_urls", []),
@@ -229,7 +255,7 @@ def save_settings(s):     _save_json(SETTINGS_FILE, s)
 
 def save_notifications(n): _save_json(NOTIF_FILE, n)
 
-def add_log(etype, title, body, success=True, depot_id=None, kind=None):
+def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, kind=None):
     n = load_notifications()
     entry = {"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
              "type": etype, "title": title, "body": body, "success": success}
@@ -241,12 +267,25 @@ def add_log(etype, title, body, success=True, depot_id=None, kind=None):
         if user:
             entry["user_id"]   = user["id"]
             entry["user_name"] = user.get("name", "")
+    elif watchlist_id:
+        # Watchlists sind entkoppelt und haben kein Depot mehr — Alarme dieser Art
+        # tauchen daher bewusst nicht in einer Depot-bezogenen Tages-/Wochenzusammenfassung
+        # auf, User-Zuordnung fürs Verlauf-Filter (nach Benutzer) bleibt aber erhalten.
+        entry["watchlist_id"] = watchlist_id
+        user = get_watchlist_user(watchlist_id)
+        if user:
+            entry["user_id"]   = user["id"]
+            entry["user_name"] = user.get("name", "")
     n.append(entry)
     save_notifications(n)
 
 def get_depot(depot_id):
     """Hilfsfunktion: Gibt Depot-Dict zurück oder None."""
     return next((d for d in load_depots() if d["id"] == depot_id), None)
+
+def get_watchlist(wl_id):
+    """Hilfsfunktion: Gibt Watchlist-Dict zurück oder None."""
+    return next((w for w in load_watchlists() if w["id"] == wl_id), None)
 
 def gen_id(name):
     return f"{re.sub(r'[^a-z0-9]', '_', name.lower())[:20].strip('_')}_{int(time_mod.time())}"
@@ -266,32 +305,42 @@ def reset_pin_from_env():
     log.warning(f"RESET_PIN_USER: User '{reset_name}' nicht gefunden")
 
 def delete_user_from_env():
-    """Löscht einen User (und seine exklusiven Depots) wenn DELETE_USER gesetzt ist."""
+    """Löscht einen User (und seine exklusiven Depots + Watchlists) wenn DELETE_USER gesetzt ist."""
     del_name = os.environ.get("DELETE_USER", "").strip()
     if not del_name: return
     users   = load_users()
     target  = next((u for u in users if u.get("name","").lower() == del_name.lower()), None)
     if not target:
         log.warning(f"DELETE_USER: User '{del_name}' nicht gefunden"); return
-    target_depots = set(target.get("depots", []))
+    target_depots     = set(target.get("depots", []))
+    target_watchlists = set(target.get("watchlists", []))
     remaining_users = [u for u in users if u["id"] != target["id"]]
-    # Depots die anderen Usern gehören — nicht löschen
-    shared = {did for u in remaining_users for did in u.get("depots", [])}
-    exclusive = target_depots - shared
+    # Depots/Watchlists die anderen Usern gehören — nicht löschen
+    shared_depots     = {did for u in remaining_users for did in u.get("depots", [])}
+    shared_watchlists = {wid for u in remaining_users for wid in u.get("watchlists", [])}
+    exclusive_depots     = target_depots - shared_depots
+    exclusive_watchlists = target_watchlists - shared_watchlists
     # Exklusive Depots löschen
     depots = load_depots()
-    for did in exclusive:
+    for did in exclusive_depots:
         depot = next((d for d in depots if d["id"] == did), None)
         if not depot: continue
-        for f in [depot_file(did)] + [watchlist_file(did, wl["id"]) for wl in depot.get("watchlists", [])]:
-            if os.path.exists(f): os.remove(f)
+        if os.path.exists(depot_file(did)): os.remove(depot_file(did))
         log.info(f"Depot '{depot.get('name', did)}' gelöscht (war exklusiv für '{target['name']}')")
-    save_depots([d for d in depots if d["id"] not in exclusive])
+    save_depots([d for d in depots if d["id"] not in exclusive_depots])
+    # Exklusive Watchlists löschen (seit der Entkopplung analog zu Depots eigenständig)
+    watchlists = load_watchlists()
+    for wid in exclusive_watchlists:
+        wl = next((w for w in watchlists if w["id"] == wid), None)
+        if not wl: continue
+        if os.path.exists(watchlist_file(wid)): os.remove(watchlist_file(wid))
+        log.info(f"Watchlist '{wl.get('name', wid)}' gelöscht (war exklusiv für '{target['name']}')")
+    save_watchlists([w for w in watchlists if w["id"] not in exclusive_watchlists])
     if not remaining_users:
         log.error("DELETE_USER: Abgebrochen — würde alle Benutzer löschen. Mindestens ein Benutzer muss verbleiben.")
         return
     save_users(remaining_users)
-    log.info(f"User '{target['name']}' via DELETE_USER gelöscht ({len(exclusive)} Depot(s) entfernt)")
+    log.info(f"User '{target['name']}' via DELETE_USER gelöscht ({len(exclusive_depots)} Depot(s), {len(exclusive_watchlists)} Watchlist(s) entfernt)")
 
 def migrate_if_needed():
     """Stellt sicher dass splits.json existiert. Migriert außerdem einmalig die bisherigen
@@ -331,6 +380,42 @@ def migrate_if_needed():
         raw.pop("digest_day", None)
         raw.pop("digest_time", None)
         raw["_migrated_user_digest_settings"] = True
+        _save_json(SETTINGS_FILE, raw)
+
+    if not raw.get("_migrated_standalone_watchlists", False):
+        # Watchlists waren bis v2.7.x/v2.12.x Unterobjekte eines Depots
+        # (depot["watchlists"]) mit Datei-Naming wl_<depot>_<wl>.json. Seit der
+        # Entkopplung sind sie ein eigenständiges Top-Level-Objekt (watchlists.json,
+        # wl_<id>.json) mit direkter User-Zuordnung analog zu Depots. Diese Migration
+        # läuft einmalig: bestehende Watchlists werden übernommen, ihre Stock-Dateien
+        # umbenannt, und sie erben die Nutzer-Zuordnung ihres bisherigen Eltern-Depots.
+        depots     = load_depots()
+        watchlists = load_watchlists()
+        users      = load_users()
+        any_migrated = False
+        for depot in depots:
+            old_wls = depot.pop("watchlists", None)
+            if not old_wls:
+                continue
+            owning_user = get_depot_user(depot["id"])
+            for wl in old_wls:
+                wl_id    = wl["id"]
+                old_file = os.path.join(DATA_DIR, f"wl_{_safe(depot['id'])}_{_safe(wl_id)}.json")
+                new_file = watchlist_file(wl_id)
+                if os.path.exists(old_file) and not os.path.exists(new_file):
+                    os.rename(old_file, new_file)
+                watchlists.append({"id": wl_id, "name": wl["name"]})
+                if owning_user:
+                    for u in users:
+                        if u["id"] == owning_user["id"]:
+                            u.setdefault("watchlists", []).append(wl_id)
+                any_migrated = True
+        if any_migrated:
+            save_depots(depots)
+            save_watchlists(watchlists)
+            save_users(users)
+            log.info("Migration: bestehende Watchlists von depots.json in eigenständige watchlists.json überführt")
+        raw["_migrated_standalone_watchlists"] = True
         _save_json(SETTINGS_FILE, raw)
 
 # ── Discount / Notification logic ─────────────────────────────────
@@ -381,7 +466,7 @@ def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budge
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
-def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None, is_sector_gap=False):
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None, watchlist_id=None, is_sector_gap=False):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
@@ -397,14 +482,17 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
             add_log("pending_notify",
                     f"[{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\nBest\u00e4tigung beim n\u00e4chsten Refresh erwartet.",
-                    success=True, depot_id=depot_id)
+                    success=True, depot_id=depot_id, watchlist_id=watchlist_id)
             return lb  # last_notified_block noch nicht erhöhen
         lp         = round(new_ath * (1 - cb / 100), 2)
         link       = f"\n\n{APP_URL}" if APP_URL else ""
         multiplier = get_multiplier(cb)
         nk_icon    = "🛒 " if is_nachkauf else ""
         gap_icon   = "⚖️ " if is_sector_gap else ""
-        title      = f"ATH-Alarm [{label}]: {nk_icon}{gap_icon}{stock['name']} ({stock['ticker']}) -{cb}%-Block"
+        # 📉 statt 'ATH-Alarm [label]:' — kürzer erfassbar; Bestand/Beobachtung-Label
+        # steht stattdessen als erste Body-Zeile (siehe unten), da es je nach Depot/
+        # Watchlist unterschiedlich lang ist und im Titel nur ablenkt.
+        title      = f"📉 {nk_icon}{gap_icon}{stock['name']} ({stock['ticker']}) -{cb}%-Block"
         # Kaufempfehlung wenn Budget definiert
         buy_line = ""
         if buy_budget:
@@ -414,10 +502,9 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 cost       = round(qty * new_cur, 2)
                 buy_line   = (f"\nKaufempfehlung:  {qty} Stk. "
                               f"(~{cost:.2f} EUR / Budget {multiplier}×{buy_budget:.0f}={eff_budget:.0f} EUR)")
-        # Name/Ticker/Depot stehen bereits vollständig im Titel — Body startet direkt
-        # mit den Kennzahlen, um die Dopplung in Apprise-Clients zu vermeiden, die
-        # Titel+Body direkt untereinander anzeigen (z.B. ntfy/Gotify).
-        extra_lines = []
+        # Body startet mit dem Bestand/Beobachtung-Label (ersetzt die frühere Dopplung
+        # von Name/Ticker im Titel), danach optionale Kennzeichen-Zeilen, dann Kennzahlen.
+        extra_lines = [label] if label else []
         if is_nachkauf:
             extra_lines.append("🛒 Nachkauf-Kandidat")
         if is_sector_gap:
@@ -432,7 +519,8 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
         html_body = build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp,
                                       buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf,
                                       is_sector_gap=is_sector_gap)
-        send_apprise(title, body, urls or [], mention=mention, html_body=html_body, depot_id=depot_id, kind="discount")
+        send_apprise(title, body, urls or [], mention=mention, html_body=html_body,
+                     depot_id=depot_id, watchlist_id=watchlist_id, kind="discount")
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
         cleared = [lvl for lvl in [20, 30, 40, 50, 60, 70, 80, 90] if lvl <= cb and stock.pop(f"pending_notify_{lvl}", None)]
         if cleared:
@@ -444,7 +532,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                     f"[{label}]: {stock['name']} (-{cb}%-Level)",
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{pct_dist}%\n"
                     f"Benachrichtigung wurde gesendet.{skip_note}",
-                    success=True, depot_id=depot_id)
+                    success=True, depot_id=depot_id, watchlist_id=watchlist_id)
         return cb
     elif cb < lb:
         # Kurs hat sich erholt — alle pending flags löschen
@@ -455,7 +543,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                     f"↩ Bestätigung abgebrochen [{label}]: {stock['name']}",
                     f"Kurs hat sich erholt — ausstehende Level ({lvl_str}) wurden nicht bestätigt.\n"
                     f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR",
-                    success=True, depot_id=depot_id)
+                    success=True, depot_id=depot_id, watchlist_id=watchlist_id)
         return cb
     # Ausstehende Flags für Level oberhalb des aktuellen cb bereinigen
     # Tritt auf wenn cb == lb (kein neues Level) aber Kurs zwischenzeitlich über das
@@ -469,7 +557,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"↩ Nicht bestätigt [{label}]: {stock['name']}",
                 f"Kurs hat sich vor der Bestätigung erholt — Level ({lvl_str}) nicht bestätigt.\n"
                 f"Kurs: {new_cur:.2f} EUR | ATH: {new_ath:.2f} EUR | Abstand: -{ath_dist:.1f}%",
-                success=True, depot_id=depot_id)
+                success=True, depot_id=depot_id, watchlist_id=watchlist_id)
     return lb
 
 # ── Yahoo Finance ─────────────────────────────────────────────────
@@ -753,7 +841,7 @@ EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "pos
 def _is_email_url(u):
     return u.lower().startswith(EMAIL_PREFIXES)
 
-def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, kind=None):
+def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, watchlist_id=None, kind=None):
     if not urls: return False
     try:
         ok = True
@@ -769,11 +857,11 @@ def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, k
             else:
                 if not ap.notify(title=title, body=msg):
                     ok = False
-        add_log("alert", title, body, ok, depot_id=depot_id, kind=kind)
+        add_log("alert", title, body, ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
         return ok
     except Exception as e:
         log.error(f"Apprise: {e}")
-        add_log("alert", title, body, False, depot_id=depot_id, kind=kind)
+        add_log("alert", title, body, False, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
         return False
 
 # ── Stock helpers ─────────────────────────────────────────────────
@@ -896,27 +984,29 @@ def build_ath_reached_html(stock, prev_ath):
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
-def send_ath_alerts(hits, label, urls, mention="", depot_id=None):
+def send_ath_alerts(hits, label, urls, mention="", depot_id=None, watchlist_id=None):
     """Sendet für jede Aktie in hits (neues ATH + ath_alert_enabled) eine eigene
     Benachrichtigung. Anders als die Discount-Alarme braucht das keinen
     Bestätigungsmodus — ein neues ATH ist ein eindeutiges, einmaliges Ereignis."""
     if not urls: return
     for s in hits:
         prev_ath = s.get("_prev_ath", 0)
-        title = f"🎉 Neues ATH [{label}] — {s['name']} ({s['ticker']})"
-        # Name/Ticker/Depot stehen bereits vollständig im Titel — Body startet direkt
-        # mit den Kennzahlen, um die Dopplung in Apprise-Clients zu vermeiden.
-        body  = (f"Neues ATH:      {s['ath_eur']:.2f} EUR\n"
+        title = f"🎉 Neues ATH: {s['name']} ({s['ticker']})"
+        # Bestand/Beobachtung-Label steht als erste Body-Zeile statt im Titel —
+        # gleiches Prinzip wie beim Discount-Alarm (siehe check_and_notify).
+        body  = (f"{label}\n\n"
+                 f"Neues ATH:      {s['ath_eur']:.2f} EUR\n"
                  f"Bisheriges ATH: {prev_ath:.2f} EUR\n"
                  f"Kursstand:      {s.get('market_time', '—')}")
         html_body = build_ath_reached_html(s, prev_ath)
         try:
-            send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=depot_id, kind="ath")
+            send_apprise(title, body, urls, mention=mention, html_body=html_body,
+                         depot_id=depot_id, watchlist_id=watchlist_id, kind="ath")
         except Exception as e:
             log.error(f"ATH-Alarm {s.get('name','?')}: {e}")
 
 
-def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_gap_set=None, mention="", confirm=False, depot_id=None):
+def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_gap_set=None, mention="", confirm=False, depot_id=None, watchlist_id=None):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
     sector_gap_set = sector_gap_set or set()
     for i, s in enumerate(stocks):
@@ -925,7 +1015,8 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_ga
             is_gap  = s["ticker"] in sector_gap_set
             new_blk = check_and_notify(
                 s, s["current_eur"], s["ath_eur"],
-                label, urls, buy_budget, is_nk, mention, confirm=confirm, depot_id=depot_id, is_sector_gap=is_gap
+                label, urls, buy_budget, is_nk, mention, confirm=confirm,
+                depot_id=depot_id, watchlist_id=watchlist_id, is_sector_gap=is_gap
             )
             stocks[i]["last_notified_block"] = new_blk
         except Exception as e:
@@ -940,48 +1031,49 @@ def _refresh_depot(depot, trigger="auto", price_cache=None):
 
     # Der komplette load-modify-save-Zyklus (inkl. der Yahoo-Netzwerk-Calls) läuft
     # unter dem Depot-Lock, damit ein paralleler HTTP-Request auf denselben Bestand
-    # oder dieselbe Watchlist (z.B. manueller Stock-Refresh, Parqet-Sync, K-Badge)
-    # nicht auf einer veralteten Kopie speichert und so diesen Zyklus überschreibt.
+    # (z.B. manueller Stock-Refresh, Parqet-Sync, K-Badge) nicht auf einer veralteten
+    # Kopie speichert und so diesen Zyklus überschreibt. Watchlists sind seit der
+    # Entkopplung nicht mehr Teil dieses Locks/Zyklus — siehe _refresh_watchlist().
     with depot_lock(did):
         # ── Phase 1: Alle Kurse holen ─────────────────────────────────
         stocks = load_stocks(did)
         stocks, ok, err, ath_hits = _fetch_prices(stocks, price_cache)
 
-        # Watchlist-Preise holen
-        wl_data = {}
-        for wl in depot.get("watchlists", []):
-            wls, wok, werr, wl_ath_hits = _fetch_prices(load_wl_stocks(did, wl["id"]), price_cache)
-            wl_data[wl["id"]] = (wl, wls, wok, werr, wl_ath_hits)
-            ok += wok; err += werr
-
-        # Nachkauf-Sets berechnen
+        # Nachkauf-Set berechnen
         nachkauf_set = calc_nachkauf_set(stocks, threshold)
-        wl_nachkauf  = {wl_id: calc_nachkauf_set(wls, threshold)
-                        for wl_id, (_, wls, _, _, _) in wl_data.items()}
 
-        # Sektor-Lücke berechnen — Basis ist immer der echte Bestand, auch für Watchlists
-        # (eine Watchlist-Aktie kann eine Lücke im Bestand füllen, auch wenn ihr Sektor
-        # innerhalb der Watchlist selbst nicht knapp ist)
+        # Sektor-Lücke berechnen — Basis ist der eigene Bestand
         sector_gap_set = calc_sector_gap_set(stocks)
-        wl_sector_gap  = {wl_id: calc_sector_gap_set(stocks, wls)
-                          for wl_id, (_, wls, _, _, _) in wl_data.items()}
 
         # Benachrichtigungen — nur wenn für dieses Depot aktiviert
         if depot.get("notifications_enabled", True):
             stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set,
                                           sector_gap_set, mention, confirm, depot_id=did)
             send_ath_alerts(ath_hits, f"Bestand: {dname}", urls, mention, depot_id=did)
-            for wl_id, (wl, wls, _, _, wl_ath_hits) in wl_data.items():
-                wls = _send_notifications(wls, f"Beobachtung: {wl['name']} ({dname})",
-                                          urls, budget, wl_nachkauf[wl_id], wl_sector_gap[wl_id],
-                                          mention, confirm, depot_id=did)
-                send_ath_alerts(wl_ath_hits, f"Beobachtung: {wl['name']} ({dname})", urls, mention, depot_id=did)
-                save_wl_stocks(did, wl_id, wls)
-        else:
-            for wl_id, (wl, wls, _, _, _) in wl_data.items():
-                save_wl_stocks(did, wl_id, wls)
 
         save_stocks(did, stocks)
+        return ok, err
+
+def _refresh_watchlist(wl, price_cache=None):
+    """Aktualisiert eine einzelne, depot-unabhängige Watchlist. Analog zu
+    _refresh_depot, aber ohne Kaufbudget/Sektor-Lücke (keine automatische
+    Vergleichsbasis mehr seit der Entkopplung vom Depot) und mit eigenem Lock."""
+    wl_id = wl["id"]
+    urls, mention, confirm = resolve_watchlist_notification_settings(wl_id)
+    raw_t = wl.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else 30
+
+    with watchlist_lock(wl_id):
+        wls = load_wl_stocks(wl_id)
+        wls, ok, err, ath_hits = _fetch_prices(wls, price_cache)
+
+        nachkauf_set = calc_nachkauf_set(wls, threshold)
+
+        if wl.get("notifications_enabled", True):
+            wls = _send_notifications(wls, f"Beobachtung: {wl['name']}", urls, None, nachkauf_set,
+                                       None, mention, confirm, watchlist_id=wl_id)
+            send_ath_alerts(ath_hits, f"Beobachtung: {wl['name']}", urls, mention, watchlist_id=wl_id)
+
+        save_wl_stocks(wl_id, wls)
         return ok, err
 
 def take_snapshot():
@@ -1017,17 +1109,22 @@ def take_snapshot():
         log.info(f"Portfolio-Snapshot erstellt: {today}")
 
 def refresh_all_depots(trigger="auto"):
-    depots = load_depots(); total_ok, total_err = [], []
+    depots     = load_depots()
+    watchlists = load_watchlists()
+    total_ok, total_err = [], []
     _health_stats["total_refreshes"] += 1
     _health_stats["last_refresh_stats"]     = {"fresh": 0, "cached": 0}
     _health_stats["last_refresh_had_errors"] = False  # Pro Zyklus zurücksetzen
-    price_cache = {}  # Depot-übergreifender Kurs-Cache für diesen Zyklus
+    price_cache = {}  # Depot- und Watchlist-übergreifender Kurs-Cache für diesen Zyklus
     for depot in depots:
         ok, err = _refresh_depot(depot, trigger, price_cache)
         total_ok += ok; total_err += err
+    for wl in watchlists:
+        ok, err = _refresh_watchlist(wl, price_cache)
+        total_ok += ok; total_err += err
     label = "Automatisch" if trigger == "auto" else "Manuell"
     add_log(f"{trigger}_refresh", f"{label}er Refresh",
-            f"Depots: {len(depots)} | OK: {len(total_ok)} | Fehler: {len(total_err)}",
+            f"Depots: {len(depots)} | Watchlists: {len(watchlists)} | OK: {len(total_ok)} | Fehler: {len(total_err)}",
             len(total_err) == 0)
     if trigger == "auto":
         take_snapshot()
@@ -1365,8 +1462,8 @@ def build_digest_html(depot, stocks):
     </body></html>"""
 
 
-_DAILY_DIGEST_ATH_RE      = re.compile(r"^🎉 Neues ATH \[.*?\] — (.+)$")
-_DAILY_DIGEST_DISCOUNT_RE = re.compile(r"^ATH-Alarm \[.*?\]: (.+)$")
+_DAILY_DIGEST_ATH_RE      = re.compile(r"^🎉 Neues ATH: (.+)$")
+_DAILY_DIGEST_DISCOUNT_RE = re.compile(r"^📉 (.+)$")
 
 def _daily_digest_line(entry):
     """Extrahiert eine kompakte, lesbare Zeile aus einem Verlauf-Eintrag für die
@@ -2224,14 +2321,13 @@ def splits_stocks_with_isin():
     """Gibt alle Aktien aus allen Depots und Watchlists zurück die eine ISIN haben."""
     result = {}  # isin → {name, ticker, isin}
     for depot in load_depots():
-        did = depot["id"]
-        for s in load_stocks(did):
+        for s in load_stocks(depot["id"]):
             if s.get("isin"):
                 result[s["isin"]] = {"name": s["name"], "ticker": s["ticker"], "isin": s["isin"]}
-        for wl in depot.get("watchlists", []):
-            for s in load_wl_stocks(did, wl["id"]):
-                if s.get("isin"):
-                    result[s["isin"]] = {"name": s["name"], "ticker": s["ticker"], "isin": s["isin"]}
+    for wl in load_watchlists():
+        for s in load_wl_stocks(wl["id"]):
+            if s.get("isin"):
+                result[s["isin"]] = {"name": s["name"], "ticker": s["ticker"], "isin": s["isin"]}
     return jsonify(sorted(result.values(), key=lambda x: x["name"]))
 
 # ── Depot CRUD ────────────────────────────────────────────────────
@@ -2246,7 +2342,7 @@ def create_depot():
     if any(d["name"].lower() == name.lower() for d in depots):
         return jsonify({"error": "Name existiert bereits"}), 409
     did = gen_id(name); save_stocks(did, [])
-    depot = {"id": did, "name": name, "watchlists": []}
+    depot = {"id": did, "name": name}
     depots.append(depot); save_depots(depots)
     # Depot dem aktuellen User zuordnen
     user_id = body.get("user_id")
@@ -2259,10 +2355,11 @@ def create_depot():
     return jsonify(depot), 201
 
 def clear_pending_flags(depot_id):
-    """Entfernt alle pending_notify_*-Flags für ein Depot (Bestand + alle Watchlists).
-    Wird beim Umschalten von notifications_enabled aufgerufen, damit ein Flag aus einer
-    früheren Phase (z.B. vor dem Deaktivieren) nicht später fälschlich als 'jetzt gerade
-    bestätigt' interpretiert wird."""
+    """Entfernt alle pending_notify_*-Flags für den Bestand eines Depots. Wird beim
+    Umschalten von notifications_enabled aufgerufen, damit ein Flag aus einer früheren
+    Phase (z.B. vor dem Deaktivieren) nicht später fälschlich als 'jetzt gerade
+    bestätigt' interpretiert wird. Watchlists sind seit der Entkopplung nicht mehr Teil
+    dieses Depot-Aufrufs — siehe clear_pending_flags_watchlist()."""
     PENDING_PREFIX = "pending_notify_"
     with depot_lock(depot_id):
         stocks = load_stocks(depot_id)
@@ -2273,16 +2370,17 @@ def clear_pending_flags(depot_id):
         if changed:
             save_stocks(depot_id, stocks)
 
-        depots = load_depots()
-        depot  = next((d for d in depots if d["id"] == depot_id), None)
-        for wl in (depot.get("watchlists", []) if depot else []):
-            wls = load_wl_stocks(depot_id, wl["id"])
-            wl_changed = False
-            for s in wls:
-                for key in [k for k in s if k.startswith(PENDING_PREFIX)]:
-                    del s[key]; wl_changed = True
-            if wl_changed:
-                save_wl_stocks(depot_id, wl["id"], wls)
+def clear_pending_flags_watchlist(wl_id):
+    """Analog zu clear_pending_flags, aber für eine einzelne, eigenständige Watchlist."""
+    PENDING_PREFIX = "pending_notify_"
+    with watchlist_lock(wl_id):
+        wls = load_wl_stocks(wl_id)
+        changed = False
+        for s in wls:
+            for key in [k for k in s if k.startswith(PENDING_PREFIX)]:
+                del s[key]; changed = True
+        if changed:
+            save_wl_stocks(wl_id, wls)
 
 @app.route("/api/depots/<depot_id>", methods=["PUT"])
 def update_depot(depot_id):
@@ -2323,8 +2421,7 @@ def delete_depot(depot_id):
     if len(depots) <= 1: return jsonify({"error": "Letztes Depot kann nicht gelöscht werden"}), 400
     depot = next((d for d in depots if d["id"] == depot_id), None)
     if not depot: return jsonify({"error": "Nicht gefunden"}), 404
-    for f in [depot_file(depot_id)] + [watchlist_file(depot_id, wl["id"]) for wl in depot.get("watchlists", [])]:
-        if os.path.exists(f): os.remove(f)
+    if os.path.exists(depot_file(depot_id)): os.remove(depot_file(depot_id))
     save_depots([d for d in depots if d["id"] != depot_id])
     # Aus users.json entfernen
     users = load_users()
@@ -2335,41 +2432,71 @@ def delete_depot(depot_id):
     if changed: save_users(users)
     return jsonify({"ok": True})
 
-# ── Watchlist CRUD ────────────────────────────────────────────────
-@app.route("/api/depots/<depot_id>/watchlists", methods=["POST"])
-def create_watchlist(depot_id):
+# ── Watchlist CRUD (eigenständig, seit Entkopplung vom Depot analog zu Depots
+#    direkt Usern zugeordnet statt einem einzelnen Depot untergeordnet) ────────
+@app.route("/api/watchlists", methods=["GET"])
+def get_watchlists(): return jsonify(load_watchlists())
+
+@app.route("/api/watchlists", methods=["POST"])
+def create_watchlist():
     body = request.get_json(); name = body.get("name", "").strip()
     if not name: return jsonify({"error": "Name erforderlich"}), 400
-    depots = load_depots()
-    depot = next((d for d in depots if d["id"] == depot_id), None)  # aus GLEICHER Liste!
-    if not depot: return jsonify({"error": "Depot nicht gefunden"}), 404
-    if any(w["name"].lower() == name.lower() for w in depot.get("watchlists", [])):
+    watchlists = load_watchlists()
+    if any(w["name"].lower() == name.lower() for w in watchlists):
         return jsonify({"error": "Name existiert bereits"}), 409
-    wl_id = gen_id(name); save_wl_stocks(depot_id, wl_id, [])
+    wl_id = gen_id(name); save_wl_stocks(wl_id, [])
     wl = {"id": wl_id, "name": name}
-    depot.setdefault("watchlists", []).append(wl); save_depots(depots); return jsonify(wl), 201
+    watchlists.append(wl); save_watchlists(watchlists)
+    # Watchlist dem aktuellen User zuordnen — analog zu create_depot
+    user_id = body.get("user_id")
+    if user_id:
+        users = load_users()
+        user  = next((u for u in users if u["id"] == user_id), None)
+        if user:
+            user.setdefault("watchlists", []).append(wl_id)
+            save_users(users)
+    return jsonify(wl), 201
 
-@app.route("/api/depots/<depot_id>/watchlists/<wl_id>", methods=["PUT"])
-def update_watchlist(depot_id, wl_id):
-    body = request.get_json(); depots = load_depots()
-    depot = next((d for d in depots if d["id"] == depot_id), None)
-    if not depot: return jsonify({"error": "Nicht gefunden"}), 404
-    for wl in depot.get("watchlists", []):
+@app.route("/api/watchlists/<wl_id>", methods=["PUT"])
+def update_watchlist(wl_id):
+    body = request.get_json(); watchlists = load_watchlists()
+    for wl in watchlists:
         if wl["id"] == wl_id:
             if "name" in body and body["name"].strip(): wl["name"] = body["name"].strip()
-            save_depots(depots); return jsonify(wl)
+            if "nachkauf_threshold" in body:
+                raw = body["nachkauf_threshold"]
+                wl["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
+            notif_toggled = False
+            if "notifications_enabled" in body:
+                old_enabled = wl.get("notifications_enabled", True)
+                new_enabled = bool(body["notifications_enabled"])
+                if old_enabled != new_enabled:
+                    notif_toggled = True
+                wl["notifications_enabled"] = new_enabled
+            save_watchlists(watchlists)
+            if notif_toggled:
+                clear_pending_flags_watchlist(wl_id)
+                log.info(f"notifications_enabled für Watchlist {wl_id} geändert auf {wl['notifications_enabled']} — Pending-Flags zurückgesetzt")
+            return jsonify(wl)
     return jsonify({"error": "Nicht gefunden"}), 404
 
-@app.route("/api/depots/<depot_id>/watchlists/<wl_id>", methods=["DELETE"])
-def delete_watchlist(depot_id, wl_id):
-    depots = load_depots()
-    depot = next((d for d in depots if d["id"] == depot_id), None)
-    if not depot: return jsonify({"error": "Nicht gefunden"}), 404
-    with depot_lock(depot_id):
-        f = watchlist_file(depot_id, wl_id)
+@app.route("/api/watchlists/<wl_id>", methods=["DELETE"])
+def delete_watchlist(wl_id):
+    watchlists = load_watchlists()
+    wl = next((w for w in watchlists if w["id"] == wl_id), None)
+    if not wl: return jsonify({"error": "Nicht gefunden"}), 404
+    with watchlist_lock(wl_id):
+        f = watchlist_file(wl_id)
         if os.path.exists(f): os.remove(f)
-    depot["watchlists"] = [w for w in depot.get("watchlists", []) if w["id"] != wl_id]
-    save_depots(depots); return jsonify({"ok": True})
+    save_watchlists([w for w in watchlists if w["id"] != wl_id])
+    # Aus users.json entfernen
+    users = load_users()
+    changed = False
+    for u in users:
+        if wl_id in u.get("watchlists", []):
+            u["watchlists"].remove(wl_id); changed = True
+    if changed: save_users(users)
+    return jsonify({"ok": True})
 
 # ── Stocks (Bestand) ──────────────────────────────────────────────
 @app.route("/api/stocks", methods=["GET"])
@@ -2484,30 +2611,34 @@ def patch_stock(depot_id, ticker):
 
 @app.route("/api/stocks/<ticker>/move-to-watchlist", methods=["POST"])
 def move_to_watchlist(ticker):
+    """Verschiebt eine Aktie vom Bestand in eine (seit der Entkopplung eigenständige)
+    Watchlist. Locking-Reihenfolge bewusst immer Depot→Watchlist, um mit
+    wl_move_to_depot (die beide Locks ebenfalls in dieser Reihenfolge nimmt) keinen
+    Deadlock zu riskieren."""
     body  = request.get_json() or {}; did = body.get("depot_id", ""); wl_id = body.get("wl_id", "")
-    with depot_lock(did):
+    with depot_lock(did), watchlist_lock(wl_id):
         stocks = load_stocks(did); stock = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
         if not stock: return jsonify({"error": "Nicht gefunden"}), 404
-        wl_stocks = load_wl_stocks(did, wl_id)
+        wl_stocks = load_wl_stocks(wl_id)
         if any(s["ticker"] == ticker.upper() for s in wl_stocks):
             return jsonify({"error": "Bereits in dieser Liste"}), 409
         s = dict(stock); s["last_notified_block"] = initial_block(s["current_eur"], s["ath_eur"])
-        wl_stocks.append(s); save_wl_stocks(did, wl_id, wl_stocks)
+        wl_stocks.append(s); save_wl_stocks(wl_id, wl_stocks)
         save_stocks(did, [s for s in stocks if s["ticker"] != ticker.upper()])
         return jsonify({"ok": True})
 
 # ── Watchlist Stocks ──────────────────────────────────────────────
-@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks", methods=["GET"])
-def wl_get_stocks(depot_id, wl_id): return jsonify(load_wl_stocks(depot_id, wl_id))
+@app.route("/api/watchlists/<wl_id>/stocks", methods=["GET"])
+def wl_get_stocks(wl_id): return jsonify(load_wl_stocks(wl_id))
 
-@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks", methods=["POST"])
-def wl_add_stock(depot_id, wl_id):
+@app.route("/api/watchlists/<wl_id>/stocks", methods=["POST"])
+def wl_add_stock(wl_id):
     body     = request.get_json()
     ticker   = body.get("ticker", "").strip().upper(); name = body.get("name", "").strip()
     exchange = body.get("exchange", "").strip(); isin = body.get("isin", "").strip()
     if not ticker or not name: return jsonify({"error": "ticker und name erforderlich"}), 400
-    with depot_lock(depot_id):
-        stocks = load_wl_stocks(depot_id, wl_id)
+    with watchlist_lock(wl_id):
+        stocks = load_wl_stocks(wl_id)
         if any(s["ticker"] == ticker for s in stocks): return jsonify({"error": "Bereits in dieser Liste"}), 409
         try: data = fetch_stock_data(ticker)
         except ValueError as e:
@@ -2517,56 +2648,60 @@ def wl_add_stock(depot_id, wl_id):
         except Exception as e: return jsonify({"error": str(e)}), 502
         stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
                  "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
-        stocks.append(stock); save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stock), 201
+        stocks.append(stock); save_wl_stocks(wl_id, stocks); return jsonify(stock), 201
 
-@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>", methods=["PATCH"])
-def wl_patch_stock(depot_id, wl_id, ticker):
+@app.route("/api/watchlists/<wl_id>/stocks/<ticker>", methods=["PATCH"])
+def wl_patch_stock(wl_id, ticker):
     body   = request.get_json() or {}
-    with depot_lock(depot_id):
-        stocks = load_wl_stocks(depot_id, wl_id)
+    with watchlist_lock(wl_id):
+        stocks = load_wl_stocks(wl_id)
         stock  = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
         if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
         ALLOWED = {"sector", "notes", "ath_alert_enabled"}
         for key, val in body.items():
             if key in ALLOWED:
                 stock[key] = val
-        save_wl_stocks(depot_id, wl_id, stocks)
+        save_wl_stocks(wl_id, stocks)
         return jsonify(stock)
 
-@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>", methods=["DELETE"])
-def wl_delete_stock(depot_id, wl_id, ticker):
-    with depot_lock(depot_id):
-        save_wl_stocks(depot_id, wl_id, [s for s in load_wl_stocks(depot_id, wl_id) if s["ticker"] != ticker.upper()])
+@app.route("/api/watchlists/<wl_id>/stocks/<ticker>", methods=["DELETE"])
+def wl_delete_stock(wl_id, ticker):
+    with watchlist_lock(wl_id):
+        save_wl_stocks(wl_id, [s for s in load_wl_stocks(wl_id) if s["ticker"] != ticker.upper()])
     return jsonify({"ok": True})
 
-@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>/refresh", methods=["POST"])
-def wl_refresh_stock(depot_id, wl_id, ticker):
-    depots  = load_depots(); depot = next((d for d in depots if d["id"] == depot_id), {"name": depot_id})
-    wl_name = next((w["name"] for w in depot.get("watchlists", []) if w["id"] == wl_id), wl_id)
-    with depot_lock(depot_id):
-        stocks  = load_wl_stocks(depot_id, wl_id)
+@app.route("/api/watchlists/<wl_id>/stocks/<ticker>/refresh", methods=["POST"])
+def wl_refresh_stock(wl_id, ticker):
+    wl = get_watchlist(wl_id) or {"name": wl_id}
+    with watchlist_lock(wl_id):
+        stocks  = load_wl_stocks(wl_id)
         idx     = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
         if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
         try:
             data    = fetch_stock_data(ticker); s = stocks[idx]
             old_ath = float(s.get("ath_eur") or 0)
             new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-            u_urls, u_ment, u_conf = resolve_notification_settings(depot_id)
+            u_urls, u_ment, u_conf = resolve_watchlist_notification_settings(wl_id)
             new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                       f"Beobachtung: {wl_name}", u_urls,
-                                       mention=u_ment, confirm=u_conf)
+                                       f"Beobachtung: {wl['name']}", u_urls,
+                                       mention=u_ment, confirm=u_conf, watchlist_id=wl_id)
             stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
             if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
-                    and depot.get("notifications_enabled", True)):
+                    and wl.get("notifications_enabled", True)):
                 send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
-                                 f"Beobachtung: {wl_name}", u_urls, u_ment, depot_id=depot_id)
-            save_wl_stocks(depot_id, wl_id, stocks); return jsonify(stocks[idx])
+                                 f"Beobachtung: {wl['name']}", u_urls, u_ment, watchlist_id=wl_id)
+            save_wl_stocks(wl_id, stocks); return jsonify(stocks[idx])
         except Exception as e: return jsonify({"error": str(e)}), 502
 
-@app.route("/api/watchlist/<depot_id>/<wl_id>/stocks/<ticker>/move", methods=["POST"])
-def wl_move_to_depot(depot_id, wl_id, ticker):
-    with depot_lock(depot_id):
-        wl_stocks    = load_wl_stocks(depot_id, wl_id)
+@app.route("/api/watchlists/<wl_id>/stocks/<ticker>/move", methods=["POST"])
+def wl_move_to_depot(wl_id, ticker):
+    """Verschiebt eine Watchlist-Aktie in den Bestand eines Depots. Da Watchlists seit
+    der Entkopplung keinem Depot mehr automatisch zugeordnet sind, ist das Ziel-Depot
+    jetzt ein Pflichtfeld im Request-Body (Frontend zeigt dafür eine Depot-Auswahl)."""
+    body = request.get_json() or {}; depot_id = body.get("depot_id", "")
+    if not depot_id: return jsonify({"error": "depot_id erforderlich"}), 400
+    with depot_lock(depot_id), watchlist_lock(wl_id):
+        wl_stocks    = load_wl_stocks(wl_id)
         stock        = next((s for s in wl_stocks if s["ticker"] == ticker.upper()), None)
         if not stock: return jsonify({"error": "Nicht gefunden"}), 404
         depot_stocks = load_stocks(depot_id)
@@ -2574,7 +2709,7 @@ def wl_move_to_depot(depot_id, wl_id, ticker):
             return jsonify({"error": "Bereits im Depot"}), 409
         s = dict(stock); s["last_notified_block"] = initial_block(s["current_eur"], s["ath_eur"])
         depot_stocks.append(s); save_stocks(depot_id, depot_stocks)
-        save_wl_stocks(depot_id, wl_id, [s for s in wl_stocks if s["ticker"] != ticker.upper()])
+        save_wl_stocks(wl_id, [s for s in wl_stocks if s["ticker"] != ticker.upper()])
         return jsonify({"ok": True, "stock": s})
 
 XETRA_MAP_FILE = os.path.join(DATA_DIR, "xetra_map.json")
@@ -2772,6 +2907,7 @@ def api_create_user():
         "name":                  body.get("name", "").strip(),
         "pin_hash":              hash_pin(body.get("pin")),
         "depots":                body.get("depots", []),
+        "watchlists":            body.get("watchlists", []),
         "apprise_urls":          body.get("apprise_urls", []),
         "notification_mention":  body.get("notification_mention", ""),
         "notification_confirm":  bool(body.get("notification_confirm", False)),
@@ -2796,6 +2932,7 @@ def api_update_user(user_id):
     if "name"                 in body: user["name"]                = body["name"].strip()
     if "pin"                  in body: user["pin_hash"]            = hash_pin(body["pin"])
     if "depots"               in body: user["depots"]              = body["depots"]
+    if "watchlists"           in body: user["watchlists"]           = body["watchlists"]
     if "apprise_urls"         in body: user["apprise_urls"]        = body["apprise_urls"]
     if "notification_mention" in body: user["notification_mention"]= body["notification_mention"]
     if "notification_confirm" in body: user["notification_confirm"]= bool(body["notification_confirm"])
@@ -2841,8 +2978,8 @@ def health():
     tracked = 0
     for dc in depots:
         tracked += len(load_stocks(dc["id"]))
-        for wl in dc.get("watchlists", []):
-            tracked += len(load_wl_stocks(dc["id"], wl["id"]))
+    for wl in load_watchlists():
+        tracked += len(load_wl_stocks(wl["id"]))
     uptime = int(time_mod.time() - APP_START_TIME)
     stats  = _health_stats
     total  = stats["total_yahoo_calls"]
