@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.7.26-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.12.18-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.1-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.1-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -26,7 +26,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 
 - **Multi-User** — mehrere Benutzerprofile mit optionalem PIN (per Zahlenpad oder Tastatur eingebbar); jeder User sieht nur seine eigenen Depots und Watchlists
 - **Multi-Depot** — mehrere Depots pro Benutzer, jedes unabhängig konfigurierbar
-- **Watchlists** — Beobachtungslisten pro Depot, direkt in der Tab-Leiste neben den Depots
+- **Watchlists** — eigenständige Beobachtungslisten, direkt in der Tab-Leiste neben den Depots; können mehreren Benutzern zugeordnet werden (analog zu Depots), nicht an ein bestimmtes Depot gebunden
 - **ATH-Discount** — farbcodierte Badges: grün (<20%), gelb (20–39%), orange (40–59%), rot (>60%) mit Multiplikator (1×/2×/3×)
 - **Kompakte Übersichten** — ATH-, Portfolio- und Sektor-Übersicht sowie Portfolio-Verlauf in einer gemeinsam einklappbaren Ansicht, jede Sektion unabhängig auf-/zuklappbar
 - **Portfolio-Gewichtung** — Balken und %-Wert pro Aktie zeigen die relative Gewichtung im Depot; sortierbar
@@ -40,14 +40,14 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
 - **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
-- **Diversifikations-Lücke (⚖️)** — markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind (<50% des Sektor-Durchschnitts); sichtbar am Sektor-Tag in Tabelle/Karten, in der Sektor-Übersicht und im ATH-Discount-Alarm; Watchlist-Aktien werden dabei immer gegen den echten Bestand bewertet
+- **Diversifikations-Lücke (⚖️)** — markiert Aktien aus Sektoren, die unterrepräsentiert sind (<50% des Sektor-Durchschnitts); sichtbar am Sektor-Tag in Tabelle/Karten, in der Sektor-Übersicht und im ATH-Discount-Alarm des Bestands; für Watchlists ist die Anzeige selbstreferenziell (Basis = die Watchlist selbst) und nicht Teil von Watchlist-Benachrichtigungen
 - **Performance-Badges** — 1T / 1M / 3M / 1J / 3J direkt unter dem Kurs
 - **P&L** — Gewinn/Verlust in % und € wenn Einstandskurs bekannt
 - **Originalwährungsanzeige** — bei Fremdwährungsaktien (USD, GBP etc.) wird der Kurs in der Originalwährung klein und grau unter dem EUR-Kurs angezeigt, in Tabelle und Mobile-Card; EUR-Aktien bleiben unverändert
 - **Kaufmarkierung (K)** — ATH-Level-Kacheln (−20%, −30% usw.) sind antippbar; ein Tippen setzt ein blaues K-Badge als persönliche Notiz auf welchem Level ein Kauf stattfand; mehrere Level gleichzeitig möglich, wird dauerhaft gespeichert
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion; bei Parqet komplett verkaufte Positionen werden erkannt und erst nach Bestätigung (einzeln oder gesammelt über „Alle entfernen") aus dem ATH-Tracker gelöscht
-- **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance (inkl. Watchlist-Aktien); Korrekturen direkt in der App möglich
+- **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance, verfügbar im Bestand und in jeder Watchlist; Korrekturen direkt in der App möglich
 - **XETRA-Unterstützung** — bei der Aktiensuche wird automatisch das passende XETRA-Listing vorgeschlagen; bekannte Aktien sofort aus lokalem Cache (`xetra_map.json`), unbekannte dynamisch via OpenFIGI und dann gecacht
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
@@ -106,7 +106,8 @@ DepotRadar/
 │   ├── depots.json            # Wird beim ersten Start automatisch angelegt
 │   ├── depot_*.json
 │   ├── depot_*_backup.json    # Backup vor Parqet-Sync (automatisch)
-│   ├── depot_*_wl_*.json      # Watchlist-Aktien
+│   ├── watchlists.json        # Watchlist-Metadaten (eigenständig, nicht Teil von depots.json)
+│   ├── wl_*.json              # Watchlist-Aktien (je Watchlist eine Datei)
 │   ├── splits.json            # Aktiensplits (automatisch befüllt)
 │   ├── settings.json
 │   ├── users.json             # Benutzerprofile (wird beim ersten Start angelegt)
@@ -163,7 +164,7 @@ environment:
   - DELETE_USER=Fiona
 ```
 
-Beim nächsten Start wird der Benutzer `Fiona` aus `users.json` entfernt. Depots die **ausschließlich** diesem Benutzer gehörten werden vollständig gelöscht (inkl. Aktien- und Watchlist-Dateien). Depots die mehreren Benutzern zugeordnet waren bleiben erhalten. **Variable anschließend entfernen und neu starten.**
+Beim nächsten Start wird der Benutzer `Fiona` aus `users.json` entfernt. Depots **und Watchlists**, die **ausschließlich** diesem Benutzer gehörten, werden vollständig gelöscht (inkl. Aktien-Dateien). Depots/Watchlists, die mehreren Benutzern zugeordnet waren, bleiben erhalten. **Variable anschließend entfernen und neu starten.**
 
 ```bash
 # Nach Setzen der Variable:
@@ -193,6 +194,7 @@ Beim ersten Start wird das erste Benutzerprofil angelegt — ein PIN ist dabei o
 - Ein/Aus-Schalter sowie Wochenbericht-/Tageszusammenfassung-Teilnahme bleiben pro Depot konfigurierbar (unabhängig vom Benutzer-Modell, da ein Benutzer mehrere Depots mit unterschiedlichem Bedarf haben kann)
 - Das Benutzer-Bearbeiten-Formular ist in aufklappbare Sektionen gegliedert (👤 Profil, 🔔 Benachrichtigungen, 🕘 Zusammenfassungen)
 - Neue Depots werden automatisch dem eingeloggten Benutzer zugeordnet; die Depot-Zuordnungsauswahl beim Neu-Anlegen eines Benutzers erscheint nur noch, solange es tatsächlich unzugeordnete Depots gibt
+- Watchlists sind seit Version 2.8.0 eigenständig und werden — genau wie Depots — direkt Benutzern zugeordnet (neue Watchlists automatisch dem eingeloggten Benutzer, mehrere Benutzer pro Watchlist möglich); sie sind nicht mehr an ein bestimmtes Depot gebunden
 - Jeder Benutzer kann neue Benutzer anlegen; eigene Einstellungen und PIN kann jeder selbst verwalten
 
 -----
@@ -258,9 +260,9 @@ Das ⚖️-Symbol markiert Aktien aus Sektoren, die im Bestand unterrepräsentie
 
 - Am Sektor-Tag in Tabelle und Karten
 - Als Ø-Hinweis in der Sektor-Übersicht
-- Im ATH-Discount-Alarm (zusätzlich zu 🛒, falls beides zutrifft) — nicht beim separaten Neues-ATH-Alarm
+- Im ATH-Discount-Alarm des Bestands (zusätzlich zu 🛒, falls beides zutrifft) — nicht beim separaten Neues-ATH-Alarm
 
-**Watchlist-Aktien** werden immer gegen den echten Bestand bewertet, nicht gegen die Watchlist selbst — so zeigt das Symbol direkt, welche Watchlist-Titel eine tatsächliche Lücke im Depot füllen würden.
+**Watchlists:** Seit Version 2.8.0 sind Watchlists nicht mehr einem bestimmten Depot zugeordnet, daher gibt es keine automatische Vergleichsbasis mehr — die Anzeige in einer Watchlist bewertet dort gegen die Watchlist selbst statt gegen ein Depot. In Watchlist-Benachrichtigungen (Apprise) erscheint ⚖️ seitdem nicht mehr.
 
 -----
 
@@ -296,7 +298,7 @@ Vor jedem Sync wird automatisch ein Backup der Depot-Datei angelegt. Rückgängi
 ## Benachrichtigungen (Apprise)
 
 - **Apprise-URLs, Mention, Bestätigungsmodus, Zeitplan (Wochenbericht-Tag/-Uhrzeit, Uhrzeit der täglichen Zusammenfassung)** — ausschließlich pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten, gegliedert in die Sektionen 👤 Profil / 🔔 Benachrichtigungen / 🕘 Zusammenfassungen)
-- **Ein/Aus, Wochenbericht-/Tageszusammenfassung-Teilnahme** — pro Depot (Depot-Einstellungen → ⚙)
+- **Ein/Aus, Wochenbericht-/Tageszusammenfassung-Teilnahme** — pro Depot (Depot-Einstellungen → ⚙); Watchlists haben einen eigenen Ein/Aus-Schalter, nehmen aber grundsätzlich nicht an der Tages-/Wochenzusammenfassung teil (bleiben reine Einzel-Alarme)
 - Die tägliche ATH-Zusammenfassung läuft grundsätzlich nur Montag–Freitag
 
 Unterstützte Dienste (Auswahl):
@@ -328,8 +330,10 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.1 / 2.13.1 | ATH-Prüfung und -Korrektur funktionieren jetzt auch in der Watchlist-Ansicht, nicht mehr nur im Bestand — prüft/korrigiert immer den gerade aktiven Kontext |
+| 2.8.0 / 2.13.0 | Watchlists sind kein Unterobjekt eines Depots mehr, sondern eigenständig und direkt Benutzern zugeordnet (analog zu Depots, mehrere Benutzer pro Watchlist möglich). Verschieben in den Bestand jetzt mit expliziter Depot-Auswahl statt automatischem Ziel-Depot. ATH-Alarme zeigen kein Depot-Suffix mehr im Label; ⚖️ Sektor-Lücke entfällt in Watchlist-Benachrichtigungen. Alarm-Titel neu formatiert (📉 statt „ATH-Alarm [Depot]: …", Bestand/Beobachtung-Angabe steht jetzt als erste Body-Zeile) |
 | 2.7.24–2.7.26 / 2.12.17–2.12.18 | Neu: Aktien-Detail-Modal — Klick auf den Aktiennamen (Tabelle, Karte, Treemap) öffnet ein Modal mit Sektor, ATH-Abstand/-Datum, 52-Wochen-Bereich, P&L, Performance-Badges sowie einer nachgeladenen Kurzbeschreibung des Unternehmens von Wikipedia (Yahoo-Unternehmensdaten waren wegen eines GDPR-Consent-Cookie-Flows nicht zuverlässig automatisierbar) |
-| 2.7.23 / 2.12.14 | Depot-Locking gegen Lost Updates: ein Lock pro Depot sichert den kompletten Lese-/Schreibzyklus (Bestand + Watchlists) zwischen automatischem Refresh und HTTP-Requests ab — verhindert, dass gleichzeitige Änderungen sich gegenseitig überschreiben |
+| 2.7.23 / 2.12.14 | Depot-Locking gegen Lost Updates: ein Lock pro Depot sichert den kompletten Lese-/Schreibzyklus (Bestand + Watchlists, seit 2.8.0 getrennte Locks) zwischen automatischem Refresh und HTTP-Requests ab — verhindert, dass gleichzeitige Änderungen sich gegenseitig überschreiben |
 | 2.7.22 / 2.12.15–2.12.16 | Neu: Erkennung komplett bei Parqet verkaufter Positionen beim Sync — Bestätigungsmodal (einzeln oder gesammelt über „Alle entfernen") statt stillschweigend unverändert bleibender Position |
 | 2.7.21 / 2.12.14 | Depot-Zuordnungsauswahl beim Neuer-Benutzer-Dialog erscheint nur noch, solange es unzugeordnete Depots gibt — neue Benutzer legen sich ihr Depot künftig selbst an |
 | 2.7.21 / 2.12.13 | Benutzer-Bearbeiten-Formular in drei aufklappbare Sektionen gegliedert (👤 Profil / 🔔 Benachrichtigungen / 🕘 Zusammenfassungen); zugeklappte Sektionen zeigen den Ist-Zustand kompakt im Header |
