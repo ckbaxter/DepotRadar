@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.2"
+VERSION           = "2.8.4"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -431,7 +431,7 @@ def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / a
 
 def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
                       multiplier=1, is_nachkauf=False, is_sector_gap=False):
-    """Baut eine HTML-Version des ATH-Alarms für E-Mail-Versand (analog zum Wochenbericht)."""
+    """Baut eine HTML-Version des Discount-Block-Alarms für E-Mail-Versand (analog zum Wochenbericht)."""
     nk_badge = ('<span style="display:inline-block;padding:2px 8px;background:#fef3c7;'
                 'color:#92400e;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
                 '🛒 Nachkauf-Kandidat</span>') if is_nachkauf else ""
@@ -454,7 +454,7 @@ def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budge
 
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#ef4444;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
-      <h2 style="margin:0;font-size:18px">🔔 ATH-Alarm — {label}</h2>
+      <h2 style="margin:0;font-size:18px">📉 Discount-Block-Alarm — {label}</h2>
       <div style="opacity:.85;font-size:13px;margin-top:4px">-{cb}%-Block erreicht</div>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
