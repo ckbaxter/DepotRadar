@@ -1252,8 +1252,9 @@ select</style>
           <b>Beispiel einer Benachrichtigung:</b>
           <div style="background:var(--bg3);border-radius:6px;padding:10px 14px;
                       font-family:monospace;font-size:11px;margin-top:6px;line-height:1.9;
-                      white-space:pre-wrap;word-break:break-word">ATH-Alarm [Bestand: Mein Depot]: 🛒 ⚖️ Apple -22%-Block
-🛒 Apple Inc. (APC.DE) — Bestand: Mein Depot
+                      white-space:pre-wrap;word-break:break-word">📉 🛒 ⚖️ Apple (APC.DE) -22%-Block
+Bestand: Mein Depot
+🛒 Nachkauf-Kandidat
 ⚖️ Sektor unterrepräsentiert
 
 Aktueller Kurs:  156,00 EUR
@@ -4202,6 +4203,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.13.6 · Backend v2.8.4",
+    changes: [
+      "Bugfix: Discount-Block-Alarm nannte sich an zwei Stellen noch „ATH-Alarm”, obwohl er nichts mit einem neuen Allzeithoch zu tun hat — Überbleibsel aus dem Titel-Umbau in v2.7.27/v2.8.0, der nur den Plain-Text-Titel (📉 statt „ATH-Alarm [Label]: …”) umgestellt hatte. Betroffen: die HTML-E-Mail-Version des Discount-Alarms (Header hieß weiterhin „🔔 ATH-Alarm — {Label}”, jetzt „📉 Discount-Block-Alarm — {Label}”) sowie das Beispiel im Hilfe-Modal (zeigte noch das alte Titel-/Body-Format). Reine Text-/Formatkorrektur, keine Funktionsänderung"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.13.5 · Backend v2.8.3",
     changes: [
       "„Tägliche ATH-Zusammenfassung” in „Tägliche Depot-Zusammenfassung” umbenannt (Depot-Einstellungen-Hilfe, Benutzer-Formular) — der alte Name war missverständlich, da die Zusammenfassung sowohl Discount- als auch ATH-Alarme enthält, nicht nur neue Höchststände. Grenzt sich jetzt außerdem klar von der neuen „Watchlist-Zusammenfassung” ab. Reine Textänderung, keine Funktions-/API-Änderung"
@@ -5822,7 +5829,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.13.5 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
