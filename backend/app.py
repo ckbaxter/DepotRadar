@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.0"
+VERSION           = "2.8.2"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -255,7 +255,7 @@ def save_settings(s):     _save_json(SETTINGS_FILE, s)
 
 def save_notifications(n): _save_json(NOTIF_FILE, n)
 
-def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, kind=None):
+def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, user_id=None, user_name=None, kind=None):
     n = load_notifications()
     entry = {"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
              "type": etype, "title": title, "body": body, "success": success}
@@ -276,6 +276,12 @@ def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, 
         if user:
             entry["user_id"]   = user["id"]
             entry["user_name"] = user.get("name", "")
+    elif user_id:
+        # Für user-weite Log-Einträge ohne einzelnen Depot-/Watchlist-Bezug (z.B. die
+        # gebündelte Watchlist-Tageszusammenfassung über mehrere Watchlists hinweg).
+        entry["user_id"] = user_id
+        if user_name:
+            entry["user_name"] = user_name
     n.append(entry)
     save_notifications(n)
 
@@ -1535,11 +1541,85 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits):
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
+def _build_daily_watchlist_digest_data(wl_ids):
+    """Sammelt alle heute erfolgreich gesendeten Discount- und ATH-Alarme für die
+    übergebenen Watchlist-IDs, gruppiert nach Watchlist-Name. Analog zu
+    _build_daily_ath_digest_data, aber über mehrere Watchlists gebündelt — Watchlists
+    haben (anders als Depots) keinen eigenen Digest-Schalter, sondern nehmen an einem
+    einzigen, gebündelten User-weiten Digest teil (siehe daily_watchlist_digest)."""
+    today     = datetime.now().strftime("%d.%m.%Y")
+    wl_lookup = {w["id"]: w["name"] for w in load_watchlists() if w["id"] in wl_ids}
+    entries   = [n for n in load_notifications()
+                 if n.get("watchlist_id") in wl_ids and n.get("success", True)
+                 and n.get("kind") in ("discount", "ath")
+                 and n.get("time", "").startswith(today)]
+    grouped = {}
+    for e in entries:
+        name = wl_lookup.get(e["watchlist_id"], e["watchlist_id"])
+        grouped.setdefault(name, {"ath": [], "discount": []})
+        grouped[name][e["kind"]].append(e)
+    return grouped
+
+def build_daily_watchlist_digest_body(grouped):
+    """Baut den Text für die gebündelte tägliche Watchlist-Zusammenfassung eines Users —
+    eine einzige Nachricht über alle seine Watchlists hinweg, pro Alarm-Typ nach
+    Watchlist-Name gruppiert (erst alle Discount-, dann alle ATH-Gruppen)."""
+    total = sum(len(g["ath"]) + len(g["discount"]) for g in grouped.values())
+    title = "🌙 DepotRadar Tageszusammenfassung — Watchlists"
+    if total == 0:
+        return title, "Heute gab es keine Benachrichtigung für deine Watchlists."
+    names = sorted(grouped.keys())
+    lines = [f"Heute gab es {total} Alarm(e):"]
+    for name in names:
+        if grouped[name]["discount"]:
+            lines.append(f"\n📉 {name}")
+            lines += [f"  • {_daily_digest_line(e)}" for e in grouped[name]["discount"]]
+    for name in names:
+        if grouped[name]["ath"]:
+            lines.append(f"\n🎉 {name}")
+            lines += [f"  • {_daily_digest_line(e)}" for e in grouped[name]["ath"]]
+    link = f"\n\n{APP_URL}" if APP_URL else ""
+    return title, "\n".join(lines) + link
+
+def build_daily_watchlist_digest_html(grouped):
+    """HTML-Version der gebündelten Watchlist-Tageszusammenfassung für E-Mail-Versand."""
+    total = sum(len(g["ath"]) + len(g["discount"]) for g in grouped.values())
+    if total == 0:
+        body_html = '<p style="color:#64748b;margin:0">Heute gab es keine Benachrichtigung für deine Watchlists.</p>'
+    else:
+        names = sorted(grouped.keys())
+        sections = []
+        for name in names:
+            if grouped[name]["discount"]:
+                rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in grouped[name]["discount"])
+                sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {name}</h3>"
+                                f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
+        for name in names:
+            if grouped[name]["ath"]:
+                rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in grouped[name]["ath"])
+                sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {name}</h3>"
+                                f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
+        body_html = "".join(sections)
+    link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
+    return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
+    <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
+      <h2 style="margin:0;font-size:18px">🌙 Tageszusammenfassung</h2>
+      <div style="opacity:.8;font-size:13px;margin-top:4px">Watchlists · {total} Alarm(e) heute</div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
+      {body_html}
+      {link_html}
+    </div>
+    <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
+    </body></html>"""
+
 def send_daily_ath_digests(user_id):
     """Sendet die tägliche ATH-Zusammenfassung (Discount- + ATH-Alarme, auch bei null
     Treffern) für alle Depots eines einzelnen Users, die daily_ath_digest aktiviert haben.
     Seit v2.7.21 ein Job pro User (Uhrzeit ist userbezogen konfigurierbar), daher hier auf
-    die Depots des jeweiligen Users beschränkt statt global über alle Depots zu iterieren."""
+    die Depots des jeweiligen Users beschränkt statt global über alle Depots zu iterieren.
+    Sendet seit v2.8.2 zusätzlich eine gebündelte Watchlist-Zusammenfassung (ein Schalter
+    pro User statt pro Watchlist, da Watchlists selbst keine Digest-Teilnahme haben)."""
     users = load_users()
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return
@@ -1558,6 +1638,20 @@ def send_daily_ath_digests(user_id):
                 f"Gesendet an {len(urls)} URL(s). ({len(ath_hits) + len(discount_hits)} Alarm(e))",
                 success=True, depot_id=dc["id"])
         send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc["id"])
+
+    if user.get("daily_watchlist_digest", False):
+        wl_ids = user.get("watchlists", [])
+        urls   = user.get("apprise_urls", [])
+        mention = user.get("notification_mention", "")
+        if wl_ids and urls:
+            grouped     = _build_daily_watchlist_digest_data(wl_ids)
+            title, body = build_daily_watchlist_digest_body(grouped)
+            html_body   = build_daily_watchlist_digest_html(grouped)
+            total       = sum(len(g["ath"]) + len(g["discount"]) for g in grouped.values())
+            add_log("daily_watchlist_digest", "📋 Watchlist-Tageszusammenfassung",
+                    f"Gesendet an {len(urls)} URL(s). ({total} Alarm(e))",
+                    success=True, user_id=user["id"], user_name=user.get("name", ""))
+            send_apprise(title, body, urls, mention=mention, html_body=html_body)
 
 
 def send_weekly_digests(user_id):
@@ -2244,6 +2338,20 @@ def ath_log(depot_id):
     add_log("manual_refresh", f"ATH-Prüfung: {depot.get('name', depot_id)}", body, True, depot_id=depot_id)
     return jsonify({"ok": True})
 
+@app.route("/api/watchlists/<wl_id>/ath-log", methods=["POST"])
+def ath_log_watchlist(wl_id):
+    """Analog zu ath_log, aber für eine (eigenständige) Watchlist statt eines Depots."""
+    data = request.get_json() or {}
+    wl   = get_watchlist(wl_id) or {}
+    count = data.get("count", 0)
+    items = data.get("items", [])
+    if count:
+        body = f"{count} Abweichung(en) gefunden — " +                ", ".join(f"{r['name']}: {r['stored_ath']:.2f}→{r['yahoo_ath']:.2f} EUR" for r in items)
+    else:
+        body = "Alle ATH-Werte sind korrekt ✓"
+    add_log("manual_refresh", f"ATH-Prüfung: {wl.get('name', wl_id)}", body, True, watchlist_id=wl_id)
+    return jsonify({"ok": True})
+
 @app.route("/api/ath-check-single", methods=["GET"])
 def ath_check_single():
     """Gibt den aktuellen Yahoo-ATH für einen einzelnen Ticker zurück."""
@@ -2281,6 +2389,33 @@ def ath_correct(depot_id):
                 f"ATH-Korrektur: {depot.get('name', depot_id)}",
                 f"{len(updated)} Wert(e) korrigiert — " + ", ".join(details),
                 True, depot_id=depot_id)
+    return jsonify({"updated": updated})
+
+@app.route("/api/watchlists/<wl_id>/ath-correct", methods=["POST"])
+def ath_correct_watchlist(wl_id):
+    """Analog zu ath_correct, aber für eine (eigenständige) Watchlist statt eines Depots."""
+    corrections = request.get_json()  # [{ticker, new_ath}]
+    if not corrections:
+        return jsonify({"error": "Keine Korrekturen übergeben"}), 400
+    wl      = get_watchlist(wl_id) or {}
+    updated = []
+    details = []
+    with watchlist_lock(wl_id):
+        stocks = load_wl_stocks(wl_id)
+        for c in corrections:
+            for s in stocks:
+                if s["ticker"] == c["ticker"]:
+                    old_ath = s.get("ath_eur", 0)
+                    s["ath_eur"] = round(float(c["new_ath"]), 2)
+                    updated.append(s["ticker"])
+                    details.append(f"{s['name']}: {old_ath:.2f} → {s['ath_eur']:.2f} EUR")
+                    break
+        save_wl_stocks(wl_id, stocks)
+    if updated:
+        add_log("manual_refresh",
+                f"ATH-Korrektur: {wl.get('name', wl_id)}",
+                f"{len(updated)} Wert(e) korrigiert — " + ", ".join(details),
+                True, watchlist_id=wl_id)
     return jsonify({"updated": updated})
 
 # ── Splits CRUD ──────────────────────────────────────────────────
@@ -2914,6 +3049,7 @@ def api_create_user():
         "digest_day":            _DIGEST_DAY_DEFAULT,
         "digest_time":           _DIGEST_TIME_DEFAULT,
         "daily_digest_time":     _DAILY_DIGEST_TIME_DEFAULT,
+        "daily_watchlist_digest": bool(body.get("daily_watchlist_digest", False)),
     }
     if "digest_day"        in body: new_user["digest_day"]        = int(body["digest_day"])
     if "digest_time"       in body: new_user["digest_time"]       = str(body["digest_time"])
@@ -2936,6 +3072,7 @@ def api_update_user(user_id):
     if "apprise_urls"         in body: user["apprise_urls"]        = body["apprise_urls"]
     if "notification_mention" in body: user["notification_mention"]= body["notification_mention"]
     if "notification_confirm" in body: user["notification_confirm"]= bool(body["notification_confirm"])
+    if "daily_watchlist_digest" in body: user["daily_watchlist_digest"] = bool(body["daily_watchlist_digest"])
     digest_changed = False
     if "digest_day" in body:
         user["digest_day"] = int(body["digest_day"]); digest_changed = True
