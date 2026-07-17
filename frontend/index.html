@@ -908,6 +908,15 @@ select</style>
         <label class="form-label">Name</label>
         <input class="form-input" id="editWlName" autocomplete="off"/>
       </div>
+      <div style="margin-top:12px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <label class="toggle-switch">
+            <input type="checkbox" id="wlNotifsEnabled"/>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <span style="font-size:13px">Benachrichtigungen für diese Watchlist</span>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" onclick="deleteCurrentWl()">&#128465; Liste löschen</button>
@@ -3070,6 +3079,7 @@ async function createWatchlist(){
 function openWlSettings(wl){
   editingWl = wl;
   document.getElementById("editWlName").value = wl.name;
+  document.getElementById("wlNotifsEnabled").checked = wl.notifications_enabled !== false;
   openModal("wlSettingsModal");
   setTimeout(()=>document.getElementById("editWlName").focus(), 100);
 }
@@ -3077,8 +3087,9 @@ function openWlSettings(wl){
 async function saveWlSettings(){
   if(!editingWl) return;
   const name = document.getElementById("editWlName").value.trim(); if(!name) return;
+  const notifsEnabled = document.getElementById("wlNotifsEnabled")?.checked !== false;
   const r = await fetch(`${API}/watchlists/${editingWl.id}`, {method:"PUT",
-    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name, notifications_enabled: notifsEnabled})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("wlSettingsModal"); toast("Watchlist gespeichert");
   if(activeView.id === editingWl.id){ activeView.name = name; }
@@ -4169,6 +4180,12 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.2 · Backend v2.8.1",
+    changes: [
+      "Neu: Ein/Aus-Schalter für Benachrichtigungen in den Watchlist-Einstellungen (Default: an) — das Backend-Feld gab es bereits seit der Watchlist-Entkopplung (v2.8.0), es fehlte bisher nur der UI-Schalter dafür (analog zum bestehenden Schalter bei Depots)"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.13.1 · Backend v2.8.1",
     changes: [
@@ -5766,7 +5783,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.13.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.2 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
