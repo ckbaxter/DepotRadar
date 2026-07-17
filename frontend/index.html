@@ -1649,11 +1649,13 @@ function isWl(){ return activeView.type==="watchlist"; }
 
 // ── Depot + Watchlist Tabs ────────────────────────────────────────
 async function loadDepots(){
-  const r = await fetch(`${API}/depots`);
-  const allDepots = await r.json();
+  const [dr, wr] = await Promise.all([fetch(`${API}/depots`), fetch(`${API}/watchlists`)]);
+  const allDepots     = await dr.json();
+  const allWatchlists = await wr.json();
   const allowedD = getUserDepotIds();
-  depotsCache = allowedD ? allDepots.filter(d => allowedD.includes(d.id)) : allDepots;
-  watchlistsCache = depotsCache.flatMap(d => (d.watchlists||[]).map(w => ({...w, depot_id: d.id})));
+  const allowedW = getUserWatchlistIds();
+  depotsCache     = allowedD ? allDepots.filter(d => allowedD.includes(d.id)) : allDepots;
+  watchlistsCache = allowedW ? allWatchlists.filter(w => allowedW.includes(w.id)) : allWatchlists;
 
   // Frisch aus localStorage lesen
   const savedDepotId = localStorage.getItem("activeDepot");
@@ -1669,9 +1671,9 @@ async function loadDepots(){
     activeDepot = depotsCache.find(d => d.id === activeDepot.id) || depotsCache[0];
     activeView  = {type:"depot", id:null, name:""};
   }
-  // Watchlist nur wiederherstellen wenn sie zum aktuellen User-Depot gehört
-  if(savedView && savedView.type === "watchlist" && activeDepot){
-    const wl = (activeDepot.watchlists||[]).find(w => w.id === savedView.id);
+  // Watchlist wiederherstellen wenn sie zum aktuellen User gehört (eigenständig, kein Depot-Bezug mehr)
+  if(savedView && savedView.type === "watchlist"){
+    const wl = watchlistsCache.find(w => w.id === savedView.id);
     if(wl) activeView = {type:"watchlist", id:wl.id, name:wl.name};
   }
   renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
@@ -1692,18 +1694,16 @@ function renderDepotTabs(){
     bar.appendChild(tab);
   });
 
-  // Watchlist-Tabs (alle Depots)
-  depotsCache.forEach(dc => {
-    (dc.watchlists||[]).forEach(wl => {
-      const tab = document.createElement("div");
-      const isActive = activeView.type==="watchlist" && activeView.id===wl.id;
-      tab.className = "depot-tab" + (isActive ? " active" : "");
-      tab.style.color = isActive ? "" : "var(--muted)";
-      tab.innerHTML = '📋 ' + esc(wl.name) + '<span class="depot-tab-gear" title="Watchlist-Einstellungen">&#9881;</span>';
-      tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openWlSettings(wl, dc.id);});
-      tab.addEventListener("click", ()=>{ activeDepot=dc; switchWatchlist(wl); });
-      bar.appendChild(tab);
-    });
+  // Watchlist-Tabs — eigenständig, nicht mehr pro Depot verschachtelt
+  watchlistsCache.forEach(wl => {
+    const tab = document.createElement("div");
+    const isActive = activeView.type==="watchlist" && activeView.id===wl.id;
+    tab.className = "depot-tab" + (isActive ? " active" : "");
+    tab.style.color = isActive ? "" : "var(--muted)";
+    tab.innerHTML = '📋 ' + esc(wl.name) + '<span class="depot-tab-gear" title="Watchlist-Einstellungen">&#9881;</span>';
+    tab.querySelector(".depot-tab-gear").addEventListener("click", e=>{e.stopPropagation();openWlSettings(wl);});
+    tab.addEventListener("click", ()=>switchWatchlist(wl));
+    bar.appendChild(tab);
   });
 
   if(addBtn) bar.appendChild(addBtn);
@@ -1775,18 +1775,18 @@ async function loadCurrentStocks(){
   if(!isWl() && !activeDepot) return;
   _buyThreshold = activeDepot?.nachkauf_threshold ?? 30;
   const athBtn = document.getElementById("athCheckBtn");
-  if(athBtn) athBtn.style.display = isWl() ? "none" : "";
+  if(athBtn) athBtn.style.display = "";
   renderViewTabs();
   updateViewTitle();
   try {
     let stocks, basisStocks;
     if(isWl()){
-      const [r, rb] = await Promise.all([
-        fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`),
-        fetch(`${API}/stocks?depot=${activeDepot.id}`)
-      ]);
+      // Seit der Entkopplung hat eine Watchlist kein Eltern-Depot mehr, gegen das
+      // sich die Sektor-Lücke sinnvoll vergleichen ließe (das zuletzt aktive Depot
+      // wäre hier willkürlich) — Basis ist daher die Watchlist selbst.
+      const r = await fetch(`${API}/watchlists/${activeView.id}/stocks`);
       stocks      = await r.json();
-      basisStocks = await rb.json();
+      basisStocks = stocks;
     } else {
       const r = await fetch(`${API}/stocks?depot=${activeDepot.id}`);
       stocks      = await r.json();
@@ -2148,24 +2148,19 @@ function toggleClientIdVisibility(btn){
 let _athCheckResults = [];
 
 async function openAthCheck(){
-  if(!activeDepot) return;
+  if(!isWl() && !activeDepot) return;
   _athCheckResults = [];
   document.getElementById("athCorrectBtn").style.display = "none";
 
-  // Depot-Stocks + alle Watchlist-Stocks laden
-  const sr = await fetch(`${API}/stocks?depot=${activeDepot.id}`);
-  const depotStocks = await sr.json();
-  let allStocks = depotStocks.map(s => ({...s, _source: "Bestand"}));
-  for(const wl of (activeDepot.watchlists||[])){
-    try {
-      const wr = await fetch(`${API}/watchlist/${activeDepot.id}/${wl.id}/stocks`);
-      const wls = await wr.json();
-      allStocks = allStocks.concat(wls.map(s => ({...s, _source: `📋 ${wl.name}`})));
-    } catch(e){}
-  }
-  // Duplikate entfernen (gleicher Ticker mehrfach)
-  const seen = new Set();
-  const stocks = allStocks.filter(s => { if(seen.has(s.ticker)) return false; seen.add(s.ticker); return true; });
+  // Prüft den gerade aktiven Kontext — Bestand ODER die gerade offene Watchlist.
+  // ATH-Werte können in beiden veralten, daher hier bewusst nicht mehr auf den
+  // Bestand beschränkt (siehe auch ath-log/ath-correct, die je nach Kontext auf
+  // die passende Route gehen).
+  const sr = isWl()
+    ? await fetch(`${API}/watchlists/${activeView.id}/stocks`)
+    : await fetch(`${API}/stocks?depot=${activeDepot.id}`);
+  const rawStocks = await sr.json();
+  const stocks = rawStocks.map(s => ({...s, _source: isWl() ? `📋 ${activeView.name}` : "Bestand"}));
   const total = stocks.length;
 
   const el = document.getElementById("athCheckContent");
@@ -2228,7 +2223,10 @@ async function openAthCheck(){
     if(cnt) cnt.textContent = `${stocks.length} / ${stocks.length}`;
     await new Promise(r => setTimeout(r, 400));
     // Ergebnis in Verlauf schreiben
-    await fetch(`${API}/depots/${activeDepot.id}/ath-log`, {
+    const logUrl = isWl()
+      ? `${API}/watchlists/${activeView.id}/ath-log`
+      : `${API}/depots/${activeDepot.id}/ath-log`;
+    await fetch(logUrl, {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         count: _athCheckResults.length,
@@ -2300,7 +2298,10 @@ async function applyAthCorrections(){
     }))
     .filter(c => !isNaN(c.new_ath) && c.new_ath > 0);
   if(!corrections.length){ closeModal("athCheckModal"); return; }
-  const r = await fetch(`${API}/depots/${activeDepot.id}/ath-correct`, {
+  const correctUrl = isWl()
+    ? `${API}/watchlists/${activeView.id}/ath-correct`
+    : `${API}/depots/${activeDepot.id}/ath-correct`;
+  const r = await fetch(correctUrl, {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify(corrections)
   });
@@ -2706,7 +2707,7 @@ async function toggleAthAlert(ticker, depotId, wlId){
   // man möchte ja gerade bei beobachteten (noch nicht gekauften) Aktien wissen,
   // wenn sie ein neues Hoch erreichen.
   const url = wlId
-    ? `${API}/watchlist/${depotId}/${wlId}/stocks/${encodeURIComponent(ticker)}`
+    ? `${API}/watchlists/${wlId}/stocks/${encodeURIComponent(ticker)}`
     : `${API}/depots/${depotId}/stocks/${encodeURIComponent(ticker)}`;
   try {
     const r = await fetch(url, {
@@ -2745,7 +2746,7 @@ async function deleteStock(ticker, name, depotId){
 async function wlRefreshOne(ticker, btn){
   const orig=btn.innerHTML; btn.innerHTML='<span class="spinning">&#8635;</span>'; btn.disabled=true;
   try {
-    const r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}/refresh`,{method:"POST"});
+    const r=await fetch(`${API}/watchlists/${activeView.id}/stocks/${ticker}/refresh`,{method:"POST"});
     if(!r.ok) throw new Error((await r.json()).error);
     toast("Aktualisiert"); loadCurrentStocks();
   } catch(e){ toast("Fehler: "+e.message,false); }
@@ -2754,7 +2755,7 @@ async function wlRefreshOne(ticker, btn){
 
 async function wlDeleteStock(ticker, name){
   if(!confirm(`"${name}" aus der Beobachtungsliste entfernen?`)) return;
-  await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}`,{method:"DELETE"});
+  await fetch(`${API}/watchlists/${activeView.id}/stocks/${ticker}`,{method:"DELETE"});
   toast(`${name} entfernt`); loadCurrentStocks();
 }
 
@@ -2764,7 +2765,8 @@ async function moveToDepot(ticker){
     // Nur ein Depot — direkt verschieben
     await _doMoveToDepot(ticker, depotsCache[0], stock.name);
   } else {
-    // Mehrere Depots — Auswahl anzeigen
+    // Mehrere Depots — Auswahl anzeigen (Watchlists sind seit der Entkopplung keinem
+    // Depot mehr automatisch zugeordnet, daher hier immer eine echte Auswahl nötig)
     const choice = await showDepotPicker(`"${esc(stock.name)}" in welches Depot?`);
     if(choice) await _doMoveToDepot(ticker, choice, stock.name);
   }
@@ -2772,7 +2774,7 @@ async function moveToDepot(ticker){
 
 async function _doMoveToDepot(ticker, depot, stockName){
   try {
-    const r = await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${ticker}/move`, {method:"POST",
+    const r = await fetch(`${API}/watchlists/${activeView.id}/stocks/${ticker}/move`, {method:"POST",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({depot_id:depot.id})});
     const d = await r.json();
     if(!r.ok) throw new Error(d.error);
@@ -2811,7 +2813,7 @@ async function refreshAll(){
     if(isWl()){
       // Alle Aktien in dieser Watchlist aktualisieren
       for(const s of stocksCache){
-        await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks/${s.ticker}/refresh`,{method:"POST"});
+        await fetch(`${API}/watchlists/${activeView.id}/stocks/${s.ticker}/refresh`,{method:"POST"});
       }
     } else {
       await fetch(`${API}/stocks/refresh-all?depot=${activeDepot.id}`,{method:"POST"});
@@ -2884,12 +2886,13 @@ function selectCompany(idx,co){
 }
 
 async function confirmAdd(){
-  if(!selectedCompany||!activeDepot) return;
+  if(!selectedCompany) return;
+  if(!isWl() && !activeDepot) return;
   const btn=document.getElementById("confirmAddBtn"); btn.disabled=true; btn.textContent="Lade Daten …";
   try {
     let r;
     if(isWl()){
-      r=await fetch(`${API}/watchlist/${activeDepot.id}/${activeView.id}/stocks`,{method:"POST",
+      r=await fetch(`${API}/watchlists/${activeView.id}/stocks`,{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify(selectedCompany)});
     } else {
       r=await fetch(`${API}/stocks`,{method:"POST",headers:{"Content-Type":"application/json"},
@@ -3052,32 +3055,29 @@ function openNewWlModal(){
   setTimeout(()=>document.getElementById("newWlName").focus(),100);
 }
 async function createWatchlist(){
-  if(!activeDepot){ toast("Bitte zuerst ein Depot auswählen", false); return; }
   const name = document.getElementById("newWlName").value.trim(); if(!name) return;
-  const r = await fetch(`${API}/depots/${activeDepot.id}/watchlists`, {method:"POST",
-    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+  const body = {name};
+  if(activeUser && activeUser.id) body.user_id = activeUser.id;
+  const r = await fetch(`${API}/watchlists`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
   const wl = await r.json(); if(!r.ok){toast("Fehler: "+wl.error,false);return;}
+  if(activeUser && activeUser.id){ if(!activeUser.watchlists) activeUser.watchlists=[]; activeUser.watchlists.push(wl.id); }
   closeModal("newWlModal"); toast(`Watchlist "${name}" erstellt`);
-  activeDepot.watchlists = (activeDepot.watchlists||[]);
-  activeDepot.watchlists.push(wl);
-  const cachedDepot = depotsCache.find(d => d.id === activeDepot.id);
-  if(cachedDepot) cachedDepot.watchlists = activeDepot.watchlists;
+  watchlistsCache.push(wl);
   switchWatchlist(wl);
 }
 
-let editingWlDepotId = null;
-function openWlSettings(wl, depotId){
+function openWlSettings(wl){
   editingWl = wl;
-  editingWlDepotId = depotId || (activeDepot?.id);
   document.getElementById("editWlName").value = wl.name;
   openModal("wlSettingsModal");
   setTimeout(()=>document.getElementById("editWlName").focus(), 100);
 }
 
 async function saveWlSettings(){
-  if(!editingWl || !editingWlDepotId) return;
+  if(!editingWl) return;
   const name = document.getElementById("editWlName").value.trim(); if(!name) return;
-  const r = await fetch(`${API}/depots/${editingWlDepotId}/watchlists/${editingWl.id}`, {method:"PUT",
+  const r = await fetch(`${API}/watchlists/${editingWl.id}`, {method:"PUT",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("wlSettingsModal"); toast("Watchlist gespeichert");
@@ -3086,9 +3086,9 @@ async function saveWlSettings(){
 }
 
 async function deleteCurrentWl(){
-  if(!editingWl || !editingWlDepotId) return;
+  if(!editingWl) return;
   if(!confirm(`Watchlist "${editingWl.name}" löschen?`)) return;
-  await fetch(`${API}/depots/${editingWlDepotId}/watchlists/${editingWl.id}`, {method:"DELETE"});
+  await fetch(`${API}/watchlists/${editingWl.id}`, {method:"DELETE"});
   closeModal("wlSettingsModal"); toast("Watchlist gelöscht");
   if(activeView.id === editingWl.id){
     activeDepot = depotsCache[0] || null;
@@ -3453,9 +3453,9 @@ function renderSectorOverview(stocks, basisStocks){
   if(!sectors.length){ wrap.style.display="none"; return; }
   wrap.style.display = "block";
 
-  // Soll-Wert (Ø Positionen/Sektor) immer auf Basis des echten Bestands berechnen,
-  // auch wenn gerade eine Watchlist angezeigt wird — Diversifikation bezieht sich
-  // immer auf das tatsächliche Depot.
+  // Soll-Wert (Ø Positionen/Sektor): für den Bestand die eigenen Positionen, für eine
+  // Watchlist ebenfalls die eigenen Positionen (seit der Entkopplung vom Depot gibt es
+  // keine automatische "echter Bestand"-Basis mehr, siehe loadCurrentStocks).
   const gapInfo = calcSectorGapCounts(basisStocks || stocks);
 
   chips.innerHTML = sectors.map(([sec, n]) => {
@@ -3518,7 +3518,7 @@ function weightTd(s){
 function sectorBadgeHtml(s, depotId, wl=false, wlId=null){
   const wlAttr  = wl ? `data-wl="1" data-wlid="${wlId||''}"` : "";
   const gapMark = s._isSectorGap
-    ? `<span title="Sektor im Bestand unterrepräsentiert" style="margin-left:4px;font-size:12px">⚖️</span>`
+    ? `<span title="Sektor hier unterrepräsentiert" style="margin-left:4px;font-size:12px">⚖️</span>`
     : "";
   if(s.sector){
     return `<div style="margin-top:4px"><span class="sector-badge" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>${s.sector}</span>${gapMark}</div>`;
@@ -3565,7 +3565,7 @@ function filterSectorChips(q){
 async function setSector(sector){
   if(!_spTicker) return;
   const url = _spIsWl
-    ? `${API}/watchlist/${_spDepotId}/${_spWlId}/stocks/${encodeURIComponent(_spTicker)}`
+    ? `${API}/watchlists/${_spWlId}/stocks/${encodeURIComponent(_spTicker)}`
     : `${API}/depots/${_spDepotId}/stocks/${encodeURIComponent(_spTicker)}`;
   await fetch(url, {method:"PATCH", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({sector: sector || ""})});
@@ -4035,6 +4035,13 @@ function getUserDepotIds(){
   return activeUser.depots;
 }
 
+// Watchlist-Filterung nach aktivem User — analog zu getUserDepotIds, seit Watchlists
+// direkt Usern zugeordnet sind (statt indirekt über ein Eltern-Depot)
+function getUserWatchlistIds(){
+  if(!activeUser || !activeUser.watchlists?.length) return null; // null = alle
+  return activeUser.watchlists;
+}
+
 // ── Verlauf ───────────────────────────────────────────────────────
 const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung"};
 const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh"};
@@ -4162,6 +4169,18 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.1 · Backend v2.8.1",
+    changes: [
+      "ATH-Prüfung und -Korrektur funktionieren jetzt auch in der Watchlist-Ansicht, nicht mehr nur im Bestand — ATH-Werte können bei beobachteten Aktien genauso veralten. Prüft immer den gerade aktiven Kontext (Bestand ODER die offene Watchlist)"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.0 · Backend v2.8.0",
+    changes: [
+      "Watchlists sind kein Unterobjekt eines Depots mehr, sondern eigenständig und direkt Benutzern zugeordnet (analog zu Depots, mehrere Benutzer pro Watchlist möglich). Aktien lassen sich weiterhin zwischen Watchlist und Bestand verschieben — dafür jetzt mit expliziter Depot-Auswahl statt automatischem Ziel-Depot. ATH-Alarme für Watchlists zeigen kein Depot-Suffix mehr im Label; die ⚖️-Sektor-Lücke entfällt in Watchlist-Benachrichtigungen (keine automatische Vergleichsbasis mehr), bleibt aber als Anzeige-Feature erhalten. ATH-Alarm-Titel zusätzlich neu formatiert: 📉 für Discount-Alarme statt „ATH-Alarm [Depot]: …”, Bestand/Beobachtung-Angabe steht jetzt als erste Body-Zeile"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.12.18 · Backend v2.7.25",
     changes: [
@@ -5747,7 +5766,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version" id="versionFooter">
-  <span>Frontend v2.12.18 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.1 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
