@@ -553,7 +553,7 @@ select</style>
     </div>
     <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
     <!-- Einheitliche Aktionsleiste -->
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px" id="buyFilterBar">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px">
       <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn" title="Kurse jetzt abrufen">&#8635; Kurse aktualisieren</button>
       <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn" title="ATH-Werte mit Yahoo vergleichen"
               style="display:none">&#128269; ATH prüfen</button>
@@ -727,7 +727,7 @@ select</style>
         </details>
       </div>
       <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 12px">
-      <div id="depotNotifUserHint" style="background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:12px">
+      <div style="background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:12px">
         🔔 Apprise-URLs werden pro Benutzer konfiguriert.<br>
         <span style="font-size:11px">Klicke oben rechts auf deinen Namen um sie zu bearbeiten.</span>
       </div>
@@ -742,7 +742,7 @@ select</style>
         </div>
       </div>
         <!-- Wöchentliche Zusammenfassung Toggle -->
-        <div id="depotDigestRow" style="margin-top:12px">
+        <div style="margin-top:12px">
           <div style="display:flex;align-items:center;gap:10px">
             <label class="toggle-switch">
               <input type="checkbox" id="depotDigestToggle"/>
@@ -1360,7 +1360,7 @@ http://depotradar.example.lan</div>
       <!-- Handelstage -->
       <div class="form-group">
         <label class="form-label">Handelstage</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" id="dayToggles">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="day-btn" data-day="0" onclick="toggleDay(0)">Mo</button>
           <button class="day-btn" data-day="1" onclick="toggleDay(1)">Di</button>
           <button class="day-btn" data-day="2" onclick="toggleDay(2)">Mi</button>
@@ -4076,8 +4076,8 @@ function getUserWatchlistIds(){
 }
 
 // ── Verlauf ───────────────────────────────────────────────────────
-const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung",daily_watchlist_digest:"📋 Watchlist-Zusammenfassung"};
-const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh",daily_watchlist_digest:"auto_refresh"};
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung",daily_watchlist_digest:"📋 Watchlist-Zusammenfassung",system:"⚙️ System"};
+const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh",daily_ath_digest:"auto_refresh",daily_watchlist_digest:"auto_refresh",system:"manual_refresh"};
 let _notifItems = [];
 let _notifTypeFilter = "all";
 let _notifUserFilter = "all";
@@ -4202,6 +4202,14 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.7 · Backend v2.8.5",
+    changes: [
+      "Testbenachrichtigungen erscheinen im Verlauf jetzt als „✅ Test” statt „🔔 Alarm” — der Verlauf-Typ „test” existierte im Frontend zwar von Anfang an, wurde vom Backend aber nie vergeben (jeder Versand wurde pauschal als „alert” geloggt)",
+      "Verlauf: der System-Eintrag „Fehlerlog geleert” (System-Status → ✕ Leeren) zeigt jetzt ein Label („⚙️ System”) statt des rohen Typ-Namens; außerdem bekommt die Tageszusammenfassung (🌙) jetzt wie die Watchlist-Zusammenfassung einen farbigen Rand in der Verlaufsliste",
+      "Code-Cleanup: drei verwaiste Funktionsparameter im Backend entfernt (build_alert_html/title, fetch_performance/currency, _refresh_depot/trigger), fünf ungenutzte id-Attribute im HTML entfernt, drei interne Textreste der alten Bezeichnung „Tägliche ATH-Zusammenfassung” angepasst — keine funktionale Änderung"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.13.6 · Backend v2.8.4",
     changes: [
@@ -5828,8 +5836,8 @@ setInterval(loadCurrentStocks,60000);
 setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
-<div class="app-version" id="versionFooter">
-  <span>Frontend v2.13.6 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+<div class="app-version">
+  <span>Frontend v2.13.7 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
