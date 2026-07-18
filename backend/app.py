@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.4"
+VERSION           = "2.8.5"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
@@ -179,7 +179,7 @@ def _parse_hhmm(value, fallback):
 
 def get_user_digest_settings(user):
     """Liefert (digest_day, digest_time, daily_digest_time) für einen User inkl. Defaults —
-    Sonntag 20:00 für den Wochenbericht, 21:00 für die tägliche ATH-Zusammenfassung."""
+    Sonntag 20:00 für den Wochenbericht, 21:00 für die tägliche Depot-Zusammenfassung."""
     day  = user.get("digest_day", _DIGEST_DAY_DEFAULT)
     try: day = int(day)
     except Exception: day = _DIGEST_DAY_DEFAULT
@@ -429,8 +429,8 @@ def get_block(d):            return 0 if d < 20 else int(d / 10) * 10
 def get_multiplier(d):       return 3 if d >= 60 else (2 if d >= 40 else 1)
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
-def build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
-                      multiplier=1, is_nachkauf=False, is_sector_gap=False):
+def build_alert_html(stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
+                     multiplier=1, is_nachkauf=False, is_sector_gap=False):
     """Baut eine HTML-Version des Discount-Block-Alarms für E-Mail-Versand (analog zum Wochenbericht)."""
     nk_badge = ('<span style="display:inline-block;padding:2px 8px;background:#fef3c7;'
                 'color:#92400e;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
@@ -522,9 +522,9 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"Abstand:         -{d:.1f}%{buy_line}\n"
                 f"-{cb}%-Level:    {lp:.2f} EUR\n"
                 f"Kursstand:       {stock.get('market_time', '—')}{link}")
-        html_body = build_alert_html(title, stock, label, new_cur, new_ath, d, cb, lp,
-                                      buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf,
-                                      is_sector_gap=is_sector_gap)
+        html_body = build_alert_html(stock, label, new_cur, new_ath, d, cb, lp,
+                                     buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf,
+                                     is_sector_gap=is_sector_gap)
         send_apprise(title, body, urls or [], mention=mention, html_body=html_body,
                      depot_id=depot_id, watchlist_id=watchlist_id, kind="discount")
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
@@ -767,11 +767,11 @@ def fetch_stock_data(ticker):
         except: pass
 
     cur_orig = round(float(current), 2)
-    perfs = fetch_performance(ticker, cur_eur, eur, currency)
+    perfs = fetch_performance(ticker, cur_eur, eur)
     return {"current_eur": cur_eur, "current_orig": cur_orig, "ath_eur": ath_eur, "ath_date": ath_date,
             "currency": currency, "market_time": mt_str, **perfs}
 
-def fetch_performance(ticker, current_eur, eur_rate, currency="USD"):
+def fetch_performance(ticker, current_eur, eur_rate):
     """Berechnet 1T/1W/1M/3M/1J/3J Performance sowie 52-Wochen-Hoch/-Tief (week52_high/
     week52_low, seit v2.7.16). perf_1w wird nur noch intern für die Wochenzusammenfassung
     ("Beste/schlechteste Woche") berechnet, ist aber kein Badge mehr im Frontend (siehe
@@ -847,7 +847,12 @@ EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "pos
 def _is_email_url(u):
     return u.lower().startswith(EMAIL_PREFIXES)
 
-def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, watchlist_id=None, kind=None):
+def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, watchlist_id=None, kind=None,
+                 log_type="alert"):
+    """log_type steuert den Verlauf-Typ des add_log-Eintrags (Default "alert").
+    Testnachrichtigungen übergeben "test", damit sie im Verlauf als ✅ Test erscheinen
+    statt wie ein echter Alarm auszusehen — vorher wurde jeder Versand pauschal als
+    "alert" geloggt und der Frontend-Typ "test" war faktisch tot."""
     if not urls: return False
     try:
         ok = True
@@ -863,11 +868,11 @@ def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, w
             else:
                 if not ap.notify(title=title, body=msg):
                     ok = False
-        add_log("alert", title, body, ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
+        add_log(log_type, title, body, ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
         return ok
     except Exception as e:
         log.error(f"Apprise: {e}")
-        add_log("alert", title, body, False, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
+        add_log(log_type, title, body, False, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
         return False
 
 # ── Stock helpers ─────────────────────────────────────────────────
@@ -1029,7 +1034,7 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_ga
             log.error(f"Notify {s.get('name','?')}: {e}")
     return stocks
 
-def _refresh_depot(depot, trigger="auto", price_cache=None):
+def _refresh_depot(depot, price_cache=None):
     did       = depot["id"]; dname = depot["name"]
     urls, mention, confirm = resolve_notification_settings(did)
     budget    = depot.get("buy_budget") or None
@@ -1123,7 +1128,7 @@ def refresh_all_depots(trigger="auto"):
     _health_stats["last_refresh_had_errors"] = False  # Pro Zyklus zurücksetzen
     price_cache = {}  # Depot- und Watchlist-übergreifender Kurs-Cache für diesen Zyklus
     for depot in depots:
-        ok, err = _refresh_depot(depot, trigger, price_cache)
+        ok, err = _refresh_depot(depot, price_cache)
         total_ok += ok; total_err += err
     for wl in watchlists:
         ok, err = _refresh_watchlist(wl, price_cache)
@@ -1238,7 +1243,7 @@ def _is_trading_time():
 def trading_window_check():
     global _last_refresh, _start_of_day_done
     s                              = load_settings()
-    tz, now, days, sh, sm, eh, em = _parse_trading_config(s)
+    _tz, now, days, sh, sm, eh, em = _parse_trading_config(s)  # tz hier ungenutzt (steckt bereits in now)
     interval   = s["refresh_interval"]
     now_mins   = now.hour * 60 + now.minute
     start_mins = sh * 60 + sm; end_mins = eh * 60 + em
@@ -1614,7 +1619,7 @@ def build_daily_watchlist_digest_html(grouped):
     </body></html>"""
 
 def send_daily_ath_digests(user_id):
-    """Sendet die tägliche ATH-Zusammenfassung (Discount- + ATH-Alarme, auch bei null
+    """Sendet die tägliche Depot-Zusammenfassung (Discount- + ATH-Alarme, auch bei null
     Treffern) für alle Depots eines einzelnen Users, die daily_ath_digest aktiviert haben.
     Seit v2.7.21 ein Job pro User (Uhrzeit ist userbezogen konfigurierbar), daher hier auf
     die Depots des jeweiligen Users beschränkt statt global über alle Depots zu iterieren.
@@ -1623,7 +1628,7 @@ def send_daily_ath_digests(user_id):
     users = load_users()
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return
-    log.info(f"Tägliche ATH-Zusammenfassung wird versendet (User '{user.get('name','?')}')…")
+    log.info(f"Tägliche Depot-Zusammenfassung wird versendet (User '{user.get('name','?')}')…")
     depots = load_depots()
     for dc in depots:
         if dc["id"] not in user.get("depots", []): continue
@@ -2701,7 +2706,7 @@ def api_refresh_all():
     if did:
         depots = load_depots(); depot = next((d for d in depots if d["id"] == did), None)
         if depot:
-            ok, err = _refresh_depot(depot, "manual")
+            ok, err = _refresh_depot(depot)
             add_log("manual_refresh", f"Refresh: {depot['name']}",
                     f"OK: {len(ok)} Fehler: {len(err)}", len(err) == 0, depot_id=did)
         return jsonify(load_stocks(did))
@@ -3023,7 +3028,7 @@ def test_notification():
     link    = f"\n\n{APP_URL}" if APP_URL else ""
     msg     = f"DepotRadar Testbenachrichtigung"
     txt     = f"Verbindung funktioniert!{link}"
-    ok = send_apprise(msg, txt, urls, mention=mention)
+    ok = send_apprise(msg, txt, urls, mention=mention, log_type="test")
     return jsonify({"ok": ok})
 
 # ── User API ──────────────────────────────────────────────────────
