@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.1-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.2-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.6-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.8-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -24,7 +24,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 
 ## Features
 
-- **Multi-User** — mehrere Benutzerprofile mit optionalem PIN (per Zahlenpad oder Tastatur eingebbar); jeder User sieht nur seine eigenen Depots und Watchlists
+- **Multi-User** — mehrere Benutzerprofile mit optionalem PIN (per Zahlenpad oder Tastatur eingebbar); jeder User sieht nur seine eigenen Depots und Watchlists; Admin-Rechte (Verlauf aller Benutzer, Benutzer anlegen/löschen) per `ADMIN_USERS`-Umgebungsvariable
 - **Multi-Depot** — mehrere Depots pro Benutzer, jedes unabhängig konfigurierbar
 - **Watchlists** — eigenständige Beobachtungslisten, direkt in der Tab-Leiste neben den Depots; können mehreren Benutzern zugeordnet werden (analog zu Depots), nicht an ein bestimmtes Depot gebunden
 - **ATH-Discount** — farbcodierte Badges: grün (<20%), gelb (20–39%), orange (40–59%), rot (>60%) mit Multiplikator (1×/2×/3×)
@@ -32,9 +32,9 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Portfolio-Gewichtung** — Balken und %-Wert pro Aktie zeigen die relative Gewichtung im Depot; sortierbar
 - **Portfolio-Verlauf** — täglicher Snapshot des Gesamtwerts; interaktives Liniendiagramm mit Zeitraum-Filter (1W/1M/3M/6M/1J/Alles); Datenpunkte per Antippen/Hovern abrufbar (Datum + exakter Wert), lange Zeiträume werden automatisch reduziert; **Invested-Capital-Kurve** zeigt den kumulierten Einstandswert als gestrichelte Linie (nur bei Positionen mit bekanntem Einstandskurs)
 - **Ansicht-Dropdown (Tabelle / Karten / Treemap)** — ein Dropdown in der Aktionsleiste schaltet zwischen drei gleichwertigen Darstellungen um; die Wahl wird geräteunabhängig gemerkt (`localStorage`). Ohne bisherige Auswahl startet Mobile mit Karten, Desktop mit Tabelle
-- **Kartenraster** — vollwertige Kartenansicht mit identischen Feldern wie die Tabelle, jetzt auch auf Desktop als mehrspaltiges Grid wählbar (vorher nur Mobile-Ansicht)
+- **Kartenraster** — vollwertige Kartenansicht mit identischen Feldern wie die Tabelle; auf Mobilgeräten einspaltig gestapelt, auf Desktop als mehrspaltiges Grid
 - **Treemap-Ansicht** — alternative Darstellung des Depots als Flächenkarte; Kachelgröße = Positionswert, Farbe = ATH-Discount-Stufe (nur Bestand, ab 2 Positionen, nicht für Watchlists)
-- **Zeilenfarben** — Discount-Stufen werden als schmaler linker Farb-Akzent statt Vollflächen-Tönung dargestellt; zusätzlich dezentes Zebra-Muster in der Depot-Tabelle für bessere Lesbarkeit
+- **Zeilenfarben** — Discount-Stufen werden als schmaler linker Farb-Akzent an Zeile bzw. Karte dargestellt; zusätzlich dezentes Zebra-Muster in der Depot-Tabelle für bessere Lesbarkeit
 - **52-Wochen-Hoch/-Tief-Badge** — `52W-H`/`52W-T` neben den Performance-Badges, wenn der Kurs innerhalb 3% des 52-Wochen-Hochs bzw. -Tiefs liegt
 - **Aktien-Detail-Modal** — Klick auf den Aktiennamen (Tabelle, Karte oder Treemap-Kachel) öffnet ein Modal mit Sektor, ATH-Abstand/-Datum, 52-Wochen-Bereich, P&L, Performance-Badges sowie einer kurzen Unternehmensbeschreibung (Wikipedia)
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
@@ -52,10 +52,11 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit ATH-Verteilung, Nachkauf-Kandidaten, Wochenperformance und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
-- **Tägliche ATH-Zusammenfassung** — optional pro Depot aktivierbar, läuft nur Montag–Freitag; fasst zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); nutzt dieselben Apprise-URLs wie normale Alarme
-- **Zeitplanung pro Benutzer** — Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen Zusammenfassung werden im eigenen Benutzerprofil eingestellt, nicht mehr global — jeder Benutzer im Haushalt kann so einen eigenen Zeitpunkt wählen
+- **Tägliche Depot-Zusammenfassung** — optional pro Depot aktivierbar, läuft nur Montag–Freitag; fasst zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); nutzt dieselben Apprise-URLs wie normale Alarme
+- **Watchlist-Zusammenfassung, gebündelt** — ein einziger Schalter im Benutzerprofil fasst alle Discount-/ATH-Alarme über sämtliche eigenen Watchlists in einer Nachricht zusammen (statt pro Watchlist einzeln), zur gleichen Uhrzeit wie die tägliche Depot-Zusammenfassung
+- **Zeitplanung pro Benutzer** — Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen Zusammenfassung werden im eigenen Benutzerprofil eingestellt — jeder Benutzer im Haushalt kann so einen eigenen Zeitpunkt wählen
 - **System-Status** — Gesundheits-Dashboard im Footer; zeigt Scheduler-Status, Laufzeit, Refresh-Statistiken, Yahoo Finance-Erfolgsquote, Yahoo-Cache-Trefferquote und Fehler-Log der letzten 20 Abfragefehler
-- **Verlauf** — vollständiger Aktivitätsverlauf mit Filter nach Benutzer und Eintragstyp, gruppiert nach Tages-Trennern (Heute/Gestern/Datum)
+- **Verlauf** — Aktivitätsverlauf mit Filter nach Eintragstyp, gruppiert nach Tages-Trennern (Heute/Gestern/Datum); Admins sehen die Ereignisse aller Benutzer und können zusätzlich nach Benutzer filtern, alle anderen sehen nur eigene Einträge und Systemereignisse
 - **Letzte Änderungen** — Changelog direkt in der App abrufbar (Footer-Link)
 - **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten und Wochenbericht direkt in der App konfigurierbar
 - **Dark / Light Mode**
@@ -127,6 +128,7 @@ environment:
   - TZ=Europe/Berlin
   - APP_URL=http://depotradar.lan   # Eigene URL/IP — wichtig für Parqet OAuth
   - OPENFIGI_API_KEY=               # Optional — siehe unten
+  - ADMIN_USERS=                    # Optional — Admin-Benutzer, siehe Administration
 ```
 
 `APP_URL` muss auf die tatsächlich erreichbare Adresse zeigen.
@@ -146,25 +148,44 @@ environment:
 
 ### Administration via Umgebungsvariablen
 
-Bestimmte Verwaltungsaufgaben werden über temporäre Umgebungsvariablen in `docker-compose.yml` erledigt, um kein Rollenkonzept in der UI zu benötigen. Nach dem Ausführen die Variable wieder entfernen und neu starten.
+Die Administration läuft über Umgebungsvariablen in `docker-compose.yml`. `ADMIN_USERS` ist dabei eine **dauerhafte** Variable (bleibt gesetzt), `RESET_PIN_USER` und `DELETE_USER` sind **One-Shot**-Variablen: nach dem Ausführen wieder entfernen und neu starten.
+
+#### Admins festlegen (`ADMIN_USERS`)
+
+```yaml
+environment:
+  - ADMIN_USERS=Joe            # mehrere kommasepariert: Joe,Sina
+```
+
+Die genannten Benutzer (Match über den Benutzernamen) erhalten Admin-Rechte:
+
+- **Verlauf**: Admins sehen die Ereignisse aller Benutzer inkl. Benutzer-Filter; alle anderen sehen nur ihre eigenen Einträge plus Systemereignisse
+- **Benutzer anlegen**: nur durch Admins möglich (Ausnahme: der allererste Benutzer bei der Ersteinrichtung)
+- **Benutzer löschen**: Admins können Benutzer direkt über die Benutzerverwaltung löschen (🗑) — mit Bestätigungsdialog, der vorab auflistet, welche exklusiv zugeordneten Depots/Watchlists mitgelöscht würden; Selbstlöschung und das Löschen des letzten Benutzers sind blockiert (dafür `DELETE_USER` nutzen)
+
+Ist die Variable **nicht gesetzt**, gibt es keine Admins: jeder sieht im Verlauf nur eigene Einträge, und Benutzer können weder angelegt noch über die UI gelöscht werden (das Backend loggt beim Start einen entsprechenden Hinweis).
+
+**Hinweise:** Wird ein Admin-Benutzer umbenannt, muss die Variable nachgezogen werden, sonst verliert er die Admin-Rechte. Und ehrlich eingeordnet: DepotRadar hat keine Sessions/Tokens — die Admin-Trennung ist Komfort und Aufgeräumtheit im Haushalts-Einsatz, keine harte Zugriffskontrolle gegen technisch versierte Mitbenutzer im selben Netz.
 
 #### PIN eines Benutzers zurücksetzen
 
 ```yaml
 environment:
-  - RESET_PIN_USER=Christoph
+  - RESET_PIN_USER=Joe
 ```
 
-Beim nächsten Start wird der PIN des Benutzers `Christoph` gelöscht — er kann sich danach ohne PIN einloggen und einen neuen setzen. **Variable anschließend entfernen und neu starten.**
+Beim nächsten Start wird der PIN des Benutzers `Joe` gelöscht — er kann sich danach ohne PIN einloggen und einen neuen setzen. **Variable anschließend entfernen und neu starten.**
 
 #### Benutzer löschen
 
 ```yaml
 environment:
-  - DELETE_USER=Fiona
+  - DELETE_USER=Sina
 ```
 
-Beim nächsten Start wird der Benutzer `Fiona` aus `users.json` entfernt. Depots **und Watchlists**, die **ausschließlich** diesem Benutzer gehörten, werden vollständig gelöscht (inkl. Aktien-Dateien). Depots/Watchlists, die mehreren Benutzern zugeordnet waren, bleiben erhalten. **Variable anschließend entfernen und neu starten.**
+Beim nächsten Start wird der Benutzer `Sina` aus `users.json` entfernt. Depots **und Watchlists**, die **ausschließlich** diesem Benutzer gehörten, werden vollständig gelöscht (inkl. Aktien-Dateien). Depots/Watchlists, die mehreren Benutzern zugeordnet waren, bleiben erhalten. **Variable anschließend entfernen und neu starten.**
+
+Alternativ können Admins Benutzer direkt über die UI löschen (siehe `ADMIN_USERS`). Die Env-Variable bleibt relevant für Selbstlöschung und für den Fall, dass kein Admin erreichbar ist.
 
 ```bash
 # Nach Setzen der Variable:
@@ -190,12 +211,12 @@ Beim ersten Start wird das erste Benutzerprofil angelegt — ein PIN ist dabei o
 - Sobald ein PIN gesetzt ist oder mehrere Benutzer existieren, erscheint die Benutzerauswahl
 - Nach dem Login sieht man nur die eigenen Depots und Watchlists
 - Benachrichtigungs-Einstellungen (Apprise-URLs, Mention, Bestätigungsmodus) werden ausschließlich pro Benutzer konfiguriert — es gibt keine separate Depot-Ebene dafür
-- Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen ATH-Zusammenfassung liegen ebenfalls auf dem Benutzer (Standard: Sonntag 20:00 bzw. 21:00) — jeder Benutzer kann so einen eigenen Zeitpunkt wählen
+- Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen Depot-Zusammenfassung liegen ebenfalls auf dem Benutzer (Standard: Sonntag 20:00 bzw. 21:00) — jeder Benutzer kann so einen eigenen Zeitpunkt wählen
 - Ein/Aus-Schalter sowie Wochenbericht-/Tageszusammenfassung-Teilnahme bleiben pro Depot konfigurierbar (unabhängig vom Benutzer-Modell, da ein Benutzer mehrere Depots mit unterschiedlichem Bedarf haben kann)
 - Das Benutzer-Bearbeiten-Formular ist in aufklappbare Sektionen gegliedert (👤 Profil, 🔔 Benachrichtigungen, 🕘 Zusammenfassungen)
-- Neue Depots werden automatisch dem eingeloggten Benutzer zugeordnet; die Depot-Zuordnungsauswahl beim Neu-Anlegen eines Benutzers erscheint nur noch, solange es tatsächlich unzugeordnete Depots gibt
-- Watchlists sind seit Version 2.8.0 eigenständig und werden — genau wie Depots — direkt Benutzern zugeordnet (neue Watchlists automatisch dem eingeloggten Benutzer, mehrere Benutzer pro Watchlist möglich); sie sind nicht mehr an ein bestimmtes Depot gebunden
-- Jeder Benutzer kann neue Benutzer anlegen; eigene Einstellungen und PIN kann jeder selbst verwalten
+- Neue Depots werden automatisch dem eingeloggten Benutzer zugeordnet; die Depot-Zuordnungsauswahl beim Neu-Anlegen eines Benutzers erscheint nur, solange es unzugeordnete Depots gibt
+- Watchlists sind eigenständig und werden — genau wie Depots — direkt Benutzern zugeordnet (neue Watchlists automatisch dem eingeloggten Benutzer, mehrere Benutzer pro Watchlist möglich); sie sind nicht an ein bestimmtes Depot gebunden
+- Neue Benutzer anlegen und bestehende löschen können nur Admins (siehe `ADMIN_USERS` unter Administration); eigene Einstellungen und PIN kann jeder selbst verwalten
 
 -----
 
@@ -212,7 +233,7 @@ Alle Einstellungen sind unter **⚙ Einstellungen** erreichbar:
 | Verlaufsbereinigung           | Aufbewahrungszeitraum für Benachrichtigungshistorie       |
 | Aktiensplits                  | Splits hinzufügen und verwalten                           |
 
-Benachrichtigungen selbst werden **nicht** global geschaltet: Apprise-URLs, Mention und Bestätigungsmodus liegen ausschließlich beim Benutzer (Benutzer-Icon oben rechts). Dort werden auch Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen ATH-Zusammenfassung eingestellt (pro Benutzer, Standard So 20:00 bzw. 21:00). Ein/Aus sowie Wochenbericht-/Tageszusammenfassung-Teilnahme bleiben pro Depot (Depot-Einstellungen → ⚙).
+Benachrichtigungen selbst werden **nicht** global geschaltet: Apprise-URLs, Mention und Bestätigungsmodus liegen ausschließlich beim Benutzer (Benutzer-Icon oben rechts). Dort werden auch Wochentag/Uhrzeit des Wochenberichts, die Uhrzeit der täglichen Depot-Zusammenfassung sowie der Schalter für die gebündelte Watchlist-Zusammenfassung eingestellt (pro Benutzer, Standard So 20:00 bzw. 21:00, Watchlist-Zusammenfassung Standard aus). Ein/Aus sowie Wochenbericht-/Tageszusammenfassung-Teilnahme bleiben pro Depot (Depot-Einstellungen → ⚙).
 
 -----
 
@@ -262,7 +283,7 @@ Das ⚖️-Symbol markiert Aktien aus Sektoren, die im Bestand unterrepräsentie
 - Als Ø-Hinweis in der Sektor-Übersicht
 - Im ATH-Discount-Alarm des Bestands (zusätzlich zu 🛒, falls beides zutrifft) — nicht beim separaten Neues-ATH-Alarm
 
-**Watchlists:** Seit Version 2.8.0 sind Watchlists nicht mehr einem bestimmten Depot zugeordnet, daher gibt es keine automatische Vergleichsbasis mehr — die Anzeige in einer Watchlist bewertet dort gegen die Watchlist selbst statt gegen ein Depot. In Watchlist-Benachrichtigungen (Apprise) erscheint ⚖️ seitdem nicht mehr.
+**Watchlists:** Da Watchlists keinem Depot zugeordnet sind, gibt es dort keine automatische Vergleichsbasis — die Anzeige in einer Watchlist bewertet gegen die Watchlist selbst statt gegen ein Depot. In Watchlist-Benachrichtigungen (Apprise) erscheint ⚖️ nicht.
 
 -----
 
@@ -299,7 +320,7 @@ Vor jedem Sync wird automatisch ein Backup der Depot-Datei angelegt. Rückgängi
 
 - **Apprise-URLs, Mention, Bestätigungsmodus, Zeitplan (Wochenbericht-Tag/-Uhrzeit, Uhrzeit der täglichen Zusammenfassung)** — ausschließlich pro Benutzer (Benutzer-Icon oben rechts → Bearbeiten, gegliedert in die Sektionen 👤 Profil / 🔔 Benachrichtigungen / 🕘 Zusammenfassungen)
 - **Ein/Aus, Wochenbericht-/Tageszusammenfassung-Teilnahme** — pro Depot (Depot-Einstellungen → ⚙); Watchlists haben einen eigenen Ein/Aus-Schalter, nehmen aber grundsätzlich nicht an der Tages-/Wochenzusammenfassung teil (bleiben reine Einzel-Alarme)
-- Die tägliche ATH-Zusammenfassung läuft grundsätzlich nur Montag–Freitag
+- Die tägliche Depot-Zusammenfassung läuft grundsätzlich nur Montag–Freitag
 
 Unterstützte Dienste (Auswahl):
 
@@ -330,6 +351,12 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.6 / 2.13.8 | Neu: Admin-Rechte per `ADMIN_USERS`-Umgebungsvariable — Admins sehen den Verlauf aller Benutzer (inkl. Benutzer-Filter), alle anderen nur eigene Einträge plus Systemereignisse; Benutzer anlegen nur noch durch Admins (Ausnahme: Ersteinrichtung); Benutzer löschen durch Admins direkt über die UI mit Bestätigungsdialog inkl. Auflistung der mitgelöschten exklusiven Depots/Watchlists (Selbstlöschung und letzter Benutzer blockiert, dafür bleibt `DELETE_USER`) |
+| 2.8.5 / 2.13.7 | Verlauf-Typen konsistent gemacht: Testbenachrichtigungen erscheinen als „✅ Test" statt als Alarm, der System-Eintrag „Fehlerlog geleert" hat ein Label („⚙️ System"), die Tageszusammenfassung (🌙) bekommt einen farbigen Rand; zusätzlich Code-Cleanup (verwaiste Funktionsparameter und ungenutzte id-Attribute entfernt) |
+| 2.8.4 / 2.13.6 | Discount-Block-Alarm hieß im HTML-E-Mail-Header und im Hilfe-Beispiel noch „ATH-Alarm" — beides korrigiert, reine Textänderung |
+| 2.8.3 / 2.13.5 | „Tägliche ATH-Zusammenfassung" in „Tägliche Depot-Zusammenfassung" umbenannt — der alte Name war missverständlich, da sie auch Discount-Alarme enthält, nicht nur neue Höchststände; grenzt sich jetzt klar von der neuen Watchlist-Zusammenfassung ab. Reine Textänderung, keine Funktionsänderung |
+| 2.8.2 / 2.13.4 | Hinweistext zur Watchlist-Zusammenfassung ist jetzt ausklappbar statt fest sichtbar, analog zu anderen Erklärungen in der App |
+| 2.8.2 / 2.13.3 | Neu: gebündelte tägliche Watchlist-Zusammenfassung — ein Schalter im Benutzerprofil fasst alle Discount- und ATH-Alarme über sämtliche eigenen Watchlists in einer einzigen Nachricht zusammen (statt pro Watchlist einzeln), zur gleichen Uhrzeit wie die tägliche Depot-Zusammenfassung |
 | 2.8.1 / 2.13.2 | Neu: Ein/Aus-Schalter für Benachrichtigungen in den Watchlist-Einstellungen (Default: an) — das Backend-Feld gab es bereits seit der Watchlist-Entkopplung (v2.8.0), es fehlte bisher nur der UI-Schalter dafür |
 | 2.8.1 / 2.13.1 | ATH-Prüfung und -Korrektur funktionieren jetzt auch in der Watchlist-Ansicht, nicht mehr nur im Bestand — prüft/korrigiert immer den gerade aktiven Kontext |
 | 2.8.0 / 2.13.0 | Watchlists sind kein Unterobjekt eines Depots mehr, sondern eigenständig und direkt Benutzern zugeordnet (analog zu Depots, mehrere Benutzer pro Watchlist möglich). Verschieben in den Bestand jetzt mit expliziter Depot-Auswahl statt automatischem Ziel-Depot. ATH-Alarme zeigen kein Depot-Suffix mehr im Label; ⚖️ Sektor-Lücke entfällt in Watchlist-Benachrichtigungen. Alarm-Titel neu formatiert (📉 statt „ATH-Alarm [Depot]: …", Bestand/Beobachtung-Angabe steht jetzt als erste Body-Zeile) |

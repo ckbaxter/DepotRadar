@@ -3814,13 +3814,17 @@ async function openUserModal(isSetup=false){
         <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
           <div style="width:36px;height:36px;border-radius:50%;background:${u.id===activeUser?.id?'var(--accent)':'var(--bg3)'};color:${u.id===activeUser?.id?'#fff':'var(--muted)'};display:flex;align-items:center;justify-content:center;font-weight:700;border:1px solid var(--border)">${esc(u.name.charAt(0).toUpperCase())}</div>
           <div style="flex:1">
-            <div style="font-weight:600">${esc(u.name)}${u.id===activeUser?.id?' <span style="font-size:10px;color:var(--accent)">● Ich</span>':''}</div>
+            <div style="font-weight:600">${esc(u.name)}${u.is_admin?' <span style="font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:0 4px;vertical-align:1px">Admin</span>':''}${u.id===activeUser?.id?' <span style="font-size:10px;color:var(--accent)">● Ich</span>':''}</div>
             <div style="font-size:11px;color:var(--muted)">${u.depots?.length || 0} Depot(s) · ${u.has_pin ? "PIN gesetzt" : "Kein PIN"}</div>
           </div>
-          ${u.id===activeUser?.id ? `<button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">✏️ Bearbeiten</button>` : ""}
+          ${u.id===activeUser?.id
+            ? `<button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">✏️ Bearbeiten</button>`
+            : (isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="confirmDeleteUser('${u.id}')" title="Benutzer löschen">🗑</button>` : "")}
         </div>`).join("")}
     </div>
-    <button class="btn btn-primary btn-sm" onclick="addUserForm()" style="width:100%">+ Benutzer hinzufügen</button>
+    ${(isAdmin() || named.length === 0)
+      ? `<button class="btn btn-primary btn-sm" onclick="addUserForm()" style="width:100%">+ Benutzer hinzufügen</button>`
+      : `<div style="font-size:11px;color:var(--muted);text-align:center">Benutzer anlegen und löschen können nur Admins (ADMIN_USERS in docker-compose.yml)</div>`}
     <div id="userFormArea" style="margin-top:12px"></div>`;
 
   document.getElementById("userModal").style.display = "flex";
@@ -3861,15 +3865,69 @@ async function saveNewUser(isFirst=false){
   const pin  = document.getElementById("newUserPin")?.value.trim();
   if(!name){ toast("Bitte einen Namen eingeben", false); return; }
   const depots = [...document.querySelectorAll(".new-user-depot:checked")].map(el=>el.value);
-  await fetch(`${API}/users`, {method:"POST",
+  const r = await fetch(`${API}/users`, {method:"POST",
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({name, pin: pin||null, depots, apprise_urls:[], notification_mention:"", notification_confirm:false})});
+    body: JSON.stringify({name, pin: pin||null, depots, apprise_urls:[], notification_mention:"", notification_confirm:false,
+                          creator_user_id: activeUser?.id || null})});
+  if(!r.ok){
+    const d = await r.json().catch(()=>({}));
+    toast(d.error || "Benutzer anlegen fehlgeschlagen", false); return;
+  }
   toast("Benutzer angelegt ✓");
   if(isFirst){
     _usersCache = await fetch(`${API}/users`).then(r=>r.json());
     const newUser = _usersCache.find(u=>u.name===name);
     if(newUser){ loginUser(newUser); closeModal("userModal"); return; }
   }
+  openUserModal();
+}
+
+async function confirmDeleteUser(userId){
+  const user = _usersCache.find(u=>u.id===userId);
+  if(!user) return;
+  // Alle Depots/Watchlists frisch laden — depotsCache/watchlistsCache sind auf den
+  // eingeloggten User gefiltert und taugen nicht als Basis für fremde Zuordnungen
+  const [allDepots, allWls] = await Promise.all([
+    fetch(`${API}/depots`).then(r=>r.json()).catch(()=>[]),
+    fetch(`${API}/watchlists`).then(r=>r.json()).catch(()=>[])
+  ]);
+  const others  = _usersCache.filter(u=>u.id!==userId);
+  const sharedD = new Set(others.flatMap(u=>u.depots||[]));
+  const sharedW = new Set(others.flatMap(u=>u.watchlists||[]));
+  const nameOf  = (list,id)=> (list.find(x=>x.id===id)||{}).name || id;
+  const exclD = (user.depots||[]).filter(id=>!sharedD.has(id)).map(id=>"Depot: "+nameOf(allDepots,id));
+  const exclW = (user.watchlists||[]).filter(id=>!sharedW.has(id)).map(id=>"Watchlist: "+nameOf(allWls,id));
+  const kept  = [...(user.depots||[]).filter(id=>sharedD.has(id)).map(id=>nameOf(allDepots,id)),
+                 ...(user.watchlists||[]).filter(id=>sharedW.has(id)).map(id=>nameOf(allWls,id))];
+  const excl  = [...exclD, ...exclW];
+  const delListHtml = excl.length
+    ? `<div style="font-size:12px;color:var(--red);margin:10px 0 4px">Wird unwiderruflich mitgelöscht (nur diesem Benutzer zugeordnet):</div>
+       <ul style="margin:0 0 8px 18px;padding:0;font-size:12px">${excl.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>`
+    : `<div style="font-size:12px;color:var(--muted);margin:10px 0 8px">Keine exklusiv zugeordneten Depots oder Watchlists — es wird nur das Benutzerprofil entfernt.</div>`;
+  const keptHtml = kept.length
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Bleibt erhalten (mit anderen Benutzern geteilt): ${kept.map(esc).join(", ")}</div>` : "";
+  document.getElementById("userFormArea").innerHTML = `
+    <div style="background:var(--bg3);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:12px;margin-top:8px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">🗑 Benutzer „${esc(user.name)}" löschen?</div>
+      ${delListHtml}
+      ${keptHtml}
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-danger btn-sm" onclick="deleteUserConfirmed('${user.id}')" style="flex:1">🗑 Endgültig löschen</button>
+        <button class="btn btn-ghost btn-sm" onclick="openUserModal()" style="flex:1">Abbrechen</button>
+      </div>
+    </div>`;
+}
+
+async function deleteUserConfirmed(userId){
+  const r = await fetch(`${API}/users/${userId}`, {method:"DELETE",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({requester_user_id: activeUser?.id || null})});
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok){ toast(d.error || "Löschen fehlgeschlagen", false); return; }
+  toast("Benutzer gelöscht ✓");
+  // Depot-/Watchlist-Caches defensiv neu laden (der Admin sieht exklusive Depots des
+  // Gelöschten zwar ohnehin nicht, aber so bleiben alle Caches garantiert konsistent)
+  loadDepots();
   openUserModal();
 }
 
@@ -4082,8 +4140,12 @@ let _notifItems = [];
 let _notifTypeFilter = "all";
 let _notifUserFilter = "all";
 
+function isAdmin(){ return !!(activeUser && activeUser.is_admin); }
+
 async function openNotifModal(){
-  const r = await fetch(`${API}/notifications`);
+  // Backend filtert serverseitig: Admins erhalten alles, alle anderen nur eigene
+  // Einträge plus Einträge ohne User-Zuordnung (Systemereignisse)
+  const r = await fetch(`${API}/notifications?user_id=${encodeURIComponent(activeUser?.id || "")}`);
   const raw = await r.json();
   // Explizit nach Zeit sortieren: neueste zuerst
   _notifItems = raw.sort((a,b) => {
@@ -4091,14 +4153,16 @@ async function openNotifModal(){
     return parse(b.time) - parse(a.time);
   });
 
-  // Filter-Reset: User-Filter default auf aktuellen User wenn Multi-User aktiv
+  // Filter-Reset: User-Filter default auf aktuellen User wenn Multi-User aktiv.
+  // Für Nicht-Admins immer "all" — deren Daten sind bereits serverseitig gefiltert,
+  // ein clientseitiger Eigen-Filter würde nur die Systemereignisse ausblenden.
   _notifTypeFilter = "all";
   const namedUsers = _usersCache.filter(u => u.name);
-  _notifUserFilter = (activeUser && activeUser.name && namedUsers.length > 1) ? activeUser.id : "all";
+  _notifUserFilter = (isAdmin() && activeUser && activeUser.name && namedUsers.length > 1) ? activeUser.id : "all";
 
-  // User-Filter Chips rendern
+  // User-Filter Chips rendern (nur für Admins — Nicht-Admins sehen ohnehin nur eigene Einträge)
   const userWrap = document.getElementById("notifUserFilters");
-  if(userWrap && namedUsers.length > 1){
+  if(userWrap && isAdmin() && namedUsers.length > 1){
     userWrap.style.display = "flex";
     // "Alle" Chip + ein Chip pro User
     const allChip = `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfUall" onclick="setNotifUserFilter('all')" style="font-size:12px">Alle</button>`;
@@ -4202,6 +4266,15 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.9 · Backend v2.8.6",
+    changes: [
+      "Benutzerverwaltung: Admins sind in der Benutzerliste jetzt mit einem „Admin”-Badge neben dem Namen gekennzeichnet",
+      "Neu: Admin-Rechte über die Umgebungsvariable ADMIN_USERS (kommaseparierte Benutzernamen in docker-compose.yml) — Admins sehen im Verlauf weiterhin die Ereignisse aller Benutzer inkl. Benutzer-Filter, alle anderen nur noch ihre eigenen Einträge plus Systemereignisse",
+      "Benutzer anlegen können jetzt nur noch Admins (Ausnahme: der allererste Benutzer bei der Ersteinrichtung); ohne gesetzte ADMIN_USERS-Variable ist das Anlegen deaktiviert",
+      "Neu: Admins können Benutzer direkt über die Benutzerverwaltung löschen (🗑) — mit Bestätigungsdialog, der vorab auflistet, welche exklusiv zugeordneten Depots/Watchlists mitgelöscht würden und welche geteilten erhalten bleiben; Selbstlöschung und das Löschen des letzten Benutzers sind blockiert (dafür bleibt die DELETE_USER-Variable)"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.13.7 · Backend v2.8.5",
     changes: [
@@ -5837,7 +5910,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.7 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.9 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
