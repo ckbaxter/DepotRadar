@@ -25,8 +25,12 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.5"
+VERSION           = "2.8.6"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
+# Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
+# RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
+# anlegen/löschen. Fehlt die Variable, gibt es keine Admins.
+ADMIN_USER_NAMES  = {n.strip().lower() for n in os.environ.get("ADMIN_USERS", "").split(",") if n.strip()}
 
 # ── Gesundheits-Statistiken (kumulative Zähler werden in health.json persistiert) ─
 APP_START_TIME = time_mod.time()
@@ -293,6 +297,19 @@ def get_watchlist(wl_id):
     """Hilfsfunktion: Gibt Watchlist-Dict zurück oder None."""
     return next((w for w in load_watchlists() if w["id"] == wl_id), None)
 
+def is_admin_user(user):
+    """Admin-Status wird zur Laufzeit aus der ADMIN_USERS-Env-Variable berechnet (Match über
+    den Benutzernamen, konsistent mit RESET_PIN_USER/DELETE_USER) — bewusst kein persistiertes
+    Feld in users.json, damit keine Migration nötig ist und der Status sich rein deklarativ
+    über docker-compose.yml steuern lässt. Kehrseite: wird ein Admin-User umbenannt, muss
+    die Env-Variable nachgezogen werden, sonst verliert er die Admin-Rechte."""
+    return bool(user) and user.get("name", "").strip().lower() in ADMIN_USER_NAMES
+
+def is_admin_id(user_id):
+    """Wie is_admin_user, aber über die User-ID (für Request-Parameter)."""
+    if not user_id: return False
+    return is_admin_user(next((u for u in load_users() if u["id"] == user_id), None))
+
 def gen_id(name):
     return f"{re.sub(r'[^a-z0-9]', '_', name.lower())[:20].strip('_')}_{int(time_mod.time())}"
 
@@ -310,14 +327,13 @@ def reset_pin_from_env():
             return
     log.warning(f"RESET_PIN_USER: User '{reset_name}' nicht gefunden")
 
-def delete_user_from_env():
-    """Löscht einen User (und seine exklusiven Depots + Watchlists) wenn DELETE_USER gesetzt ist."""
-    del_name = os.environ.get("DELETE_USER", "").strip()
-    if not del_name: return
-    users   = load_users()
-    target  = next((u for u in users if u.get("name","").lower() == del_name.lower()), None)
-    if not target:
-        log.warning(f"DELETE_USER: User '{del_name}' nicht gefunden"); return
+def _delete_user(target, users):
+    """Gemeinsame Löschlogik für den DELETE_USER-Env-Mechanismus und die Admin-Route
+    (DELETE /api/users/<id>), damit beide Wege nicht auseinanderdriften: entfernt den User
+    aus users.json und löscht Depots + Watchlists (inkl. Stock-Dateien), die ausschließlich
+    ihm zugeordnet waren; mit anderen Usern geteilte bleiben erhalten. Entfernt außerdem
+    seine beiden Digest-Scheduler-Jobs. Der Aufrufer prüft vorab, dass mindestens ein
+    Benutzer verbleibt. Gibt (gelöschte Depot-Namen, gelöschte Watchlist-Namen) zurück."""
     target_depots     = set(target.get("depots", []))
     target_watchlists = set(target.get("watchlists", []))
     remaining_users = [u for u in users if u["id"] != target["id"]]
@@ -327,26 +343,58 @@ def delete_user_from_env():
     exclusive_depots     = target_depots - shared_depots
     exclusive_watchlists = target_watchlists - shared_watchlists
     # Exklusive Depots löschen
+    deleted_depot_names = []
     depots = load_depots()
     for did in exclusive_depots:
         depot = next((d for d in depots if d["id"] == did), None)
         if not depot: continue
         if os.path.exists(depot_file(did)): os.remove(depot_file(did))
+        deleted_depot_names.append(depot.get("name", did))
         log.info(f"Depot '{depot.get('name', did)}' gelöscht (war exklusiv für '{target['name']}')")
     save_depots([d for d in depots if d["id"] not in exclusive_depots])
-    # Exklusive Watchlists löschen (seit der Entkopplung analog zu Depots eigenständig)
+    # Exklusive Watchlists löschen (analog zu Depots eigenständig)
+    deleted_wl_names = []
     watchlists = load_watchlists()
     for wid in exclusive_watchlists:
         wl = next((w for w in watchlists if w["id"] == wid), None)
         if not wl: continue
         if os.path.exists(watchlist_file(wid)): os.remove(watchlist_file(wid))
+        deleted_wl_names.append(wl.get("name", wid))
         log.info(f"Watchlist '{wl.get('name', wid)}' gelöscht (war exklusiv für '{target['name']}')")
     save_watchlists([w for w in watchlists if w["id"] not in exclusive_watchlists])
-    if not remaining_users:
+    save_users(remaining_users)
+    unschedule_user_digest_jobs(target["id"])
+    return deleted_depot_names, deleted_wl_names
+
+def delete_user_from_env():
+    """Löscht einen User (und seine exklusiven Depots + Watchlists) wenn DELETE_USER gesetzt ist."""
+    del_name = os.environ.get("DELETE_USER", "").strip()
+    if not del_name: return
+    users   = load_users()
+    target  = next((u for u in users if u.get("name","").lower() == del_name.lower()), None)
+    if not target:
+        log.warning(f"DELETE_USER: User '{del_name}' nicht gefunden"); return
+    if len(users) <= 1:
+        # Prüfung bewusst VOR der Löschung — sonst wären die Depot-/Watchlist-Dateien
+        # beim Abbruch bereits entfernt, obwohl der User bestehen bleibt.
         log.error("DELETE_USER: Abgebrochen — würde alle Benutzer löschen. Mindestens ein Benutzer muss verbleiben.")
         return
-    save_users(remaining_users)
-    log.info(f"User '{target['name']}' via DELETE_USER gelöscht ({len(exclusive_depots)} Depot(s), {len(exclusive_watchlists)} Watchlist(s) entfernt)")
+    deleted_depots, deleted_wls = _delete_user(target, users)
+    log.info(f"User '{target['name']}' via DELETE_USER gelöscht ({len(deleted_depots)} Depot(s), {len(deleted_wls)} Watchlist(s) entfernt)")
+
+def warn_if_admin_config_off():
+    """Startup-Hinweis zur ADMIN_USERS-Konfiguration: ohne die Variable gibt es keine Admins —
+    dann sieht jeder Benutzer im Verlauf nur eigene Einträge und niemand kann Benutzer
+    anlegen oder über die UI löschen. Warnt außerdem bei Namen, die keinem User entsprechen."""
+    users = load_users()
+    if not ADMIN_USER_NAMES:
+        if users:
+            log.warning("ADMIN_USERS ist nicht gesetzt: kein Benutzer hat Admin-Rechte — "
+                        "neue Benutzer können nicht angelegt und bestehende nicht über die UI gelöscht werden.")
+        return
+    known = {u.get("name", "").strip().lower() for u in users}
+    for name in sorted(ADMIN_USER_NAMES - known):
+        log.warning(f"ADMIN_USERS: '{name}' entspricht keinem vorhandenen Benutzer")
 
 def migrate_if_needed():
     """Stellt sicher dass splits.json existiert. Migriert außerdem einmalig die bisherigen
@@ -3019,7 +3067,17 @@ def update_settings():
     return jsonify(s)
 
 @app.route("/api/notifications", methods=["GET"])
-def get_notifications(): return jsonify(list(reversed(load_notifications())))
+def get_notifications():
+    """Verlauf. Admins (ADMIN_USERS) sehen alle Einträge; alle anderen nur ihre eigenen plus
+    Einträge ohne User-Zuordnung (Systemereignisse, nutzerlose Refresh-Zyklen). Ohne
+    user_id-Parameter werden nur nutzerlose Einträge geliefert (fail-closed). Hinweis: das
+    ist Komfort-Filterung im Rahmen des bestehenden Trust-Modells ohne Sessions/Tokens —
+    der Parameter kommt vom Client und ist keine harte Zugriffskontrolle."""
+    entries = list(reversed(load_notifications()))
+    user_id = request.args.get("user_id", "").strip()
+    if user_id and is_admin_id(user_id):
+        return jsonify(entries)
+    return jsonify([e for e in entries if not e.get("user_id") or e.get("user_id") == user_id])
 
 @app.route("/api/notifications/test", methods=["POST"])
 def test_notification():
@@ -3036,12 +3094,17 @@ def test_notification():
 def api_get_users():
     users = load_users()
     return jsonify([{**{k: v for k, v in u.items() if k != "pin_hash"},
-                     "has_pin": bool(u.get("pin_hash"))} for u in users])
+                     "has_pin": bool(u.get("pin_hash")),
+                     "is_admin": is_admin_user(u)} for u in users])
 
 @app.route("/api/users", methods=["POST"])
 def api_create_user():
     body = request.get_json() or {}
     users = load_users()
+    # Benutzeranlage nur durch Admins — Ausnahme: der allererste Benutzer (Bootstrap,
+    # vor dem Erststart existiert noch niemand, der Admin sein könnte).
+    if users and not is_admin_id(body.get("creator_user_id")):
+        return jsonify({"error": "Nur Admins können Benutzer anlegen (ADMIN_USERS in docker-compose.yml)"}), 403
     new_user = {
         "id":                    str(_uuid.uuid4())[:8],
         "name":                  body.get("name", "").strip(),
@@ -3062,7 +3125,8 @@ def api_create_user():
     users.append(new_user); save_users(users)
     schedule_user_digest_jobs(new_user)
     return jsonify({**{k: v for k, v in new_user.items() if k != "pin_hash"},
-                    "has_pin": bool(new_user.get("pin_hash"))}), 201
+                    "has_pin": bool(new_user.get("pin_hash")),
+                    "is_admin": is_admin_user(new_user)}), 201
 
 @app.route("/api/users/<user_id>", methods=["PATCH"])
 def api_update_user(user_id):
@@ -3088,17 +3152,37 @@ def api_update_user(user_id):
     save_users(users)
     if digest_changed: schedule_user_digest_jobs(user)
     return jsonify({**{k: v for k, v in user.items() if k != "pin_hash"},
-                    "has_pin": bool(user.get("pin_hash"))})
+                    "has_pin": bool(user.get("pin_hash")),
+                    "is_admin": is_admin_user(user)})
 
 @app.route("/api/users/<user_id>", methods=["DELETE"])
 def api_delete_user(user_id):
-    users = load_users()
-    remaining = [u for u in users if u["id"] != user_id]
-    if not remaining:
-        return jsonify({"error": "Letzten Benutzer kann nicht löschen"}), 400
-    save_users(remaining)
-    unschedule_user_digest_jobs(user_id)
-    return jsonify({"ok": True})
+    """Benutzer-Löschung durch einen Admin über die UI. Selbstlöschung ist blockiert (sonst
+    sperrt man sich mitten in der Session aus — dafür bleibt der DELETE_USER-Env-Mechanismus),
+    ebenso das Löschen des letzten Benutzers. Exklusiv zugeordnete Depots/Watchlists werden
+    mitgelöscht, geteilte bleiben erhalten (gleiche Logik wie DELETE_USER, via _delete_user)."""
+    body      = request.get_json(silent=True) or {}
+    requester = str(body.get("requester_user_id") or "")
+    if not is_admin_id(requester):
+        return jsonify({"error": "Nur Admins können Benutzer löschen"}), 403
+    if requester == user_id:
+        return jsonify({"error": "Selbstlöschung über die UI ist nicht möglich — dafür die DELETE_USER-Variable nutzen"}), 400
+    users  = load_users()
+    target = next((u for u in users if u["id"] == user_id), None)
+    if not target:
+        return jsonify({"error": "Nicht gefunden"}), 404
+    if len(users) <= 1:
+        return jsonify({"error": "Der letzte Benutzer kann nicht gelöscht werden"}), 400
+    admin = next((u for u in users if u["id"] == requester), None)
+    deleted_depots, deleted_wls = _delete_user(target, users)
+    parts = []
+    if deleted_depots: parts.append(f"Depots entfernt: {', '.join(deleted_depots)}")
+    if deleted_wls:    parts.append(f"Watchlists entfernt: {', '.join(deleted_wls)}")
+    detail = " · ".join(parts) if parts else "keine exklusiven Depots/Watchlists"
+    # Typ "system" ohne User-Zuordnung — für alle im Verlauf sichtbar (Systemereignis)
+    add_log("system", f"Benutzer '{target.get('name', '?')}' gelöscht",
+            f"Gelöscht durch Admin '{(admin or {}).get('name', '?')}' · {detail}")
+    return jsonify({"ok": True, "deleted_depots": deleted_depots, "deleted_watchlists": deleted_wls})
 
 @app.route("/api/users/<user_id>/verify-pin", methods=["POST"])
 def api_verify_pin(user_id):
@@ -3158,5 +3242,5 @@ def health_clear_errors():
     return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
-    reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); start_scheduler()
+    reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); warn_if_admin_config_off(); start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False)
