@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.6"
+VERSION           = "2.8.7"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1534,6 +1534,38 @@ def _daily_digest_line(entry):
         m = _DAILY_DIGEST_DISCOUNT_RE.match(title)
     return m.group(1) if m else title
 
+_DIGEST_LEVEL_RE  = re.compile(r" -(\d+)%-Block$")
+_DIGEST_TICKER_RE = re.compile(r"\(([^()]+)\)\s*$")
+
+def _dedupe_digest_lines(entries):
+    """Dedupliziert die Zeilen einer Tageszusammenfassung pro Aktie: löst dieselbe Aktie
+    am selben Tag mehrfach aus (z.B. Kurs pendelt über eine Blockgrenze, oder erst -40%-
+    dann -50%-Block), erscheint sie nur einmal — es gewinnt der tiefste erreichte Block
+    (bei Gleichstand der jüngste Alarm), ein (n×)-Suffix zeigt die Gesamtzahl der Alarme.
+    ATH-Zeilen haben kein Level und werden rein pro Ticker dedupliziert (nur Zähler).
+    Schlüssel ist der Ticker aus der letzten Klammer der Zeile (funktioniert auch bei
+    Klammern im Namen wie "Alphabet (Class A) (ABEA.DE)"); falls die Zeile wider Erwarten
+    keine Klammer enthält, dient die Zeile selbst als Schlüssel (sicherer Fallback).
+    Reihenfolge bleibt die des jeweils ersten Auftretens."""
+    grouped, order = {}, []
+    for e in entries:
+        line = _daily_digest_line(e)
+        lm    = _DIGEST_LEVEL_RE.search(line)
+        level = int(lm.group(1)) if lm else -1
+        base  = line[:lm.start()] if lm else line
+        tm    = _DIGEST_TICKER_RE.search(base)
+        key   = tm.group(1).strip() if tm else base.strip()
+        g = grouped.get(key)
+        if g is None:
+            grouped[key] = {"line": line, "level": level, "count": 1}
+            order.append(key)
+        else:
+            g["count"] += 1
+            if level >= g["level"]:
+                g["line"], g["level"] = line, level
+    return [grouped[k]["line"] + (f" ({grouped[k]['count']}×)" if grouped[k]["count"] > 1 else "")
+            for k in order]
+
 def _build_daily_ath_digest_data(depot_id):
     """Sammelt alle heute für dieses Depot erfolgreich gesendeten Discount- und
     ATH-Alarme aus notifications.json (per kind-Feld, siehe send_apprise/add_log).
@@ -1557,10 +1589,10 @@ def build_daily_ath_digest_body(depot, ath_hits, discount_hits):
     lines = [f"Depot: {name}\n\nHeute gab es {total} Alarm(e):"]
     if ath_hits:
         lines.append(f"\n🎉 {len(ath_hits)} neue(s) Allzeithoch:")
-        lines += [f"  • {_daily_digest_line(e)}" for e in ath_hits]
+        lines += [f"  • {ln}" for ln in _dedupe_digest_lines(ath_hits)]
     if discount_hits:
         lines.append(f"\n📉 {len(discount_hits)} Discount-Alarm(e):")
-        lines += [f"  • {_daily_digest_line(e)}" for e in discount_hits]
+        lines += [f"  • {ln}" for ln in _dedupe_digest_lines(discount_hits)]
     link = f"\n\n{APP_URL}" if APP_URL else ""
     return title, "\n".join(lines) + link
 
@@ -1573,11 +1605,11 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits):
     else:
         sections = []
         if ath_hits:
-            rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in ath_hits)
+            rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(ath_hits))
             sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {len(ath_hits)} neue(s) Allzeithoch</h3>"
                             f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         if discount_hits:
-            rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in discount_hits)
+            rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(discount_hits))
             sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {len(discount_hits)} Discount-Alarm(e)</h3>"
                             f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         body_html = "".join(sections)
@@ -1626,11 +1658,11 @@ def build_daily_watchlist_digest_body(grouped):
     for name in names:
         if grouped[name]["discount"]:
             lines.append(f"\n📉 {name}")
-            lines += [f"  • {_daily_digest_line(e)}" for e in grouped[name]["discount"]]
+            lines += [f"  • {ln}" for ln in _dedupe_digest_lines(grouped[name]["discount"])]
     for name in names:
         if grouped[name]["ath"]:
             lines.append(f"\n🎉 {name}")
-            lines += [f"  • {_daily_digest_line(e)}" for e in grouped[name]["ath"]]
+            lines += [f"  • {ln}" for ln in _dedupe_digest_lines(grouped[name]["ath"])]
     link = f"\n\n{APP_URL}" if APP_URL else ""
     return title, "\n".join(lines) + link
 
@@ -1644,12 +1676,12 @@ def build_daily_watchlist_digest_html(grouped):
         sections = []
         for name in names:
             if grouped[name]["discount"]:
-                rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in grouped[name]["discount"])
+                rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(grouped[name]["discount"]))
                 sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {name}</h3>"
                                 f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         for name in names:
             if grouped[name]["ath"]:
-                rows = "".join(f"<li style='padding:2px 0'>{_daily_digest_line(e)}</li>" for e in grouped[name]["ath"])
+                rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(grouped[name]["ath"]))
                 sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {name}</h3>"
                                 f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         body_html = "".join(sections)
