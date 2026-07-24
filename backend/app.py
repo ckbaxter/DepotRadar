@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.8"
+VERSION           = "2.8.7"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1937,9 +1937,6 @@ def _split_adj(isin, buy_dt_str, raw_shares):
             adjusted *= ratio
     return adjusted
 
-def _fmt_price(v): return f"{v:.2f}" if v is not None else "—"
-def _fmt_qty(v):   return f"{v:.6f}".rstrip("0").rstrip(".") if v is not None else "—"
-
 def _names_match(n1, n2):
     """Strenger Namens-Abgleich: erstes signifikantes Wort muss übereinstimmen.
     Punkte werden zu Leerzeichen, generische Suffixe (Inc, Corp, SE...) werden ignoriert.
@@ -2192,7 +2189,6 @@ def parqet_sync(depot_id):
         stocks   = load_stocks(depot_id)
         src = depot_file(depot_id); bak = depot_backup_file(depot_id)
         updated, new_stocks, mismatches, removed = [], [], [], []
-        updated_details = []  # Detailzeilen (alt → neu) für den Verlaufseintrag
 
         # 4a) Bei Parqet komplett verkaufte Positionen erkennen (Stückzahl dort jetzt 0,
         # aber im ATH-Tracker noch vorhanden) → nicht automatisch löschen, nur zur
@@ -2209,25 +2205,15 @@ def parqet_sync(depot_id):
                 # ISIN stimmt überein → direkt aktualisieren (kein Namens-Check nötig)
                 new_price  = h["avg_price_eur"]
                 new_shares = round(h["shares"], 6)
-                old_price  = match.get("buy_price_eur")
-                old_shares = match.get("shares")
                 # Nur als geändert markieren wenn sich Werte wirklich unterscheiden
                 actually_changed = (
-                    round(old_price or 0, 4) != round(new_price or 0, 4) or
-                    round(old_shares or 0, 6) != new_shares
+                    round(match.get("buy_price_eur") or 0, 4) != round(new_price or 0, 4) or
+                    round(match.get("shares") or 0, 6) != new_shares
                 )
                 match["buy_price_eur"] = new_price
                 match["shares"]        = new_shares
                 match["isin"]          = isin
                 if actually_changed:
-                    # Detailzeile für den Verlauf: nur die Felder, die sich tatsächlich geändert haben
-                    parts = []
-                    if round(old_price or 0, 4) != round(new_price or 0, 4):
-                        parts.append(f"Einstand {_fmt_price(old_price)} → {_fmt_price(new_price)} EUR")
-                    if round(old_shares or 0, 6) != new_shares:
-                        parts.append(f"Stück {_fmt_qty(old_shares)} → {_fmt_qty(new_shares)}")
-                    tick = f" ({match['ticker']})" if match.get("ticker") else ""
-                    updated_details.append(f"• {match['name']}{tick}: " + ", ".join(parts))
                     updated.append(match["name"])
                     log.info(f"Sync GEÄNDERT: {match['name']} Einstand={new_price:.2f}€ Stk={new_shares:.4f}")
                 else:
@@ -2246,10 +2232,8 @@ def parqet_sync(depot_id):
                 d["parqet"].pop("needs_reconnect", None)
                 break
         save_depots(depots)
-        log_body = f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)} | Verkauft: {len(removed)}"
-        if updated_details:
-            log_body += "\n\nAktualisiert:\n" + "\n".join(updated_details)
-        add_log("manual_refresh", f"Parqet Sync: {depot['name']}", log_body,
+        add_log("manual_refresh", f"Parqet Sync: {depot['name']}",
+                f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)} | Verkauft: {len(removed)}",
                 True, depot_id=depot_id)
         return jsonify({"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches, "removed": removed})
 
