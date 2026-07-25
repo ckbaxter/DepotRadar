@@ -45,15 +45,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .bar-add-btn:hover{color:var(--accent);border-color:var(--accent)}
 
 /* View tabs (Bestand / Beobachtungslisten) */
-.view-bar{background:var(--bg);border-bottom:1px solid var(--border);padding:0 12px;display:flex;align-items:center;gap:4px;overflow-x:auto;position:sticky;top:96px;z-index:98;height:40px;-webkit-overflow-scrolling:touch}
-.view-bar::-webkit-scrollbar{height:2px}
-.view-tab{padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);white-space:nowrap;border:1px solid transparent;transition:all .15s;display:flex;align-items:center;gap:5px;-webkit-tap-highlight-color:transparent;min-height:30px}
-.view-tab:hover{color:var(--text);background:var(--bg3)}
-.view-tab.active{background:var(--bg3);color:var(--text);border-color:var(--border)}
-.view-tab.wl{color:var(--purple)}
-.view-tab.wl.active{border-color:var(--purple);background:rgba(168,85,247,.08)}
-.view-tab-gear{font-size:11px;opacity:.4;cursor:pointer;padding:1px 3px;border-radius:3px}
-.view-tab-gear:hover{opacity:1;color:var(--accent)}
 .view-badge{font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(168,85,247,.15);color:var(--purple)}
 
 /* Main */
@@ -65,8 +56,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .btn-primary:hover{background:var(--accent2)}
 .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
 .btn-ghost:hover{background:var(--bg3);color:var(--text)}
-.btn-purple{background:rgba(168,85,247,.15);color:var(--purple);border:1px solid rgba(168,85,247,.3)}
-.btn-purple:hover{background:rgba(168,85,247,.25)}
 .btn-danger{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)}
 /* Ansicht-Dropdown (Tabelle/Karten/Treemap) */
 .view-select{position:relative}
@@ -154,7 +143,6 @@ details[open] .help-summary::after{transform:rotate(90deg)}
 @media(max-width:480px){.summary{grid-template-columns:repeat(2,1fr)}}
 
 /* Watchlist banner */
-.wl-banner{background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:var(--purple);display:flex;align-items:center;gap:8px}
 
 /* Table */
 .table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;max-width:min(96vw,2200px);margin:0 auto}
@@ -186,7 +174,6 @@ tr:hover td{background:var(--zebra-hover)!important}
 .stock-name-link:hover{text-decoration:underline}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
 .weight-wrap{display:flex;align-items:center;gap:6px;margin-top:3px}
-.snapshot-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
 .overview-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;max-width:min(96vw,2200px);margin-left:auto;margin-right:auto}
 .overview-group>div+div{border-top:1px solid var(--border)}
 #overviewChildren>div+div{border-top:1px solid var(--border)}
@@ -215,7 +202,6 @@ tr:hover td{background:var(--zebra-hover)!important}
 .snapshot-period button{padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:11px;cursor:pointer;transition:all .15s}
 .snapshot-period button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .snapshot-body{padding:0 16px 14px}
-.snapshot-perf{font-size:12px;color:var(--muted);margin-bottom:8px}
 .weight-bg{flex:1;height:3px;background:rgba(100,116,139,.2);border-radius:2px;overflow:hidden}
 .weight-fill{height:3px;background:var(--accent);border-radius:2px;transition:width .3s}
 .weight-pct{font-size:10px;color:var(--muted);min-width:30px;text-align:right}align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:rgba(100,116,139,.12);border:1px solid rgba(100,116,139,.18);font-size:10px;color:var(--muted);font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
@@ -348,7 +334,6 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .usr-body > :first-child{margin-top:12px}
 .usr-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:8px}
 .usr-label{font-size:12px;font-weight:600;margin-bottom:6px}
-.info-box{background:rgba(78,124,246,.08);border:1px solid rgba(78,124,246,.2);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--muted);margin-bottom:12px}
 .toast-wrap{position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:7px;max-width:320px}
 .toast{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:11px 15px;font-size:13px;animation:slideIn .2s ease;box-shadow:0 4px 20px rgba(0,0,0,.4)}
 .toast.ok{border-left:3px solid var(--green)}
@@ -377,9 +362,7 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .sd-spinner{width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sd-spin .7s linear infinite;flex-shrink:0}
 @keyframes sd-spin{to{transform:rotate(360deg)}}
 .sd-source{font-size:10px;color:var(--muted);margin-top:10px;opacity:.7}
-.btn-buy-filter{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.3);border-radius:6px;cursor:pointer}
 .btn.btn-ghost.btn-sm.active{background:rgba(78,124,246,.15);color:var(--accent);border-color:var(--accent)}
-.btn-buy-filter.active{background:rgba(34,197,94,.25);border-color:#22c55e}
 .threshold-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .threshold-wrap input[type=range]{width:120px;min-height:28px;accent-color:#22c55e}
 .notif-filter-btn.active{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
@@ -428,9 +411,6 @@ select</style>
 <div class="depot-bar" id="depotBar">
   <button class="bar-add-btn" onclick="openAddTabDropdown(event)" title="Neues Depot / Neue Watchlist">+</button>
 </div>
-
-<!-- View tabs (Bestand + Watchlists) -->
-<div class="view-bar" id="viewBar"></div>
 
 <div class="main">
 <div class="overview-group">
@@ -551,7 +531,6 @@ select</style>
                 onclick="openAddModal()">+ Aktie hinzufügen</button>
       </div>
     </div>
-    <div id="wlBanner" style="display:none;padding:0 16px 0"></div>
     <!-- Einheitliche Aktionsleiste -->
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px">
       <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn" title="Kurse jetzt abrufen">&#8635; Kurse aktualisieren</button>
@@ -586,9 +565,11 @@ select</style>
               style="display:none;margin-left:auto;font-size:16px;padding:6px 10px">🔍</button>
   <div class="threshold-wrap" id="thresholdWrap" style="display:none;width:100%;flex-basis:100%">
     <span>Untere</span>
-    <input type="range" id="thresholdSlider" min="0" max="50" step="5" value="30"
+    <!-- min/max/value und die Beschriftung setzt toggleBuyFilter() aus den
+         NACHKAUF_THRESHOLD_*-Konstanten, bevor der Regler eingeblendet wird -->
+    <input type="range" id="thresholdSlider" step="5"
            oninput="updateThreshold(this.value)"/>
-    <span id="thresholdLabel" style="font-weight:600;color:var(--fg);min-width:28px">30%</span>
+    <span id="thresholdLabel" style="font-weight:600;color:var(--fg);min-width:28px">—</span>
     <span>der Positionen nach Wert</span>
   </div>
 </div>
@@ -642,6 +623,8 @@ select</style>
       <div class="empty-icon" id="emptyIcon">&#128202;</div>
       <h3 id="emptyTitle">Noch keine Aktien</h3>
       <p id="emptyText">Tippe auf „+ Aktie hinzufügen" um zu starten.</p>
+      <button class="btn btn-ghost btn-sm" id="emptyResetBtn" style="display:none;margin-top:12px"
+              onclick="clearAllFilters()">Filter zurücksetzen</button>
     </div>
   </div>
 </div>
@@ -1610,7 +1593,6 @@ let watchlistsCache  = [];
 let activeDepot      = null;
 let activeView       = {type:"depot", id:null, name:""}; // type: depot | watchlist
 let stocksCache   = [];
-let basisStocksCache = [];   // Bestand für Sektor-Lücke — bleibt auch bei Watchlist-Re-Renders erhalten
 let selectedCompany = null;
 let userUrls      = [];
 let editingDepot  = null;
@@ -1686,7 +1668,7 @@ async function loadDepots(){
     const wl = watchlistsCache.find(w => w.id === savedView.id);
     if(wl) activeView = {type:"watchlist", id:wl.id, name:wl.name};
   }
-  renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
+  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection();
 }
 
 function renderDepotTabs(){
@@ -1719,8 +1701,11 @@ function renderDepotTabs(){
   if(addBtn) bar.appendChild(addBtn);
 }
 
-function switchDepot(depot){
-  activeDepot=depot; activeView={type:"depot",id:null,name:""};
+// Setzt alle Ansichts-Filter beim Wechsel von Depot/Watchlist zurück. Bewusst
+// gemeinsam genutzt: switchWatchlist hatte den UI-Teil (Button-Zustand, Regler)
+// bisher nicht mitgemacht, wodurch ein aus dem Bestand mitgenommener aktiver
+// 🛒-Filter in der Watchlist optisch aktiv blieb, obwohl er es nicht war.
+function resetViewFilters(){
   _buyFilterActive=false; _summaryFilter="all"; _activeSectorFilter=null;
   clearStockSearch();
   ["green","yellow","orange","red"].forEach(k=>{
@@ -1731,18 +1716,21 @@ function switchDepot(depot){
   if(btn) btn.classList.remove("active");
   if(wrap) wrap.style.display="none";
   updateOverviewFilterHint();
+}
+
+function switchDepot(depot){
+  activeDepot=depot; activeView={type:"depot",id:null,name:""};
+  resetViewFilters();
   localStorage.setItem("activeDepot", depot.id);
   localStorage.setItem("activeView", JSON.stringify(activeView));
-  renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
+  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection();
 }
 
 function switchWatchlist(wl){
   activeView={type:"watchlist", id:wl.id, name:wl.name};
-  _buyFilterActive=false; _summaryFilter="all"; _activeSectorFilter=null;
-  clearStockSearch();
-  updateOverviewFilterHint();
+  resetViewFilters();
   localStorage.setItem("activeView", JSON.stringify(activeView));
-  renderDepotTabs(); renderViewTabs(); loadCurrentStocks(); renderSnapshotSection();
+  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection();
 }
 
 
@@ -1770,39 +1758,40 @@ function openAddTabDropdown(e){
 
 
 // ── View Tabs (Bestand + Watchlists) ─────────────────────────────
-function renderViewTabs(){
-  const bar = document.getElementById("viewBar");
-  if(bar) bar.style.display = "none"; // leer seit Button in Titelzeile verschoben
-  const banner = document.getElementById("wlBanner");
-  if(banner) banner.style.display = isWl() ? "block" : "none";
-  const btn = document.getElementById("addStockBtn");
-  if(btn) btn.innerHTML = isWl() ? "+ Zur Watchlist hinzufügen" : "+ Aktie hinzufügen";
+// Ansichtsabhängige Bedienelemente. Wird bei jedem Wechsel und in loadCurrentStocks
+// aufgerufen — immer nach resetViewFilters(), damit der Filterzustand schon sauber ist.
+function applyViewUiState(){
+  const wl = isWl();
+  const addBtn = document.getElementById("addStockBtn");
+  if(addBtn) addBtn.innerHTML = wl ? "+ Zur Watchlist hinzufügen" : "+ Aktie hinzufügen";
+  // Der 🛒-Filter setzt Einstandskurs und Stückzahl voraus, die Watchlist-Aktien nicht
+  // haben (wl_add_stock setzt sie nicht, wl_patch_stock erlaubt sie nicht). Er wäre dort
+  // immer ergebnislos, deshalb gar nicht erst anbieten — passend dazu ist auch die
+  // Nachkauf-Schwelle seit v2.8.10 keine Watchlist-Eigenschaft mehr.
+  const buyBtn = document.getElementById("buyFilterBtn");
+  if(buyBtn) buyBtn.style.display = wl ? "none" : "";
 }
 
 // ── Load stocks based on current view ───────────────────────────
 async function loadCurrentStocks(){
-  const depot = isWl() ? null : activeDepot;
   if(!isWl() && !activeDepot) return;
-  _buyThreshold = activeDepot?.nachkauf_threshold ?? 30;
+  // Watchlists haben keine eigene Nachkauf-Schwelle (siehe _refresh_watchlist im
+  // Backend) — dort gilt der feste Standardwert 30, sonst die Schwelle des Depots.
+  _buyThreshold = isWl() ? NACHKAUF_THRESHOLD_DEFAULT
+                        : (activeDepot?.nachkauf_threshold ?? NACHKAUF_THRESHOLD_DEFAULT);
   const athBtn = document.getElementById("athCheckBtn");
   if(athBtn) athBtn.style.display = "";
-  renderViewTabs();
+  applyViewUiState();
   updateViewTitle();
   try {
-    let stocks, basisStocks;
-    if(isWl()){
-      // Seit der Entkopplung hat eine Watchlist kein Eltern-Depot mehr, gegen das
-      // sich die Sektor-Lücke sinnvoll vergleichen ließe (das zuletzt aktive Depot
-      // wäre hier willkürlich) — Basis ist daher die Watchlist selbst.
-      const r = await fetch(`${API}/watchlists/${activeView.id}/stocks`);
-      stocks      = await r.json();
-      basisStocks = stocks;
-    } else {
-      const r = await fetch(`${API}/stocks?depot=${activeDepot.id}`);
-      stocks      = await r.json();
-      basisStocks = stocks;
-    }
-    renderTable(stocks, basisStocks);
+    // Basis der Sektor-Lücke ist immer die gerade geladene Liste selbst: seit der
+    // Entkopplung hat eine Watchlist kein Eltern-Depot mehr, gegen das sich sinnvoll
+    // vergleichen ließe (das zuletzt aktive Depot wäre hier willkürlich).
+    const url = isWl() ? `${API}/watchlists/${activeView.id}/stocks`
+                       : `${API}/stocks?depot=${activeDepot.id}`;
+    const r      = await fetch(url);
+    const stocks = await r.json();
+    renderTable(stocks);
     const times = stocks.filter(s=>s.updated).map(s=>s.updated);
     if(times.length) document.getElementById("lastUpdate").textContent = "Stand: "+times[times.length-1];
   } catch(e){ toast("Fehler beim Laden", false); }
@@ -1827,8 +1816,15 @@ function updateViewTitle(){
 
 // ── Render table/cards ────────────────────────────────────────────
 // ── Nachkauf-Kandidaten ──────────────────────────────────────────
+// Gegenstück zu _NACHKAUF_THRESHOLD_* in app.py — bei Änderungen beide Seiten anpassen.
+// MIN/MAX werden von toggleBuyFilter() auf den Schieberegler geschrieben, damit die
+// Grenzen nicht zusätzlich als HTML-Attribute gepflegt werden müssen.
+const NACHKAUF_THRESHOLD_DEFAULT = 30;
+const NACHKAUF_THRESHOLD_MIN     = 0;
+const NACHKAUF_THRESHOLD_MAX     = 50;
+
 let _buyFilterActive = false;
-let _buyThreshold    = parseInt(localStorage.getItem("buyThreshold") || "30");
+let _buyThreshold    = NACHKAUF_THRESHOLD_DEFAULT;   // wird bei jedem loadCurrentStocks() aus dem Depot gesetzt
 
 let _summaryFilter = "all";
 let _stockSearchQuery = "";
@@ -1865,12 +1861,7 @@ function openMobileSearch(){
 function closeMobileSearch(){
   const bar = document.getElementById("mobileSearchBar");
   if(bar) bar.style.display = "none";
-  const inp = document.getElementById("mobileSearchInput");
-  if(inp) inp.value = "";
-  const clr = document.getElementById("mobileSearchClearBtn");
-  if(clr) clr.style.display = "none";
-  _stockSearchQuery = "";
-  if(stocksCache && stocksCache.length) renderTable(stocksCache);
+  clearMobileInput();
 }
 
 function clearMobileInput(){
@@ -1935,12 +1926,12 @@ function markBuyCandidates(stocks) {
   });
 }
 
-// Diversifikations-Lücke: welche Sektoren sind im echten Bestand unterrepräsentiert?
-// basisStocks ist immer der Bestand (auch wenn stocks gerade eine Watchlist ist) —
-// so kann eine Watchlist-Aktie als Lücken-Kandidat markiert werden, auch wenn ihr
-// Sektor innerhalb der Watchlist selbst gar nicht knapp ist.
-function calcSectorGapCounts(basisStocks, factor=0.5){
-  const sectors = basisStocks.map(s => s.sector).filter(Boolean);
+// Diversifikations-Lücke: welche Sektoren sind in der übergebenen Liste unterrepräsentiert?
+// Seit der Entkopplung der Watchlists vom Depot (v2.8.0) wird immer gegen die gerade
+// angezeigte Liste selbst bewertet — für den Bestand gegen den Bestand, für eine
+// Watchlist gegen die Watchlist (ein Eltern-Depot als Vergleichsbasis gibt es nicht mehr).
+function calcSectorGapCounts(stocks, factor=0.5){
+  const sectors = stocks.map(s => s.sector).filter(Boolean);
   if(sectors.length < 2) return null;
   const counts = {};
   sectors.forEach(sec => counts[sec] = (counts[sec]||0) + 1);
@@ -1948,9 +1939,8 @@ function calcSectorGapCounts(basisStocks, factor=0.5){
   return {counts, avg, factor};
 }
 
-function markSectorGap(stocks, basisStocks){
-  const basis = basisStocks || stocks;
-  const info  = calcSectorGapCounts(basis);
+function markSectorGap(stocks){
+  const info = calcSectorGapCounts(stocks);
   if(!info){ stocks.forEach(s => s._isSectorGap = false); return; }
   stocks.forEach(s => {
     const cnt = s.sector ? (info.counts[s.sector] || 0) : null;
@@ -1961,8 +1951,14 @@ function markSectorGap(stocks, basisStocks){
 function toggleBuyFilter() {
   _buyFilterActive = !_buyFilterActive;
   document.getElementById("buyFilterBtn").classList.toggle("active", _buyFilterActive);
-  document.getElementById("thresholdWrap").style.display = _buyFilterActive ? "flex" : "none";
-  document.getElementById("thresholdSlider").value      = _buyThreshold;
+  // Der Schieberegler erscheint nur im Bestand: die Schwelle liegt am Depot, eine
+  // Watchlist hat keine eigene und filtert immer mit dem Standardwert.
+  const showSlider = _buyFilterActive && !isWl();
+  document.getElementById("thresholdWrap").style.display = showSlider ? "flex" : "none";
+  const slider = document.getElementById("thresholdSlider");
+  slider.min   = NACHKAUF_THRESHOLD_MIN;
+  slider.max   = NACHKAUF_THRESHOLD_MAX;
+  slider.value = _buyThreshold;
   document.getElementById("thresholdLabel").textContent = _buyThreshold === 0 ? "Deaktiviert" : _buyThreshold + "%";
   loadCurrentStocks();
 }
@@ -1970,14 +1966,13 @@ function toggleBuyFilter() {
 let _thresholdTimer = null;
 function updateThreshold(val) {
   _buyThreshold = parseInt(val);
-  localStorage.setItem("buyThreshold", _buyThreshold);
   document.getElementById("thresholdLabel").textContent = _buyThreshold === 0 ? "Deaktiviert" : _buyThreshold + "%";
   // Sofort neu rendern — kein API-Call, nur Cache neu filtern
   if(stocksCache && stocksCache.length) renderTable(stocksCache);
   // Debounce: erst nach 500ms ans Backend speichern
   clearTimeout(_thresholdTimer);
   _thresholdTimer = setTimeout(() => {
-    if(activeDepot){
+    if(!isWl() && activeDepot){
       activeDepot.nachkauf_threshold = _buyThreshold;
       fetch(`${API}/depots/${activeDepot.id}`, {
         method:"PUT", headers:{"Content-Type":"application/json"},
@@ -2524,9 +2519,44 @@ function moveBtn(ticker){
   return `<button class="icon-btn move" title="Ins Depot verschieben" onclick="moveToDepot('${ticker}')" style="font-size:11px">&#8594; Depot</button>`;
 }
 
-function renderTable(stocks, basisStocks){
-  if(basisStocks) basisStocksCache = basisStocks;
-  basisStocks = basisStocksCache.length ? basisStocksCache : stocks;
+// Zeigt den Leer-Zustand und blendet alle drei Ansichten aus. Bewusst nicht über
+// _applyViewMode() gelöst: der Zustand ist ansichtsunabhängig, und _applyViewMode()
+// stellt beim nächsten Render mit Treffern alles selbst wieder her.
+function showEmptyState(icon, title, text, withReset){
+  document.getElementById("emptyState").style.display = "block";
+  document.getElementById("emptyIcon").textContent    = icon;
+  document.getElementById("emptyTitle").textContent   = title;
+  document.getElementById("emptyText").textContent    = text;
+  const reset = document.getElementById("emptyResetBtn");
+  if(reset) reset.style.display = withReset ? "" : "none";
+  const tblWrap = document.querySelector(".tbl-scroll");
+  const cards   = document.getElementById("cardsView");
+  const treemap = document.getElementById("treemapView");
+  const sortBar = document.getElementById("sortBar");
+  if(tblWrap) tblWrap.style.display = "none";
+  if(cards){ cards.innerHTML = ""; cards.style.display = "none"; }
+  if(treemap) treemap.style.display = "none";
+  if(sortBar) sortBar.style.display = "none";
+}
+
+// Namen der gerade aktiven Filter — für den Hinweistext im Leer-Zustand.
+function activeFilterNames(){
+  const names = [];
+  if(_stockSearchQuery)        names.push("Suche");
+  if(_summaryFilter !== "all") names.push("ATH-Bereich");
+  if(_buyFilterActive)         names.push("Nachkauf");
+  if(_activeSectorFilter)      names.push("Sektor");
+  return names;
+}
+
+// Setzt alle Filter zurück und rendert neu. Nutzt denselben Reset wie der
+// Depot-/Watchlist-Wechsel, damit es nur eine Stelle gibt, die weiß was dazugehört.
+function clearAllFilters(){
+  resetViewFilters();
+  if(stocksCache) renderTable(stocksCache);
+}
+
+function renderTable(stocks){
   stocksCache=stocks;
   document.getElementById("sc-total").textContent=stocks.length;
   document.getElementById("sc-green").textContent=stocks.filter(s=>disc(s)<20).length;
@@ -2540,10 +2570,9 @@ function renderTable(stocks, basisStocks){
   const wl=isWl();
 
   if(!stocks.length){
-    empty.style.display="block"; tscrl.style.display="none"; cards.innerHTML="";
-    document.getElementById("emptyIcon").textContent=wl?"🔍":"📊";
-    document.getElementById("emptyTitle").textContent=wl?"Beobachtungsliste ist leer":"Noch keine Aktien";
-    document.getElementById("emptyText").textContent="Tippe auf + Hinzufügen um zu starten.";
+    showEmptyState(wl ? "🔍" : "📊",
+                   wl ? "Beobachtungsliste ist leer" : "Noch keine Aktien",
+                   "Tippe auf + Hinzufügen um zu starten.", false);
     return;
   }
   empty.style.display="none"; tscrl.style.display="";
@@ -2562,14 +2591,25 @@ function renderTable(stocks, basisStocks){
   _lastStocksForTreemap = stocks;
 
   renderPortfolioStats(stocks);
-  renderSectorOverview(stocks, basisStocks);
+  renderSectorOverview(stocks);
   stocks = _applySummaryFilter(stocks);
   stocks = _applyStockSearch(stocks);
   markBuyCandidates(stocks);
-  markSectorGap(stocks, basisStocks);
+  markSectorGap(stocks);
   if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
   if(_activeSectorFilter) stocks = stocks.filter(s => s.sector === _activeSectorFilter);
   renderSectorFilterBtn();
+
+  // Die Liste selbst ist nicht leer, aber kein Eintrag passt zur aktuellen Auswahl.
+  // Ohne diesen Zweig bliebe eine kommentarlos leere Tabelle stehen (die Prüfung oben
+  // greift nur bei einer wirklich leeren Liste, also vor allen Filtern).
+  if(!stocks.length){
+    const names = activeFilterNames();
+    showEmptyState("🔍", "Keine Treffer",
+      names.length ? `Kein Eintrag passt zur aktuellen Auswahl (${names.join(", ")}).`
+                   : "Kein Eintrag passt zur aktuellen Auswahl.", true);
+    return;
+  }
 
   // Portfolio-Gewichtung berechnen
   const totalVal = stocks.reduce((sum, s) => sum + (s.current_eur && s.shares ? s.current_eur * s.shares : 0), 0);
@@ -3453,7 +3493,7 @@ function toggleSnapshotSection(){
 }
 
 // ── Sektor-Übersicht ─────────────────────────────────────────────
-function renderSectorOverview(stocks, basisStocks){
+function renderSectorOverview(stocks){
   const wrap  = document.getElementById("sectorOverviewWrap");
   const chips = document.getElementById("sectorChips");
   if(!wrap || !chips) return;
@@ -3465,10 +3505,10 @@ function renderSectorOverview(stocks, basisStocks){
   if(!sectors.length){ wrap.style.display="none"; return; }
   wrap.style.display = "block";
 
-  // Soll-Wert (Ø Positionen/Sektor): für den Bestand die eigenen Positionen, für eine
-  // Watchlist ebenfalls die eigenen Positionen (seit der Entkopplung vom Depot gibt es
-  // keine automatische "echter Bestand"-Basis mehr, siehe loadCurrentStocks).
-  const gapInfo = calcSectorGapCounts(basisStocks || stocks);
+  // Soll-Wert (Ø Positionen/Sektor): immer die eigenen Positionen der angezeigten
+  // Liste (seit der Entkopplung vom Depot gibt es keine automatische "echter
+  // Bestand"-Basis mehr, siehe loadCurrentStocks).
+  const gapInfo = calcSectorGapCounts(stocks);
 
   chips.innerHTML = sectors.map(([sec, n]) => {
     const active = _activeSectorFilter === sec;
@@ -4266,6 +4306,52 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.14 · Backend v2.8.11",
+    changes: [
+      "Der 🛒-Nachkauf-Filter erscheint nicht mehr in Watchlists. Er setzt Einstandskurs und Stückzahl voraus, die Watchlist-Aktien gar nicht haben — der Klick lieferte dort zwangsläufig kein Ergebnis",
+      "Bugfix: lieferte ein Filter keine Treffer, blieb die Tabelle kommentarlos leer statt einen Hinweis zu zeigen. Betraf jede Filterung — Suche, Klick auf eine ATH-Karte, Sektor-Filter und den Nachkauf-Filter. Es erscheint jetzt „Keine Treffer“ mit Angabe der aktiven Filter und einem Knopf zum Zurücksetzen"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.13 · Backend v2.8.11",
+    changes: [
+      "Code-Cleanup: der Standardwert der Nachkauf-Schwelle (30%) sowie deren Ober- und Untergrenze standen an insgesamt sieben Stellen einzeln im Code — jetzt jeweils eine benannte Konstante pro Seite. Die Grenzen des Schiebereglers werden zusätzlich aus dieser Konstante gesetzt statt doppelt als HTML-Attribute gepflegt. Keine funktionale Änderung"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.12 · Backend v2.8.10",
+    changes: [
+      "Nachkauf-Schwelle für Watchlists entfernt: das Feld existierte im Backend, war über die Oberfläche aber nie einstellbar und blieb dauerhaft auf dem Standardwert. Watchlists filtern jetzt eindeutig mit dem festen Standardwert — vorher rechnete die Anzeige in der Watchlist mit der Schwelle des zuletzt geöffneten Depots, während Benachrichtigungen den Standardwert nutzten (App und E-Mail konnten sich widersprechen)",
+      "Bugfix: der Schieberegler für die Nachkauf-Schwelle war auch in der Watchlist-Ansicht bedienbar und hat dort stillschweigend die Schwelle eines gar nicht sichtbaren Depots verändert — er erscheint jetzt nur noch im Bestand",
+      "Bugfix: beim Wechsel vom Bestand in eine Watchlist wurde der 🛒-Filter zwar intern zurückgesetzt, blieb optisch aber aktiv (Button hervorgehoben, Regler eingeblendet) — Filter-Reset für beide Wechsel jetzt identisch"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.11 · Backend v2.8.10",
+    changes: [
+      "Code-Cleanup: die Vergleichsbasis der ⚖️ Sektor-Lücke wurde seit der Watchlist-Entkopplung (v2.8.0) immer schon aus der angezeigten Liste selbst gebildet, intern aber weiterhin über einen zusätzlichen Zwischenspeicher geführt. Dieser konnte nach dem Hinzufügen oder Löschen einer Aktie kurzzeitig noch gegen den vorherigen Stand rechnen — ersatzlos entfernt",
+      "Code-Cleanup: eine leere, dauerhaft ausgeblendete Leiste sowie ein nie befülltes Hinweisfeld aus der Zeit vor der einheitlichen Tab-Leiste entfernt (inkl. zugehöriger Formatvorlagen) — keine sichtbare Änderung"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.10 · Backend v2.8.9",
+    changes: [
+      "Code-Cleanup nach Review: verwaister Funktionsparameter in der Sektor-Lücken-Berechnung entfernt, eine ungenutzte lokale Variable, eine wirkungslose Speicherung der Nachkauf-Schwelle im Browser sowie sieben nirgends verwendete Formatvorlagen; doppelter Code in der mobilen Suche zusammengefasst und zwei Kommentare korrigiert, die noch das Verhalten vor v2.8.0 beschrieben — keine funktionale Änderung"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Backend v2.8.8",
+    changes: [
+      "Parqet-Sync: der Verlaufseintrag listet jetzt zusätzlich auf, was sich pro Position konkret geändert hat (Einstandskurs und/oder Stückzahl jeweils alt → neu) — vorher standen dort nur die Zähler „Aktualisiert / Neu / Konflikte / Verkauft“ ohne Details"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Backend v2.8.7",
+    changes: [
+      "Tägliche Zusammenfassung: löst dieselbe Aktie an einem Tag mehrfach aus (Kurs pendelt über eine Blockgrenze, oder erst −40%- dann −50%-Block), erscheint sie jetzt nur noch einmal statt mehrfach. Es gewinnt der tiefste an diesem Tag erreichte Block, ein Zusatz „(n×)“ zeigt die Gesamtzahl der Alarme; die Zähler in den Überschriften bleiben die echte Alarm-Anzahl. Gilt für Depot- und Watchlist-Zusammenfassung, jeweils Text- und E-Mail-Version"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.13.9 · Backend v2.8.6",
     changes: [
@@ -5910,7 +5996,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.9 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.14 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
