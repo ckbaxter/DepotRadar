@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.6-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.8-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.11-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.14-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -259,7 +259,7 @@ Der 🛒-Filter zeigt Aktien die gleichzeitig:
 - ≥20% unter ATH sind
 - In den unteren X% nach Positionswert liegen (Kurs × Stückzahl)
 
-Der Schwellenwert (Standard 30%) ist **pro Depot** einstellbar.
+Der Schwellenwert (Standard 30%) ist **pro Depot** einstellbar. In Watchlists wird der Filter seit v2.13.14 gar nicht mehr angeboten: er setzt Einstandskurs und Stückzahl voraus, die Watchlist-Aktien nicht haben.
 
 -----
 
@@ -351,6 +351,13 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.11 / 2.13.14 | Der 🛒-Nachkauf-Filter erscheint nicht mehr in Watchlists — er setzt Einstandskurs und Stückzahl voraus, die Watchlist-Aktien nicht haben, und lieferte dort zwangsläufig kein Ergebnis. Zugehöriger Bugfix: lieferte ein Filter keine Treffer, blieb die Tabelle kommentarlos leer, weil die Leer-Prüfung in `renderTable` vor allen Filtern lief — betraf Suche, ATH-Karten, Sektor- und Nachkauf-Filter gleichermaßen. Jetzt „Keine Treffer" mit Angabe der aktiven Filter und Zurücksetzen-Knopf (`showEmptyState()`, `activeFilterNames()`, `clearAllFilters()`) |
+| 2.8.11 / 2.13.13 | Code-Cleanup: Standardwert der Nachkauf-Schwelle (30%) und deren Grenzen (0–50%) lagen an sieben Stellen einzeln im Code — jetzt `_NACHKAUF_THRESHOLD_DEFAULT/_MIN/_MAX` im Backend und `NACHKAUF_THRESHOLD_DEFAULT/_MIN/_MAX` im Frontend. Die min/max-Grenzen des Schiebereglers werden aus der Konstante gesetzt statt zusätzlich als HTML-Attribute gepflegt — keine funktionale Änderung |
+| 2.8.10 / 2.13.12 | Nachkauf-Schwelle für Watchlists entfernt: das Feld existierte im Backend, war über die UI aber nie einstellbar und blieb dauerhaft auf dem Standardwert. Watchlists filtern jetzt eindeutig mit dem festen Standardwert — vorher rechnete die Anzeige in der Watchlist mit der Schwelle des zuletzt geöffneten Depots, während Benachrichtigungen den Standardwert nutzten. Zwei zugehörige Bugfixes: der Schieberegler war auch in der Watchlist-Ansicht bedienbar und änderte dort stillschweigend die Schwelle eines nicht sichtbaren Depots (erscheint jetzt nur noch im Bestand); beim Wechsel in eine Watchlist blieb ein aktiver 🛒-Filter optisch aktiv, obwohl er intern zurückgesetzt war (Filter-Reset jetzt für beide Wechsel identisch, gemeinsame `resetViewFilters()`) |
+| 2.8.10 / 2.13.11 | Code-Cleanup: die Vergleichsbasis der ⚖️ Sektor-Lücke wurde seit v2.8.0 immer schon aus der angezeigten Liste selbst gebildet, intern aber weiterhin über einen Zwischenspeicher (`basisStocksCache`) geführt — dieser konnte nach dem Hinzufügen/Löschen einer Aktie noch gegen den vorherigen Stand rechnen und ist ersatzlos entfallen; zusätzlich eine leere, dauerhaft ausgeblendete Leiste (`#viewBar`) und ein nie befülltes Hinweisfeld (`#wlBanner`) aus der Zeit vor der einheitlichen Tab-Leiste entfernt |
+| 2.8.9 / 2.13.10 | Code-Cleanup nach Review: verwaister Parameter `target_stocks` in `calc_sector_gap_set` entfernt, ungenutzte lokale Variable in `loadCurrentStocks`, wirkungslose `localStorage`-Speicherung der Nachkauf-Schwelle, sieben nirgends verwendete CSS-Klassen; `closeMobileSearch()` nutzt jetzt `clearMobileInput()` statt dessen Rumpf zu duplizieren, zwei Kommentare korrigiert die noch das Verhalten vor v2.8.0 beschrieben — keine funktionale Änderung |
+| 2.8.8 | Parqet-Sync: der Verlaufseintrag listet zusätzlich auf, was sich pro Position konkret geändert hat (Einstandskurs und/oder Stückzahl jeweils alt → neu) — vorher nur die Zähler „Aktualisiert / Neu / Konflikte / Verkauft“ |
+| 2.8.7 | Tägliche Zusammenfassung: Deduplizierung pro Aktie — löst dieselbe Aktie an einem Tag mehrfach aus (Kurs pendelt über eine Blockgrenze, oder erst −40%- dann −50%-Block), erscheint sie nur noch einmal. Es gewinnt der tiefste erreichte Block, ein `(n×)`-Suffix zeigt die Gesamtzahl der Alarme; die Zähler in den Überschriften bleiben die echte Alarm-Anzahl. Gilt für Depot- und Watchlist-Zusammenfassung, jeweils Text- und HTML-Version |
 | 2.8.6 / 2.13.8 | Neu: Admin-Rechte per `ADMIN_USERS`-Umgebungsvariable — Admins sehen den Verlauf aller Benutzer (inkl. Benutzer-Filter), alle anderen nur eigene Einträge plus Systemereignisse; Benutzer anlegen nur noch durch Admins (Ausnahme: Ersteinrichtung); Benutzer löschen durch Admins direkt über die UI mit Bestätigungsdialog inkl. Auflistung der mitgelöschten exklusiven Depots/Watchlists (Selbstlöschung und letzter Benutzer blockiert, dafür bleibt `DELETE_USER`) |
 | 2.8.5 / 2.13.7 | Verlauf-Typen konsistent gemacht: Testbenachrichtigungen erscheinen als „✅ Test" statt als Alarm, der System-Eintrag „Fehlerlog geleert" hat ein Label („⚙️ System"), die Tageszusammenfassung (🌙) bekommt einen farbigen Rand; zusätzlich Code-Cleanup (verwaiste Funktionsparameter und ungenutzte id-Attribute entfernt) |
 | 2.8.4 / 2.13.6 | Discount-Block-Alarm hieß im HTML-E-Mail-Header und im Hilfe-Beispiel noch „ATH-Alarm" — beides korrigiert, reine Textänderung |
