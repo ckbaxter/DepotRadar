@@ -1492,6 +1492,32 @@ http://depotradar.example.lan</div>
   </div>
 </div>
 
+<!-- Modal: Fortschritt "Kurse aktualisieren" — bewusst ohne Schließen-Button:
+     der Refresh läuft serverseitig ohnehin weiter, das Modal schließt sich
+     nach Abschluss (oder Fehler) selbst -->
+<div class="overlay" id="refreshProgressModal" style="display:none">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">&#8635; Kurse aktualisieren</span>
+    </div>
+    <div class="modal-body">
+      <div style="text-align:center;padding:16px 8px">
+        <div class="spinning" style="font-size:24px;margin-bottom:8px">&#8635;</div>
+        <div id="refreshProgressLabel" style="font-size:13px;color:var(--muted);margin-bottom:10px">
+          Starte…
+        </div>
+        <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+          <div id="refreshProgressBar" style="height:100%;background:var(--accent);
+               border-radius:4px;width:0%;transition:width .3s"></div>
+        </div>
+        <div id="refreshProgressCount" style="font-size:11px;color:var(--muted);margin-top:6px">
+          0 / 0
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Parqet ISIN-Konflikt -->
 <div class="overlay" id="parqetMismatchModal" style="display:none" onclick="closeIfOverlay(event,'parqetMismatchModal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
@@ -2856,21 +2882,67 @@ function showDepotPicker(title){
 }
 
 // ── Refresh all ───────────────────────────────────────────────────
+function _setRefreshProgress(done, total, current){
+  const bar = document.getElementById("refreshProgressBar");
+  const lbl = document.getElementById("refreshProgressLabel");
+  const cnt = document.getElementById("refreshProgressCount");
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  if(bar) bar.style.width = pct + "%";
+  if(lbl) lbl.textContent = current
+    ? `Aktualisiere: ${current}`
+    : (total > 0 && done >= total ? "Speichere…" : "Starte…");
+  if(cnt) cnt.textContent = `${done} / ${total}`;
+}
+
 async function refreshAll(){
   const btn=document.getElementById("refreshAllBtn");
   btn.disabled=true; btn.innerHTML='<span class="spinning">&#8635;</span> Aktualisiere …';
+  _setRefreshProgress(0, 0, "");
+  openModal("refreshProgressModal");
+  let poll = null;
   try {
     if(isWl()){
-      // Alle Aktien in dieser Watchlist aktualisieren
-      for(const s of stocksCache){
+      // Watchlist: die Schleife läuft ohnehin hier im Frontend — Fortschritt
+      // direkt aus ihr speisen, kein Polling nötig.
+      const total = stocksCache.length;
+      for(let i = 0; i < total; i++){
+        const s = stocksCache[i];
+        _setRefreshProgress(i, total, s.name);
         await fetch(`${API}/watchlists/${activeView.id}/stocks/${s.ticker}/refresh`,{method:"POST"});
       }
+      _setRefreshProgress(total, total, "");
     } else {
-      await fetch(`${API}/stocks/refresh-all?depot=${activeDepot.id}`,{method:"POST"});
+      // Depot: ein Backend-Call macht alles — Fortschritt parallel pollen
+      // (GET /api/stocks/refresh-progress, In-Memory-Zähler aus _fetch_prices).
+      const did = activeDepot.id;
+      poll = setInterval(async () => {
+        try {
+          const r = await fetch(`${API}/stocks/refresh-progress?depot=${did}`);
+          const p = await r.json();
+          if(p.active) _setRefreshProgress(p.done, p.total, p.current);
+        } catch(e){ /* Poll-Fehler ignorieren — der eigentliche POST meldet Fehler selbst */ }
+      }, 500);
+      await fetch(`${API}/stocks/refresh-all?depot=${did}`,{method:"POST"});
+      clearInterval(poll); poll = null;
+      try {
+        const r = await fetch(`${API}/stocks/refresh-progress?depot=${did}`);
+        const p = await r.json();
+        _setRefreshProgress(p.total, p.total, "");
+      } catch(e){ /* rein kosmetisch — Abschluss-Anzeige folgt ohnehin */ }
     }
+    // Abschluss kurz anzeigen (analog ATH-Prüfung)
+    const bar = document.getElementById("refreshProgressBar");
+    const lbl = document.getElementById("refreshProgressLabel");
+    if(bar) bar.style.width = "100%";
+    if(lbl) lbl.textContent = "Abgeschlossen";
+    await new Promise(r => setTimeout(r, 400));
     toast("Alle aktualisiert"); loadCurrentStocks(); loadSchedulerStatus(); updateHealthStatusDot();
   } catch(e){ toast("Fehler",false); }
-  finally{btn.innerHTML="&#8635; Kurse aktualisieren";btn.disabled=false;}
+  finally{
+    if(poll) clearInterval(poll);
+    closeModal("refreshProgressModal");
+    btn.innerHTML="&#8635; Kurse aktualisieren";btn.disabled=false;
+  }
 }
 
 // ── Aktie hinzufügen ──────────────────────────────────────────────
@@ -4306,6 +4378,12 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.15 · Backend v2.8.12",
+    changes: [
+      "„Kurse aktualisieren“ zeigt jetzt einen Fortschrittsbalken mit Aktienname und Zähler — wie bei der ATH-Prüfung. Im Bestand meldet das Backend den Fortschritt während des laufenden Refreshs, in Watchlists kommt er direkt aus der Aktualisierungsschleife"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.13.14 · Backend v2.8.11",
     changes: [
@@ -5996,7 +6074,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.14 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.15 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
