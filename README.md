@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.11-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.14-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.12-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.15-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -351,6 +351,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.12 / 2.13.15 | „Kurse aktualisieren" zeigt jetzt einen Fortschrittsbalken mit Aktienname und Zähler in einem eigenen Modal, analog zur ATH-Prüfung. Im Bestand meldet das Backend den Fortschritt des laufenden Refreshs über eine neue Route `GET /api/stocks/refresh-progress` (In-Memory-Zähler in `_fetch_prices`, nur beim manuellen Refresh aktiv — der Scheduler bleibt unberührt, ebenso die Refresh-Semantik: weiterhin ein Verlaufseintrag, 🛒/⚖️ in Alarmen intakt); in Watchlists speist die bestehende Frontend-Schleife den Balken direkt |
 | 2.8.11 / 2.13.14 | Der 🛒-Nachkauf-Filter erscheint nicht mehr in Watchlists — er setzt Einstandskurs und Stückzahl voraus, die Watchlist-Aktien nicht haben, und lieferte dort zwangsläufig kein Ergebnis. Zugehöriger Bugfix: lieferte ein Filter keine Treffer, blieb die Tabelle kommentarlos leer, weil die Leer-Prüfung in `renderTable` vor allen Filtern lief — betraf Suche, ATH-Karten, Sektor- und Nachkauf-Filter gleichermaßen. Jetzt „Keine Treffer" mit Angabe der aktiven Filter und Zurücksetzen-Knopf (`showEmptyState()`, `activeFilterNames()`, `clearAllFilters()`) |
 | 2.8.11 / 2.13.13 | Code-Cleanup: Standardwert der Nachkauf-Schwelle (30%) und deren Grenzen (0–50%) lagen an sieben Stellen einzeln im Code — jetzt `_NACHKAUF_THRESHOLD_DEFAULT/_MIN/_MAX` im Backend und `NACHKAUF_THRESHOLD_DEFAULT/_MIN/_MAX` im Frontend. Die min/max-Grenzen des Schiebereglers werden aus der Konstante gesetzt statt zusätzlich als HTML-Attribute gepflegt — keine funktionale Änderung |
 | 2.8.10 / 2.13.12 | Nachkauf-Schwelle für Watchlists entfernt: das Feld existierte im Backend, war über die UI aber nie einstellbar und blieb dauerhaft auf dem Standardwert. Watchlists filtern jetzt eindeutig mit dem festen Standardwert — vorher rechnete die Anzeige in der Watchlist mit der Schwelle des zuletzt geöffneten Depots, während Benachrichtigungen den Standardwert nutzten. Zwei zugehörige Bugfixes: der Schieberegler war auch in der Watchlist-Ansicht bedienbar und änderte dort stillschweigend die Schwelle eines nicht sichtbaren Depots (erscheint jetzt nur noch im Bestand); beim Wechsel in eine Watchlist blieb ein aktiver 🛒-Filter optisch aktiv, obwohl er intern zurückgesetzt war (Filter-Reset jetzt für beide Wechsel identisch, gemeinsame `resetViewFilters()`) |
