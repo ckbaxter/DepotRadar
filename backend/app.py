@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.11"
+VERSION           = "2.8.12"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -43,6 +43,13 @@ _health_stats  = {
     "last_refresh_stats":      {"fresh": 0, "cached": 0},  # Letzter Zyklus
     "last_refresh_had_errors": False, # Wird pro Zyklus zurückgesetzt — steuert den Statusdot
 }
+# ── Fortschritt des manuellen Kurs-Refreshs (In-Memory, Key = Depot-ID) ──────────
+# Wird nur vom manuellen "Kurse aktualisieren"-Button befüllt: api_refresh_all reicht
+# die Depot-ID als progress_key an _refresh_depot/_fetch_prices durch, der Scheduler
+# übergibt keinen Key. Das Frontend pollt GET /api/stocks/refresh-progress parallel
+# zum laufenden POST. Rein informativ, wird nicht persistiert.
+_refresh_progress = {}
+
 PARQET_API_BASE   = "https://connect.parqet.com"
 PARQET_AUTH_URL   = "https://connect.parqet.com/oauth2/authorize"
 PARQET_TOKEN_URL  = "https://connect.parqet.com/oauth2/token"
@@ -963,16 +970,24 @@ def _make_stock(data, old=None):
         "ath_date":      data.get("ath_date") if data.get("ath_eur",0) >= base.get("ath_eur",0) else (base.get("ath_date") or data.get("ath_date")),
     }
 
-def _fetch_prices(stocks, price_cache=None):
+def _fetch_prices(stocks, price_cache=None, progress_key=None):
     """Phase 1: Kurse holen und Stocks aktualisieren — noch keine Benachrichtigungen.
     Sammelt nebenbei Aktien, die in diesem Durchlauf ein NEUES ATH erreicht haben
     UND dafür den ATH-Alarm aktiviert haben (ath_alert_enabled).
     price_cache: optionaler Dict {ticker: data | {"_error": str}} — wird innerhalb
     eines refresh_all_depots-Zyklus depot-übergreifend geteilt, damit identische
-    Ticker nur einmal bei Yahoo abgefragt werden."""
+    Ticker nur einmal bei Yahoo abgefragt werden.
+    progress_key: optionaler Key (Depot-ID) — wenn gesetzt, wird der Fortschritt pro
+    Aktie in _refresh_progress mitgeschrieben (Fortschrittsbalken beim manuellen
+    Refresh; der Scheduler übergibt keinen Key)."""
     ok_list, err_list, ath_hits = [], [], []
+    if progress_key:
+        _refresh_progress[progress_key] = {"done": 0, "total": len(stocks),
+                                           "current": "", "active": True}
     for i, s in enumerate(stocks):
         ticker = s["ticker"]
+        if progress_key:
+            _refresh_progress[progress_key].update(done=i, current=s.get("name", ticker))
 
         # ── Kurs aus Cache lesen oder frisch von Yahoo holen ──────
         if price_cache is not None and ticker in price_cache:
@@ -1030,6 +1045,10 @@ def _fetch_prices(stocks, price_cache=None):
         except Exception as e:
             log.error(f"{s['name']}: {e}")
             err_list.append(f"{s['name']}: {e}")
+    if progress_key:
+        # Schleife fertig — Benachrichtigungen + Save folgen noch (Frontend zeigt
+        # in dieser Phase "Speichere…", solange active=True und done==total).
+        _refresh_progress[progress_key].update(done=len(stocks), current="")
     return stocks, ok_list, err_list, ath_hits
 
 def build_ath_reached_html(stock, prev_ath):
@@ -1092,7 +1111,7 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_ga
             log.error(f"Notify {s.get('name','?')}: {e}")
     return stocks
 
-def _refresh_depot(depot, price_cache=None):
+def _refresh_depot(depot, price_cache=None, progress_key=None):
     did       = depot["id"]; dname = depot["name"]
     urls, mention, confirm = resolve_notification_settings(did)
     budget    = depot.get("buy_budget") or None
@@ -1106,7 +1125,7 @@ def _refresh_depot(depot, price_cache=None):
     with depot_lock(did):
         # ── Phase 1: Alle Kurse holen ─────────────────────────────────
         stocks = load_stocks(did)
-        stocks, ok, err, ath_hits = _fetch_prices(stocks, price_cache)
+        stocks, ok, err, ath_hits = _fetch_prices(stocks, price_cache, progress_key)
 
         # Nachkauf-Set berechnen
         nachkauf_set = calc_nachkauf_set(stocks, threshold)
@@ -2810,11 +2829,26 @@ def api_refresh_all():
     if did:
         depots = load_depots(); depot = next((d for d in depots if d["id"] == did), None)
         if depot:
-            ok, err = _refresh_depot(depot)
-            add_log("manual_refresh", f"Refresh: {depot['name']}",
-                    f"OK: {len(ok)} Fehler: {len(err)}", len(err) == 0, depot_id=did)
+            # Fortschritt sofort initialisieren — noch vor dem Depot-Lock in
+            # _refresh_depot, damit ein parallel startendes Polling keinen
+            # veralteten Stand eines früheren Refreshs sieht.
+            _refresh_progress[did] = {"done": 0, "total": 0, "current": "", "active": True}
+            try:
+                ok, err = _refresh_depot(depot, progress_key=did)
+                add_log("manual_refresh", f"Refresh: {depot['name']}",
+                        f"OK: {len(ok)} Fehler: {len(err)}", len(err) == 0, depot_id=did)
+            finally:
+                _refresh_progress[did]["active"] = False
         return jsonify(load_stocks(did))
     refresh_all_depots("manual"); return jsonify({"ok": True})
+
+@app.route("/api/stocks/refresh-progress")
+def api_refresh_progress():
+    """Fortschritt des laufenden manuellen Refreshs (reiner Read, kein Lock).
+    Fail-closed: ohne bekannten Lauf kommt ein inaktiver Null-Zustand zurück."""
+    did = request.args.get("depot", "")
+    return jsonify(_refresh_progress.get(did)
+                   or {"done": 0, "total": 0, "current": "", "active": False})
 
 @app.route("/api/stocks/<ticker>/change-ticker", methods=["POST"])
 def change_ticker(ticker):
