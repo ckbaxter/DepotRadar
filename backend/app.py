@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.8"
+VERSION           = "2.8.11"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -171,6 +171,16 @@ def save_users(u): _save_json(USERS_FILE, u)
 _DIGEST_DAY_DEFAULT         = 6        # 0=Mo … 6=So
 _DIGEST_TIME_DEFAULT        = "20:00"
 _DAILY_DIGEST_TIME_DEFAULT  = "21:00"
+
+# Nachkauf-Schwelle (🛒): Anteil der wertkleinsten Positionen, die zusätzlich zum
+# Kriterium "≥20% unter ATH" als Nachkauf-Kandidat gelten. 0 bedeutet deaktiviert.
+# Pro Depot einstellbar (depots.json / PUT /api/depots/<id>); Watchlists nutzen seit
+# v2.8.10 immer den Default, siehe _refresh_watchlist.
+# MIN/MAX begrenzen die Depot-PUT-Route und müssen mit den min/max-Attributen des
+# Schiebereglers #thresholdSlider in index.html übereinstimmen.
+_NACHKAUF_THRESHOLD_DEFAULT = 30
+_NACHKAUF_THRESHOLD_MIN     = 0
+_NACHKAUF_THRESHOLD_MAX     = 50
 
 def _parse_hhmm(value, fallback):
     try:
@@ -1086,7 +1096,7 @@ def _refresh_depot(depot, price_cache=None):
     did       = depot["id"]; dname = depot["name"]
     urls, mention, confirm = resolve_notification_settings(did)
     budget    = depot.get("buy_budget") or None
-    raw_t = depot.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else 30
+    raw_t = depot.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else _NACHKAUF_THRESHOLD_DEFAULT
 
     # Der komplette load-modify-save-Zyklus (inkl. der Yahoo-Netzwerk-Calls) läuft
     # unter dem Depot-Lock, damit ein paralleler HTTP-Request auf denselben Bestand
@@ -1116,16 +1126,18 @@ def _refresh_depot(depot, price_cache=None):
 def _refresh_watchlist(wl, price_cache=None):
     """Aktualisiert eine einzelne, depot-unabhängige Watchlist. Analog zu
     _refresh_depot, aber ohne Kaufbudget/Sektor-Lücke (keine automatische
-    Vergleichsbasis mehr seit der Entkopplung vom Depot) und mit eigenem Lock."""
+    Vergleichsbasis mehr seit der Entkopplung vom Depot) und mit eigenem Lock.
+    Die Nachkauf-Schwelle ist für Watchlists nicht einstellbar (Standardwert aus
+    calc_nachkauf_set): eine Watchlist enthält in aller Regel keine Positionen mit
+    Einstandskurs/Stückzahl, ohne die der Nachkauf-Filter ohnehin nicht greift."""
     wl_id = wl["id"]
     urls, mention, confirm = resolve_watchlist_notification_settings(wl_id)
-    raw_t = wl.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else 30
 
     with watchlist_lock(wl_id):
         wls = load_wl_stocks(wl_id)
         wls, ok, err, ath_hits = _fetch_prices(wls, price_cache)
 
-        nachkauf_set = calc_nachkauf_set(wls, threshold)
+        nachkauf_set = calc_nachkauf_set(wls)
 
         if wl.get("notifications_enabled", True):
             wls = _send_notifications(wls, f"Beobachtung: {wl['name']}", urls, None, nachkauf_set,
@@ -1360,7 +1372,7 @@ def _build_digest_data(depot, stocks):
         else:        buckets[">60"]   += 1
 
     # Nachkauf-Kandidaten
-    threshold = int(depot.get("nachkauf_threshold") or 30)
+    threshold = int(depot.get("nachkauf_threshold") or _NACHKAUF_THRESHOLD_DEFAULT)
     nk_set    = calc_nachkauf_set(stocks, threshold)
     budget    = depot.get("buy_budget")
     nk_items  = []
@@ -1819,7 +1831,7 @@ def start_scheduler():
 # ── Parqet OAuth (PKCE) ───────────────────────────────────────────
 _oauth_states = {}
 
-def calc_nachkauf_set(stocks, threshold=30):
+def calc_nachkauf_set(stocks, threshold=_NACHKAUF_THRESHOLD_DEFAULT):
     """
     Berechnet welche Aktien Nachkauf-Kandidaten sind:
     ≥20% unter ATH UND in den unteren threshold% nach Positionswert.
@@ -1843,21 +1855,19 @@ def calc_nachkauf_set(stocks, threshold=30):
             result.add(s["ticker"])
     return result
 
-def calc_sector_gap_set(basis_stocks, target_stocks=None, factor=0.5):
+def calc_sector_gap_set(stocks, factor=0.5):
     """
-    Diversifikations-Lücke: ermittelt anhand von basis_stocks (immer der tatsächliche
-    Bestand, nie eine Watchlist) welche Sektoren unterrepräsentiert sind, und gibt die
-    Ticker aus target_stocks zurück, deren Sektor betroffen ist. Ohne target_stocks wird
-    das Ergebnis auf basis_stocks selbst angewendet (für den Bestand gegen sich selbst).
-    So kann z.B. eine Watchlist-Aktie als Lücken-Kandidat markiert werden, auch wenn der
-    Sektor in der Watchlist selbst gar nicht knapp ist — entscheidend ist immer der
-    echte Bestand.
-    Ein Sektor gilt als unterrepräsentiert wenn seine Positionsanzahl im Bestand unter
-    factor (Standard 50%) des Durchschnitts liegt. Aktien ohne Sektor werden bei der
-    Durchschnittsberechnung ignoriert. Gibt ein Set von Tickern zurück.
+    Diversifikations-Lücke: ermittelt welche Sektoren innerhalb von stocks
+    unterrepräsentiert sind, und gibt die Ticker zurück, deren Sektor betroffen ist.
+    Ein Sektor gilt als unterrepräsentiert wenn seine Positionsanzahl unter factor
+    (Standard 50%) des Durchschnitts liegt. Aktien ohne Sektor werden bei der
+    Durchschnittsberechnung ignoriert.
+    Basis und Ziel sind immer dieselbe Liste: seit der Entkopplung der Watchlists
+    vom Depot (v2.8.0) gibt es keinen Fall mehr, in dem gegen eine fremde Liste
+    bewertet wird — Watchlists sind aus den Benachrichtigungen komplett heraus,
+    und der Bestand wird gegen sich selbst bewertet. Gibt ein Set von Tickern zurück.
     """
-    target  = target_stocks if target_stocks is not None else basis_stocks
-    sectors = [s.get("sector") for s in basis_stocks if s.get("sector")]
+    sectors = [s.get("sector") for s in stocks if s.get("sector")]
     if len(sectors) < 2:
         return set()
     counts    = Counter(sectors)
@@ -1865,7 +1875,7 @@ def calc_sector_gap_set(basis_stocks, target_stocks=None, factor=0.5):
     underrep  = {sec for sec, cnt in counts.items() if cnt < avg * factor}
     if not underrep:
         return set()
-    return {s["ticker"] for s in target if s.get("sector") in underrep}
+    return {s["ticker"] for s in stocks if s.get("sector") in underrep}
 
 def calc_buy_quantity(budget, multiplier, price):
     """
@@ -2264,7 +2274,7 @@ def parqet_apply_removal(depot_id):
         match  = next((s for s in stocks if s.get("isin") == isin), None)
         if not match: return jsonify({"error": "Nicht gefunden"}), 404
         stocks.remove(match); save_stocks(depot_id, stocks)
-    add_log("manual_refresh", f"Parqet: Position entfernt", f"{match['name']} (verkauft, per Sync bestätigt)",
+    add_log("manual_refresh", "Parqet: Position entfernt", f"{match['name']} (verkauft, per Sync bestätigt)",
             True, depot_id=depot_id)
     return jsonify({"ok": True})
 
@@ -2630,7 +2640,8 @@ def update_depot(depot_id):
                 d["buy_budget"] = float(raw) if raw else None
             if "nachkauf_threshold" in body:
                 raw = body["nachkauf_threshold"]
-                d["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
+                d["nachkauf_threshold"] = (max(_NACHKAUF_THRESHOLD_MIN, min(_NACHKAUF_THRESHOLD_MAX, int(raw)))
+                                           if raw is not None else _NACHKAUF_THRESHOLD_DEFAULT)
             if "weekly_digest" in body:
                 d["weekly_digest"] = bool(body["weekly_digest"])
             if "daily_ath_digest" in body:
@@ -2699,9 +2710,6 @@ def update_watchlist(wl_id):
     for wl in watchlists:
         if wl["id"] == wl_id:
             if "name" in body and body["name"].strip(): wl["name"] = body["name"].strip()
-            if "nachkauf_threshold" in body:
-                raw = body["nachkauf_threshold"]
-                wl["nachkauf_threshold"] = max(0, min(50, int(raw))) if raw is not None else 30
             notif_toggled = False
             if "notifications_enabled" in body:
                 old_enabled = wl.get("notifications_enabled", True)
@@ -3132,7 +3140,7 @@ def test_notification():
     body    = request.get_json(silent=True) or {}; urls = body.get("urls", [])
     mention = body.get("mention", "").strip()
     link    = f"\n\n{APP_URL}" if APP_URL else ""
-    msg     = f"DepotRadar Testbenachrichtigung"
+    msg     = "DepotRadar Testbenachrichtigung"
     txt     = f"Verbindung funktioniert!{link}"
     ok = send_apprise(msg, txt, urls, mention=mention, log_type="test")
     return jsonify({"ok": ok})
