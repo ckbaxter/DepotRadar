@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.12"
+VERSION           = "2.8.13"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2562,11 +2562,25 @@ def add_split():
     ratio = body.get("ratio", 0)
     if not isin or not date or not ratio:
         return jsonify({"error": "isin, date und ratio erforderlich"}), 400
+    try:
+        ratio = float(ratio)
+    except (TypeError, ValueError):
+        return jsonify({"error": "ratio muss eine Zahl sein"}), 400
+    # Reverse Splits (Zusammenlegungen) haben einen Faktor < 1 (z.B. 1:6 → 0.1667) und sind
+    # erlaubt — _split_adj multipliziert symmetrisch, die Mathematik stimmt für beide Richtungen.
+    # Nur 0/negativ und 1 (kein Split) sind ungültig. Ganzzahlige Faktoren werden als int
+    # gespeichert, damit bestehende Einträge und die JSON-Datei sauber lesbar bleiben.
+    if ratio <= 0 or ratio == 1:
+        return jsonify({"error": "ratio muss > 0 und ≠ 1 sein"}), 400
+    if ratio == int(ratio):
+        ratio = int(ratio)
+    else:
+        ratio = round(ratio, 6)
     splits = load_splits()
     # Duplikat prüfen
     if any(s["isin"] == isin and s["date"] == date for s in splits):
         return jsonify({"error": "Split bereits vorhanden"}), 409
-    entry = {"isin": isin, "name": name, "date": date, "ratio": int(ratio)}
+    entry = {"isin": isin, "name": name, "date": date, "ratio": ratio}
     splits.append(entry)
     splits.sort(key=lambda s: (s["date"], s["isin"]))
     _save_json(SPLITS_FILE, splits)
@@ -2580,6 +2594,70 @@ def delete_split(isin, date):
         return jsonify({"error": "Nicht gefunden"}), 404
     _save_json(SPLITS_FILE, new)
     return jsonify({"ok": True})
+
+def _resolve_split_source_ticker(ticker):
+    """Führt XETRA-/EU-Zweitlistings auf das Original-Listing zurück (z.B. NVD.DE → NVDA).
+    Yahoo liefert Split-Events am Heimat-Listing zuverlässiger als an Zweitlistings.
+    Rückwärts-Lookup über xetra_map.json: der Map-Key ist der Original-Ticker."""
+    xmap = _load_json(XETRA_MAP_FILE, {})
+    for orig, entry in xmap.items():
+        if isinstance(entry, dict) and entry.get("ticker", "").upper() == ticker.upper():
+            return orig
+    return ticker
+
+@app.route("/api/splits/suggest", methods=["GET"])
+def suggest_splits():
+    """Liefert historische Splits eines Tickers von Yahoo als Vorschläge (reiner Read).
+    Nutzt den chart-Endpoint mit events=splits über range=max — Monats-Intervall reicht,
+    da nur die Split-Events interessieren, nicht die Kurse. Vorhandene splits.json-Einträge
+    (gleiche ISIN + Datum) werden mit exists=true markiert, damit das Frontend sie als
+    „bereits vorhanden" anzeigen kann statt Duplikate anzubieten."""
+    ticker = request.args.get("ticker", "").strip()
+    isin   = request.args.get("isin", "").strip()
+    if not ticker:
+        return jsonify({"error": "ticker erforderlich"}), 400
+    src = _resolve_split_source_ticker(ticker)
+    enc = urlquote(src)
+    urls = [
+        f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&events=splits&includePrePost=false",
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&events=splits&includePrePost=false",
+    ]
+    result, last_err = None, "Unbekannter Fehler"
+    for url in urls:
+        try:
+            r = requests.get(url, headers=YH, timeout=15); r.raise_for_status()
+            j = r.json()
+            if j.get("chart", {}).get("result"):
+                result = j["chart"]["result"][0]; break
+        except Exception as e:
+            last_err = str(e)
+    if result is None:
+        return jsonify({"error": f"Yahoo Finance nicht erreichbar: {last_err}"}), 502
+
+    existing = {(s["isin"], s["date"]) for s in load_splits()}
+    suggestions = []
+    for ev in (result.get("events", {}).get("splits") or {}).values():
+        num, den = ev.get("numerator"), ev.get("denominator")
+        ts       = ev.get("date")
+        if not num or not den or not ts:
+            continue
+        ratio = num / den
+        if ratio <= 0 or ratio == 1:
+            continue
+        if ratio == int(ratio):
+            ratio = int(ratio)
+        else:
+            ratio = round(ratio, 6)
+        date = datetime.fromtimestamp(ts, tz=pytz.UTC).strftime("%Y-%m-%d")
+        suggestions.append({
+            "date":    date,
+            "ratio":   ratio,
+            "label":   f"{num:g}:{den:g}",
+            "reverse": ratio < 1,
+            "exists":  bool(isin) and (isin, date) in existing,
+        })
+    suggestions.sort(key=lambda s: s["date"], reverse=True)
+    return jsonify({"ticker": ticker, "source_ticker": src, "suggestions": suggestions})
 
 @app.route("/api/splits/stocks-with-isin", methods=["GET"])
 def splits_stocks_with_isin():
