@@ -4392,6 +4392,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.13.24 · Backend v2.8.13",
+    changes: [
+      "Aktien-Detail-Modal: Label \"P&amp;L\" durch \"Gewinn &amp; Verlust\" ersetzt"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.13.23 · Backend v2.8.13",
     changes: [
       "Aktien-Detail-Modal ergänzt um Gesamtwert (Kurs × Stückzahl), Anzahl (Stückzahl) sowie Kurs-Zeitstempel (Kurs-/Prüfzeit) — jeweils nur sichtbar wenn die zugrunde liegenden Werte vorhanden sind"
@@ -5186,7 +5192,7 @@ function openStockDetail(ticker, depotId, wlId){
       ${s.shares ? `<div class="sd-item"><div class="lbl">Anzahl</div><div class="v">${s.shares.toFixed(4).replace(/\.?0+$/,"")} Stk.</div></div>` : ""}
       ${s.current_eur && s.shares ? `<div class="sd-item"><div class="lbl">Gesamtwert</div><div class="v">${fmtEUR(s.current_eur*s.shares)}</div></div>` : ""}
       ${s.buy_price_eur ? `<div class="sd-item"><div class="lbl">Einstandskurs</div><div class="v">${fmtEUR(s.buy_price_eur)}</div></div>` : ""}
-      ${s.buy_price_eur && s.shares ? (()=>{const pnl_pct=((s.current_eur-s.buy_price_eur)/s.buy_price_eur*100);const pnl_eur=(s.current_eur-s.buy_price_eur)*s.shares;const pos=pnl_eur>=0;return `<div class="sd-item"><div class="lbl">P&amp;L</div><div class="v" style="color:${pos?"var(--green)":"var(--red)"}">${pos?"+":""}${pnl_pct.toFixed(1)}% · ${pos?"+":""}${fmtEUR(pnl_eur)}</div></div>`;})() : ""}
+      ${s.buy_price_eur && s.shares ? (()=>{const pnl_pct=((s.current_eur-s.buy_price_eur)/s.buy_price_eur*100);const pnl_eur=(s.current_eur-s.buy_price_eur)*s.shares;const pos=pnl_eur>=0;return `<div class="sd-item"><div class="lbl">Gewinn &amp; Verlust</div><div class="v" style="color:${pos?"var(--green)":"var(--red)"}">${pos?"+":""}${pnl_pct.toFixed(1)}% · ${pos?"+":""}${fmtEUR(pnl_eur)}</div></div>`;})() : ""}
     </div>
     <div class="sd-divider"></div>
     <div class="sd-section-lbl">&#127970; Über das Unternehmen</div>
@@ -6234,7 +6240,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.23 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.24 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
