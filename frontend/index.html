@@ -1408,6 +1408,17 @@ http://depotradar.example.lan</div>
                 ISINs werden automatisch beim <b style="color:var(--fg)">Parqet-Sync</b> übernommen.
               </div>
             </div>
+            <!-- Split-Vorschläge von Yahoo (erscheint nach Aktienauswahl) -->
+            <div id="splitSuggestBox" style="display:none">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:500">
+                Gefundene Splits (Yahoo Finance) — auswählen, bei Bedarf korrigieren:</div>
+              <div id="splitSuggestList" style="display:flex;flex-direction:column;gap:6px"></div>
+              <div style="display:flex;justify-content:flex-end;margin-top:8px">
+                <button class="btn btn-primary btn-sm" onclick="applySplitSuggestions()">Ausgewählte übernehmen</button>
+              </div>
+              <div style="font-size:11px;color:var(--muted);margin-top:8px">
+                Oder manuell eintragen:</div>
+            </div>
             <!-- Datum -->
             <div>
               <label class="form-label" style="font-size:11px">Split-Datum</label>
@@ -1416,8 +1427,9 @@ http://depotradar.example.lan</div>
             <!-- Faktor -->
             <div>
               <label class="form-label" style="font-size:11px">Faktor</label>
-              <input class="form-input" id="splitRatio" type="number" min="2" step="1"
+              <input class="form-input" id="splitRatio" type="number" min="0" step="any"
                      placeholder="z.B. 10 (für 10:1)" style="max-width:200px"/>
+              <div class="form-hint" style="font-size:10px">Reverse Split (Zusammenlegung): Faktor &lt; 1, z.B. 0,1667 für 1:6</div>
             </div>
             <div style="display:flex;gap:8px;justify-content:flex-end">
               <button class="btn btn-ghost btn-sm" onclick="closeAddSplitForm()">Abbrechen</button>
@@ -4379,6 +4391,31 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.13.19 · Backend v2.8.13",
+    changes: [
+      "Aufklapp-Pfeil in der Split-Liste nochmals vergrößert, Einrückung der aufgeklappten Splits entsprechend angepasst"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.18 · Backend v2.8.13",
+    changes: [
+      "Aufklapp-Pfeil in der gruppierten Split-Liste vergrößert — war vorher kaum als Pfeil erkennbar"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.17 · Backend v2.8.13",
+    changes: [
+      "Split-Liste gruppiert jetzt nach Aktie: eine Zeile pro Aktie mit Anzahl der Splits, Antippen klappt die einzelnen Splits auf (absteigend nach Datum). Aktien mit nur einem Split zeigen ihn direkt in der Zeile — kein Aufklappen nötig"
+    ]
+  },{
+    label: "Juli 2026",
+    versions: "Frontend v2.13.16 · Backend v2.8.13",
+    changes: [
+      "Split-Vorschläge: nach Auswahl einer Aktie im Split-Dialog werden historische Splits automatisch von Yahoo Finance geladen — einzeln an-/abwählbar, Datum und Faktor vor dem Übernehmen korrigierbar. Bereits erfasste Splits werden als vorhanden markiert. Bei XETRA-Zweitlistings wird über das Original-Listing abgefragt",
+      "Reverse Splits (Aktienzusammenlegungen) werden jetzt unterstützt — Faktor < 1, z.B. 0,1667 für 1:6; Anzeige in der Split-Liste entsprechend als 1:6"
+    ]
+  },{
+    label: "Juli 2026",
     versions: "Frontend v2.13.15 · Backend v2.8.12",
     changes: [
       "„Kurse aktualisieren“ zeigt jetzt einen Fortschrittsbalken mit Aktienname und Zähler — wie bei der ATH-Prüfung. Im Bestand meldet das Backend den Fortschritt während des laufenden Refreshs, in Watchlists kommt er direkt aus der Aktualisierungsschleife"
@@ -5923,7 +5960,22 @@ async function confirmChangeTicker(){
 ;
 
 // ── Splits Management ────────────────────────────────────────────
-let _splitIsin = ""; let _splitName = ""; let _splitStocks = [];
+let _splitIsin = ""; let _splitName = ""; let _splitStocks = []; let _splitSuggestions = [];
+
+function fmtSplitRatio(ratio){
+  // Reverse Splits (Faktor < 1) als "1:N" anzeigen statt "0.17:1"
+  if(ratio < 1) return `1:${Math.round(1/ratio)}`;
+  return `${ratio}:1`;
+}
+
+// Aufgeklappte Split-Gruppen (ISINs) — In-Memory, Standard: alle eingeklappt
+const _splitGroupsOpen = new Set();
+
+function toggleSplitGroup(isin){
+  if(_splitGroupsOpen.has(isin)) _splitGroupsOpen.delete(isin);
+  else _splitGroupsOpen.add(isin);
+  loadSplitsTable();
+}
 
 async function loadSplitsTable(){
   try {
@@ -5933,18 +5985,46 @@ async function loadSplitsTable(){
       tbody.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;padding:8px">Noch keine Splits definiert</div>';
       return;
     }
-    tbody.innerHTML = splits.map(s => `
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;
-                  background:var(--bg3);border-radius:7px;border:1px solid var(--border)">
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)||"—"}</div>
-          <div style="font-size:10px;color:var(--muted);font-family:monospace">${s.isin}</div>
-        </div>
-        <div style="font-size:12px;color:var(--muted);white-space:nowrap">${s.date}</div>
-        <div style="font-size:13px;font-weight:600;white-space:nowrap;min-width:36px;text-align:right">${s.ratio}:1</div>
+    // Nach ISIN gruppieren, Gruppen alphabetisch nach Name, Splits absteigend nach Datum
+    const groups = {};
+    splits.forEach(s => (groups[s.isin] = groups[s.isin] || []).push(s));
+    const sorted = Object.values(groups)
+      .map(g => g.sort((a, b) => b.date.localeCompare(a.date)))
+      .sort((a, b) => (a[0].name || "").localeCompare(b[0].name || ""));
+
+    const splitRow = s => `
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 10px 5px 40px">
+        <div style="font-size:12px;color:var(--muted);white-space:nowrap;flex:1">${s.date}</div>
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;min-width:36px;text-align:right">${fmtSplitRatio(s.ratio)}</div>
         <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--muted);flex-shrink:0"
           onclick="deleteSplit('${s.isin}','${s.date}')">🗑</button>
-      </div>`).join("");
+      </div>`;
+
+    tbody.innerHTML = sorted.map(g => {
+      const s0     = g[0];
+      const single = g.length === 1;
+      const open   = _splitGroupsOpen.has(s0.isin);
+      const header = `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;${single ? "" : "cursor:pointer"}"
+             ${single ? "" : `onclick="toggleSplitGroup('${s0.isin}')"`}>
+          <span style="font-size:20px;line-height:1;color:var(--muted);width:22px;flex-shrink:0;text-align:center">${single ? "" : (open ? "▾" : "▸")}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s0.name)||"—"}</div>
+            <div style="font-size:10px;color:var(--muted);font-family:monospace">${s0.isin}</div>
+          </div>
+          ${single ? `
+          <div style="font-size:12px;color:var(--muted);white-space:nowrap">${s0.date}</div>
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;min-width:36px;text-align:right">${fmtSplitRatio(s0.ratio)}</div>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--muted);flex-shrink:0"
+            onclick="deleteSplit('${s0.isin}','${s0.date}')">🗑</button>`
+          : `<div style="font-size:11px;color:var(--muted);white-space:nowrap">${g.length} Splits</div>`}
+        </div>`;
+      return `
+        <div style="background:var(--bg3);border-radius:7px;border:1px solid var(--border)">
+          ${header}
+          ${(!single && open) ? `<div style="border-top:1px solid var(--border);padding:3px 0">${g.map(splitRow).join("")}</div>` : ""}
+        </div>`;
+    }).join("");
   } catch(e){ console.error("Splits:", e); }
 }
 
@@ -5955,7 +6035,9 @@ async function openAddSplitForm(){
   document.getElementById("splitRatio").value           = "";
   document.getElementById("splitIsinHint").textContent  = "";
   document.getElementById("splitStockResults").style.display = "none";
-  _splitIsin = "";
+  document.getElementById("splitSuggestBox").style.display   = "none";
+  document.getElementById("splitSuggestList").innerHTML      = "";
+  _splitIsin = ""; _splitSuggestions = [];
   // Alle Aktien mit ISIN vorladen
   try {
     const r   = await fetch(`${API}/splits/stocks-with-isin`);
@@ -6005,12 +6087,73 @@ function selectSplitStock(isin){
   document.getElementById("splitStockSearch").value         = `${stock.name} (${stock.ticker})`;
   document.getElementById("splitStockResults").style.display = "none";
   document.getElementById("splitIsinHint").textContent       = `ISIN: ${isin}`;
+  loadSplitSuggestions(stock.ticker, isin);
+}
+
+async function loadSplitSuggestions(ticker, isin){
+  const box  = document.getElementById("splitSuggestBox");
+  const list = document.getElementById("splitSuggestList");
+  box.style.display = "block";
+  list.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 0">Suche Splits bei Yahoo Finance…</div>';
+  _splitSuggestions = [];
+  try {
+    const r = await fetch(`${API}/splits/suggest?ticker=${encodeURIComponent(ticker)}&isin=${encodeURIComponent(isin)}`);
+    if(!r.ok) throw new Error((await r.json()).error || "Fehler");
+    const data = await r.json();
+    _splitSuggestions = data.suggestions || [];
+    renderSplitSuggestions(data.source_ticker !== data.ticker ? data.source_ticker : null);
+  } catch(e){
+    list.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:4px 0">Vorschläge nicht verfügbar (${esc(e.message)}) — manuelle Eingabe unten möglich</div>`;
+  }
+}
+
+function renderSplitSuggestions(sourceTicker){
+  const list = document.getElementById("splitSuggestList");
+  if(!_splitSuggestions.length){
+    list.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 0">Keine historischen Splits bei Yahoo gefunden</div>';
+    return;
+  }
+  const srcHint = sourceTicker
+    ? `<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Abgefragt über Original-Listing ${esc(sourceTicker)}</div>` : "";
+  list.innerHTML = srcHint + _splitSuggestions.map((s, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg2);
+                border:1px solid var(--border);border-radius:6px;${s.exists ? "opacity:0.55" : ""}">
+      <input type="checkbox" id="splitSugChk${i}" ${s.exists ? "disabled" : "checked"} style="flex-shrink:0"/>
+      <input class="form-input" type="date" id="splitSugDate${i}" value="${s.date}"
+             ${s.exists ? "disabled" : ""} style="font-size:12px;padding:4px 6px;max-width:140px"/>
+      <input class="form-input" type="number" min="0" step="any" id="splitSugRatio${i}" value="${s.ratio}"
+             ${s.exists ? "disabled" : ""} style="font-size:12px;padding:4px 6px;max-width:90px"/>
+      <span style="font-size:11px;color:var(--muted);white-space:nowrap;flex:1">
+        ${s.reverse ? "Reverse Split" : "Split"} ${esc(s.label)}${s.exists ? " · bereits vorhanden" : ""}
+      </span>
+    </div>`).join("");
+}
+
+async function applySplitSuggestions(){
+  if(!_splitIsin){ toast("Bitte Aktie auswählen", false); return; }
+  let saved = 0, failed = 0;
+  for(let i = 0; i < _splitSuggestions.length; i++){
+    const chk = document.getElementById(`splitSugChk${i}`);
+    if(!chk || !chk.checked || chk.disabled) continue;
+    const date  = document.getElementById(`splitSugDate${i}`).value;
+    const ratio = parseFloat(document.getElementById(`splitSugRatio${i}`).value);
+    if(!date || !ratio || ratio <= 0 || ratio === 1){ failed++; continue; }
+    const r = await fetch(`${API}/splits`, {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({isin: _splitIsin, name: _splitName, date, ratio})
+    });
+    if(r.ok) saved++; else failed++;
+  }
+  if(saved){ toast(`${saved} Split${saved > 1 ? "s" : ""} übernommen`); closeAddSplitForm(); loadSplitsTable(); }
+  else if(failed){ toast("Keine Splits übernommen (Fehler oder ungültige Werte)", false); }
+  else { toast("Keine Splits ausgewählt", false); }
 }
 
 function closeAddSplitForm(){
   document.getElementById("addSplitForm").style.display = "none";
   document.getElementById("splitStockResults").style.display = "none";
   document.getElementById("splitManualIsinWrap").style.display = "none";
+  document.getElementById("splitSuggestBox").style.display = "none";
 }
 
 
@@ -6018,10 +6161,10 @@ function closeAddSplitForm(){
 async function saveSplit(){
   const isin = _splitIsin;
   const date  = document.getElementById("splitDate").value;
-  const ratio = parseInt(document.getElementById("splitRatio").value);
+  const ratio = parseFloat(document.getElementById("splitRatio").value);
   if(!isin){ toast("Bitte Aktie auswählen", false); return; }
   if(!date){ toast("Bitte Datum eingeben", false); return; }
-  if(!ratio || ratio < 2){ toast("Faktor muss ≥ 2 sein", false); return; }
+  if(!ratio || ratio <= 0 || ratio === 1){ toast("Faktor muss > 0 und ≠ 1 sein", false); return; }
   const r = await fetch(`${API}/splits`, {
     method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({isin, name: _splitName, date, ratio})
@@ -6074,7 +6217,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.15 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.19 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
