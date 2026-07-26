@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.12-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.15-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.13-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.23-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -113,7 +113,9 @@ DepotRadar/
 │   ├── settings.json
 │   ├── users.json             # Benutzerprofile (wird beim ersten Start angelegt)
 │   ├── snapshots.json         # Tägliche Portfolio-Snapshots
-│   └── notifications.json     # Verlauf / Benachrichtigungshistorie
+│   ├── notifications.json     # Verlauf / Benachrichtigungshistorie
+│   ├── health.json            # Gesundheits-Statistiken (persistiert für System-Status)
+│   └── eur_rates.json         # Gecachte EUR-Wechselkurse
 └── docker-compose.yml
 ```
 
@@ -355,6 +357,8 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.13 / 2.13.23 | Aktien-Detail-Modal ergänzt um Gesamtwert (Kurs × Stückzahl), Anzahl (Stückzahl) sowie Kurs-Zeitstempel (Kurs-/Prüfzeit) — jeweils nur sichtbar wenn die zugrunde liegenden Werte vorhanden sind |
+| 2.8.13 / 2.13.20 | Gesamtwert je Position (Kurs × Stückzahl) direkt im Gewichtungs-Balken ergänzt, z.B. „23,4% (1.234 €)" — in Tabelle und Karten, nur sichtbar wenn Kurs und Stückzahl vorhanden sind (gleiche Bedingung wie bisher für die Gewichtung) |
 | 2.8.13 / 2.13.17–19 | Split-Liste gruppiert nach Aktie: eine aufklappbare Zeile pro Aktie mit Split-Zähler, Splits absteigend nach Datum; Aktien mit nur einem Split zeigen ihn direkt in der Zeile. Reine Rendering-Änderung (v2.13.18–19: Aufklapp-Pfeil vergrößert) |
 | 2.8.13 / 2.13.16 | Split-Vorschläge: nach Auswahl einer Aktie im Split-Dialog werden historische Splits automatisch von Yahoo Finance geladen (neue Route `GET /api/splits/suggest`, `chart`-Endpoint mit `events=splits`) — einzeln an-/abwählbar, Datum und Faktor korrigierbar, bereits erfasste als vorhanden markiert, Übernahme nur nach Bestätigung; bei XETRA-Zweitlistings Abfrage über das Original-Listing. Reverse Splits (Faktor < 1, z.B. 1:6) werden jetzt unterstützt — vorher hätte die int-Konvertierung solche Faktoren stillschweigend gekappt |
 | 2.8.12 / 2.13.15 | „Kurse aktualisieren" zeigt jetzt einen Fortschrittsbalken mit Aktienname und Zähler in einem eigenen Modal, analog zur ATH-Prüfung. Im Bestand meldet das Backend den Fortschritt des laufenden Refreshs über eine neue Route `GET /api/stocks/refresh-progress` (In-Memory-Zähler in `_fetch_prices`, nur beim manuellen Refresh aktiv — der Scheduler bleibt unberührt, ebenso die Refresh-Semantik: weiterhin ein Verlaufseintrag, 🛒/⚖️ in Alarmen intakt); in Watchlists speist die bestehende Frontend-Schleife den Balken direkt |
