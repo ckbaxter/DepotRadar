@@ -289,13 +289,17 @@ Das ⚖️-Symbol markiert Aktien aus Sektoren, die im Bestand unterrepräsentie
 
 ## Aktiensplits
 
-Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen → Aktiensplits** verwaltet.
+Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen → Aktiensplits** verwaltet. Die Liste gruppiert nach Aktie — Antippen einer Zeile klappt die einzelnen Splits auf.
 
-**Split hinzufügen:**
+**Split hinzufügen (mit Vorschlägen):**
 1. Einstellungen öffnen → „+ Split hinzufügen"
 2. Aktie aus dem eigenen Bestand suchen und auswählen
-3. Datum und Faktor (z.B. `10` für 10:1) eingeben
-4. Speichern
+3. Historische Splits werden automatisch von Yahoo Finance geladen und als Vorschläge angezeigt — einzeln an-/abwählbar, Datum und Faktor vor dem Übernehmen korrigierbar; bereits erfasste Splits sind als vorhanden markiert
+4. „Ausgewählte übernehmen" — oder alternativ Datum und Faktor manuell eintragen und speichern
+
+**Reverse Splits** (Aktienzusammenlegungen) werden unterstützt: Faktor < 1 eingeben, z.B. `0,1667` für eine 1:6-Zusammenlegung. Die Anzeige erfolgt entsprechend als `1:6`.
+
+Bei XETRA-Zweitlistings werden die Vorschläge automatisch über das Original-Listing abgefragt (z.B. NVDA statt des .DE-Tickers), da Yahoo Split-Daten dort zuverlässiger liefert.
 
 -----
 
@@ -351,6 +355,8 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.13 / 2.13.17–19 | Split-Liste gruppiert nach Aktie: eine aufklappbare Zeile pro Aktie mit Split-Zähler, Splits absteigend nach Datum; Aktien mit nur einem Split zeigen ihn direkt in der Zeile. Reine Rendering-Änderung (v2.13.18–19: Aufklapp-Pfeil vergrößert) |
+| 2.8.13 / 2.13.16 | Split-Vorschläge: nach Auswahl einer Aktie im Split-Dialog werden historische Splits automatisch von Yahoo Finance geladen (neue Route `GET /api/splits/suggest`, `chart`-Endpoint mit `events=splits`) — einzeln an-/abwählbar, Datum und Faktor korrigierbar, bereits erfasste als vorhanden markiert, Übernahme nur nach Bestätigung; bei XETRA-Zweitlistings Abfrage über das Original-Listing. Reverse Splits (Faktor < 1, z.B. 1:6) werden jetzt unterstützt — vorher hätte die int-Konvertierung solche Faktoren stillschweigend gekappt |
 | 2.8.12 / 2.13.15 | „Kurse aktualisieren" zeigt jetzt einen Fortschrittsbalken mit Aktienname und Zähler in einem eigenen Modal, analog zur ATH-Prüfung. Im Bestand meldet das Backend den Fortschritt des laufenden Refreshs über eine neue Route `GET /api/stocks/refresh-progress` (In-Memory-Zähler in `_fetch_prices`, nur beim manuellen Refresh aktiv — der Scheduler bleibt unberührt, ebenso die Refresh-Semantik: weiterhin ein Verlaufseintrag, 🛒/⚖️ in Alarmen intakt); in Watchlists speist die bestehende Frontend-Schleife den Balken direkt |
 | 2.8.11 / 2.13.14 | Der 🛒-Nachkauf-Filter erscheint nicht mehr in Watchlists — er setzt Einstandskurs und Stückzahl voraus, die Watchlist-Aktien nicht haben, und lieferte dort zwangsläufig kein Ergebnis. Zugehöriger Bugfix: lieferte ein Filter keine Treffer, blieb die Tabelle kommentarlos leer, weil die Leer-Prüfung in `renderTable` vor allen Filtern lief — betraf Suche, ATH-Karten, Sektor- und Nachkauf-Filter gleichermaßen. Jetzt „Keine Treffer" mit Angabe der aktiven Filter und Zurücksetzen-Knopf (`showEmptyState()`, `activeFilterNames()`, `clearAllFilters()`) |
 | 2.8.11 / 2.13.13 | Code-Cleanup: Standardwert der Nachkauf-Schwelle (30%) und deren Grenzen (0–50%) lagen an sieben Stellen einzeln im Code — jetzt `_NACHKAUF_THRESHOLD_DEFAULT/_MIN/_MAX` im Backend und `NACHKAUF_THRESHOLD_DEFAULT/_MIN/_MAX` im Frontend. Die min/max-Grenzen des Schiebereglers werden aus der Konstante gesetzt statt zusätzlich als HTML-Attribute gepflegt — keine funktionale Änderung |
