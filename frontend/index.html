@@ -4495,6 +4495,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.13.32 · Backend v2.8.15",
+    changes: [
+      "Doku-Bugfix im System-Status-Modal: der Hinweis „Statistiken werden bei App-Neustart zurückgesetzt\" stand direkt neben den kumulierten Yahoo-Call-Zahlen (Refreshes gesamt, Yahoo-Calls gesamt/fehlgeschlagen, Cache-Treffer kumuliert) — diese werden aber seit Einführung von health.json persistiert und überstehen einen Neustart. Nur das Fehler-Log (letzte 20 Yahoo-Fehler) ist tatsächlich In-Memory und wird zurückgesetzt; Text entsprechend präzisiert"
+    ]
+  },
+  {
+    label: "Juli 2026",
     versions: "Frontend v2.13.31 · Backend v2.8.15",
     changes: [
       "Bugfix Split-Vorschläge: „Ausgewählte übernehmen\" erscheint jetzt nur noch, wenn tatsächlich mindestens ein neuer Split zur Auswahl steht — vorher blieb der Button auch ohne Yahoo-Treffer sichtbar und klickbar"
@@ -5038,7 +5045,7 @@ async function openHealthModal(){
         ${errItems}
       </div>
       <div style="font-size:10px;color:var(--muted);text-align:center;margin-top:10px">
-        Statistiken werden bei App-Neustart zurückgesetzt · Yahoo-Calls: ${(d.total_yahoo_calls||0).toLocaleString("de-DE")} gesamt, ${d.failed_yahoo_calls||0} fehlgeschlagen
+        Fehler-Log wird bei App-Neustart zurückgesetzt · Yahoo-Calls: ${(d.total_yahoo_calls||0).toLocaleString("de-DE")} gesamt, ${d.failed_yahoo_calls||0} fehlgeschlagen
       </div>`;
   } catch(e) {
     document.getElementById("healthBody").innerHTML =
@@ -6427,7 +6434,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.31 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.32 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
