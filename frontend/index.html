@@ -1430,7 +1430,7 @@ http://depotradar.example.lan</div>
                 Gefundene Splits (Yahoo Finance) — auswählen, bei Bedarf korrigieren:</div>
               <div id="splitSuggestList" style="display:flex;flex-direction:column;gap:6px"></div>
               <div style="display:flex;justify-content:flex-end;margin-top:8px">
-                <button class="btn btn-primary btn-sm" onclick="applySplitSuggestions()">Ausgewählte übernehmen</button>
+                <button id="splitSuggestApplyBtn" class="btn btn-primary btn-sm" onclick="applySplitSuggestions()" style="display:none">Ausgewählte übernehmen</button>
               </div>
               <div style="font-size:11px;color:var(--muted);margin-top:8px">
                 Oder manuell eintragen:</div>
@@ -4495,6 +4495,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.13.31 · Backend v2.8.15",
+    changes: [
+      "Bugfix Split-Vorschläge: „Ausgewählte übernehmen\" erscheint jetzt nur noch, wenn tatsächlich mindestens ein neuer Split zur Auswahl steht — vorher blieb der Button auch ohne Yahoo-Treffer sichtbar und klickbar"
+    ]
+  },
+  {
+    label: "Juli 2026",
     versions: "Frontend v2.13.30 · Backend v2.8.15",
     changes: [
       "Hinweis im Einstellungen-Modal ergänzt, dass die dortigen Einstellungen global für alle Benutzer gelten"
@@ -6292,6 +6299,7 @@ async function loadSplitSuggestions(ticker, isin){
   const list = document.getElementById("splitSuggestList");
   box.style.display = "block";
   list.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 0">Suche Splits bei Yahoo Finance…</div>';
+  document.getElementById("splitSuggestApplyBtn").style.display = "none";
   _splitSuggestions = [];
   try {
     const r = await fetch(`${API}/splits/suggest?ticker=${encodeURIComponent(ticker)}&isin=${encodeURIComponent(isin)}`);
@@ -6301,15 +6309,20 @@ async function loadSplitSuggestions(ticker, isin){
     renderSplitSuggestions(data.source_ticker !== data.ticker ? data.source_ticker : null);
   } catch(e){
     list.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:4px 0">Vorschläge nicht verfügbar (${esc(e.message)}) — manuelle Eingabe unten möglich</div>`;
+    document.getElementById("splitSuggestApplyBtn").style.display = "none";
   }
 }
 
 function renderSplitSuggestions(sourceTicker){
   const list = document.getElementById("splitSuggestList");
+  const applyBtn = document.getElementById("splitSuggestApplyBtn");
   if(!_splitSuggestions.length){
     list.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 0">Keine historischen Splits bei Yahoo gefunden</div>';
+    applyBtn.style.display = "none";
     return;
   }
+  const hasSelectable = _splitSuggestions.some(s => !s.exists);
+  applyBtn.style.display = hasSelectable ? "" : "none";
   const srcHint = sourceTicker
     ? `<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Abgefragt über Original-Listing ${esc(sourceTicker)}</div>` : "";
   list.innerHTML = srcHint + _splitSuggestions.map((s, i) => `
@@ -6414,7 +6427,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.30 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.31 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
