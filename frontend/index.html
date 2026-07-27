@@ -1853,9 +1853,31 @@ function applyViewUiState(){
   if(buyBtn) buyBtn.style.display = wl ? "none" : "";
 }
 
+// Leert die komplette Ansicht, wenn dem eingeloggten User kein Depot (und keine
+// aktive Watchlist) zugeordnet ist. Ohne diesen Aufruf blieben nach einem
+// User-Wechsel Tabelle/Karten, Übersichten und Verlaufschart des vorherigen
+// Users einfach stehen (reiner Anzeige-Bug — geladen wurden für den neuen User
+// nie fremde Daten, die alten DOM-Inhalte wurden nur nicht zurückgesetzt).
+function renderEmptyView(){
+  stocksCache = []; _lastStocksForTreemap = [];
+  ["sc-total","sc-green","sc-yellow","sc-orange","sc-red"].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.textContent="—";
+  });
+  const psw=document.getElementById("portfolioSummaryWrap"); if(psw) psw.style.display="none";
+  const sow=document.getElementById("sectorOverviewWrap");   if(sow) sow.style.display="none";
+  const snap=document.getElementById("snapshotSection");     if(snap) snap.style.display="none";
+  const vs=document.getElementById("viewSelect");            if(vs)  vs.style.display="none";
+  const athBtn=document.getElementById("athCheckBtn");       if(athBtn) athBtn.style.display="none";
+  const lu=document.getElementById("lastUpdate");            if(lu)  lu.textContent="";
+  const title=document.getElementById("viewTitle");          if(title) title.textContent="—";
+  const budgetEl=document.getElementById("depotBudgetInfo"); if(budgetEl) budgetEl.textContent="";
+  showEmptyState("🗂", "Kein Depot vorhanden",
+    "Lege über den ＋-Button in der Tab-Leiste ein Depot oder eine Watchlist an.", false);
+}
+
 // ── Load stocks based on current view ───────────────────────────
 async function loadCurrentStocks(){
-  if(!isWl() && !activeDepot) return;
+  if(!isWl() && !activeDepot){ renderEmptyView(); return; }
   // Watchlists haben keine eigene Nachkauf-Schwelle (siehe _refresh_watchlist im
   // Backend) — dort gilt der feste Standardwert 30, sonst die Schwelle des Depots.
   _buyThreshold = isWl() ? NACHKAUF_THRESHOLD_DEFAULT
@@ -3387,8 +3409,10 @@ window.addEventListener("resize", () => {
 });
 
 function renderSnapshotSection(){
-  if(!activeDepot) return;
   const sec  = document.getElementById("snapshotSection");
+  // Kein aktives Depot (z.B. User ohne Depots nach User-Wechsel): Chart des
+  // vorherigen Users ausblenden statt es kommentarlos stehen zu lassen.
+  if(!activeDepot){ sec.style.display = "none"; return; }
   if(isWl()){ sec.style.display = "none"; return; }
   const did  = activeDepot.id;
   const data = _snapshots.filter(s => s.depots && s.depots[did] && s.depots[did].value);
@@ -4318,16 +4342,20 @@ async function saveEditUser(userId){
 }
 
 // Depot-Filterung nach aktivem User
+// Strikte Filterung (seit v2.13.29): ein eingeloggter User sieht ausschließlich
+// die ihm zugeordneten Depots. Der frühere Fallback „leere/fehlende Liste = alle"
+// war eine Altlast und ließ frisch angelegte User ohne Zuordnung ALLE Depots
+// sehen. null (= ungefiltert) gibt es nur noch ohne eingeloggten User.
 function getUserDepotIds(){
-  if(!activeUser || !activeUser.depots?.length) return null; // null = alle
-  return activeUser.depots;
+  if(!activeUser) return null;
+  return activeUser.depots || [];
 }
 
 // Watchlist-Filterung nach aktivem User — analog zu getUserDepotIds, seit Watchlists
 // direkt Usern zugeordnet sind (statt indirekt über ein Eltern-Depot)
 function getUserWatchlistIds(){
-  if(!activeUser || !activeUser.watchlists?.length) return null; // null = alle
-  return activeUser.watchlists;
+  if(!activeUser) return null;
+  return activeUser.watchlists || [];
 }
 
 // ── Verlauf ───────────────────────────────────────────────────────
@@ -4464,8 +4492,10 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
-    versions: "Frontend v2.13.27 · Backend v2.8.15",
+    versions: "Frontend v2.13.29 · Backend v2.8.15",
     changes: [
+      "Sicherheits-Bugfix: Benutzer mit leerer Depot-/Watchlist-Zuordnung sahen sämtliche Depots und Watchlisten aller Benutzer — ein Altlast-Fallback („keine Zuordnung = alles sichtbar\") aus der Zeit vor der User-Zuordnung. Die Filterung ist jetzt strikt: jeder sieht ausschließlich die ihm zugeordneten Depots und Watchlisten, eine leere Zuordnung ergibt eine leere Ansicht",
+      "Bugfix: Meldet sich ein Benutzer ohne zugeordnete Depots an (z.B. frisch angelegter User), blieben Tabelle, Übersichten und Verlaufschart des vorherigen Benutzers sichtbar. Die Ansicht wird jetzt vollständig geleert und zeigt einen Hinweis, über ＋ ein Depot oder eine Watchlist anzulegen — fremde Daten wurden dabei nie geladen, es war ein reiner Anzeigefehler",
       "Anzahl und Einstandskurs können jetzt manuell erfasst werden: optional direkt beim Hinzufügen einer Aktie (nur Bestand) und nachträglich über den ✎-Button, der zum allgemeinen „Aktie bearbeiten\"-Modal erweitert wurde — der bisherige Handelsplatz-Wechsel liegt dort jetzt in einem Aufklapper. In Parqet-verbundenen Depots warnt das Modal deutlich, dass der nächste Parqet-Sync manuell geänderte Werte wieder überschreibt",
       "Das P-Badge am Aktiennamen zeigt jetzt die tatsächliche Herkunft an (neues Feld parqet_synced): es erscheint nur noch, wenn Einstandskurs/Stückzahl wirklich von Parqet stammen — manuell erfasste oder geänderte Werte tragen kein P. Bestehende Parqet-Positionen erhalten das Badge mit dem nächsten Sync zurück"
     ]
@@ -6374,7 +6404,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.27 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.29 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
