@@ -4495,6 +4495,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.13.33 · Backend v2.8.15",
+    changes: [
+      "Bugfix: Der Link „Weitere Infos in der Hilfe →\" im Sync-Info-Aufklapper öffnete beim Parqet-Status fälschlich den Abschnitt „📋 Watchlists\" statt „🔗 Parqet — nach der Ersteinrichtung\" (falscher Index beim Aufklappen)"
+    ]
+  },
+  {
+    label: "Juli 2026",
     versions: "Frontend v2.13.32 · Backend v2.8.15",
     changes: [
       "Doku-Bugfix im System-Status-Modal: der Hinweis „Statistiken werden bei App-Neustart zurückgesetzt\" stand direkt neben den kumulierten Yahoo-Call-Zahlen (Refreshes gesamt, Yahoo-Calls gesamt/fehlgeschlagen, Cache-Treffer kumuliert) — diese werden aber seit Einführung von health.json persistiert und überstehen einen Neustart. Nur das Fehler-Log (letzte 20 Yahoo-Fehler) ist tatsächlich In-Memory und wird zurückgesetzt; Text entsprechend präzisiert"
@@ -5392,7 +5399,7 @@ async function loadParqetStatus(depotId){
           Nach dem ersten Verbinden einmalig ausführen um alle Positionen zu importieren.
           Danach nach jeder Änderung in deinem Parqet-Portfolio — z.B. nach einem Kauf,
           Verkauf oder Split.<br><br>
-          <span onclick="closeModal(document.querySelector('.overlay[style*=flex]')?.id);openHelpModal();setTimeout(()=>{document.querySelectorAll('#helpModal details').forEach((d,i)=>d.open=i===9)},100)"
+          <span onclick="closeModal(document.querySelector('.overlay[style*=flex]')?.id);openHelpModal();setTimeout(()=>{document.querySelectorAll('#helpModal details').forEach((d,i)=>d.open=i===16)},100)"
                 style="color:var(--accent);cursor:pointer;text-decoration:underline">
             Weitere Infos in der Hilfe →
           </span>
@@ -6434,7 +6441,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.32 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.33 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
