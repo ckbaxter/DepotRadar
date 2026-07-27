@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.13"
+VERSION           = "2.8.15"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2248,6 +2248,10 @@ def parqet_sync(depot_id):
                 match["buy_price_eur"] = new_price
                 match["shares"]        = new_shares
                 match["isin"]          = isin
+                # Herkunfts-Flag (v2.8.15): Werte kommen von Parqet → P-Badge im Frontend.
+                # Bewusst auch bei unveränderten Werten gesetzt, damit Bestandsdaten aus
+                # der Zeit vor dem Flag es beim nächsten Sync nachgezogen bekommen.
+                match["parqet_synced"] = True
                 if actually_changed:
                     # Detailzeile für den Verlauf: nur die Felder, die sich tatsächlich geändert haben
                     parts = []
@@ -2308,6 +2312,7 @@ def parqet_apply_mismatch(depot_id):
         match     = next((s for s in stocks if s.get("isin") == isin), None)
         if not match: return jsonify({"error": "Nicht gefunden"}), 404
         match["buy_price_eur"] = buy_price; match["shares"] = round(shares, 6)
+        match["parqet_synced"] = True  # Werte kommen von Parqet (siehe v2.8.15)
         save_stocks(depot_id, stocks)
     return jsonify({"ok": True})
 
@@ -2350,7 +2355,8 @@ def parqet_import_bulk(depot_id):
                 stock = _make_stock(data, {
                     "ticker": ticker, "name": item.get("name",""), "exchange": item.get("exchange",""),
                     "isin": item.get("isin",""), "buy_price_eur": item.get("buy_price_eur"),
-                    "shares": item.get("shares"), "last_notified_block": 0
+                    "shares": item.get("shares"), "last_notified_block": 0,
+                    "parqet_synced": True  # Werte kommen von Parqet (siehe v2.8.15)
                 })
                 stocks.append(stock)
                 existing_ticker.add(ticker.upper())
@@ -2839,6 +2845,22 @@ def delete_watchlist(wl_id):
     if changed: save_users(users)
     return jsonify({"ok": True})
 
+def _parse_position_value(val, decimals):
+    """Validiert eine manuelle Positionsangabe (Anzahl bzw. Einstandskurs) aus einem
+    Request-Body. None oder leerer String → None (Feld nicht gesetzt bzw. löschen),
+    sonst positive Zahl, gerundet auf `decimals` Nachkommastellen (gleiche Rundung
+    wie die Änderungserkennung im Parqet-Sync: 4 beim Preis, 6 bei der Stückzahl).
+    Deutsches Komma wird akzeptiert. Wirft ValueError bei ungültigem Wert."""
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return None
+    try:
+        num = float(str(val).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        raise ValueError("keine gültige Zahl")
+    if not math.isfinite(num) or num <= 0:
+        raise ValueError("muss größer 0 sein")
+    return round(num, decimals)
+
 # ── Stocks (Bestand) ──────────────────────────────────────────────
 @app.route("/api/stocks", methods=["GET"])
 def api_get_stocks():
@@ -2854,6 +2876,13 @@ def api_add_stock():
     isin     = body.get("isin", "").strip()
     if not did or not ticker or not name:
         return jsonify({"error": "depot, ticker, name erforderlich"}), 400
+    # Optionale manuelle Positionsangaben (v2.8.14) — Validierung vor dem Lock
+    # und vor dem Yahoo-Call, damit ein Tippfehler nicht erst nach dem Laden auffällt.
+    try:
+        shares    = _parse_position_value(body.get("shares"), 6)
+        buy_price = _parse_position_value(body.get("buy_price_eur"), 4)
+    except ValueError as e:
+        return jsonify({"error": f"Ungültige Positionsangabe: {e}"}), 400
     with depot_lock(did):
         stocks = load_stocks(did)
         if any(s["ticker"] == ticker for s in stocks):
@@ -2866,6 +2895,8 @@ def api_add_stock():
         except Exception as e: return jsonify({"error": str(e)}), 502
         stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
                  "isin": isin, "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
+        if shares    is not None: stock["shares"]        = shares
+        if buy_price is not None: stock["buy_price_eur"] = buy_price
         stocks.append(stock); save_stocks(did, stocks); return jsonify(stock), 201
 
 @app.route("/api/stocks/<ticker>", methods=["DELETE"])
@@ -2959,9 +2990,21 @@ def patch_stock(depot_id, ticker):
         if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
         # Erlaubte Felder die per PATCH gesetzt werden dürfen
         ALLOWED = {"bought_levels", "notes", "sector", "ath_alert_enabled"}
+        # Manuelle Positionsangaben (v2.8.14): validiert, explizites null/"" löscht den Wert.
+        # Achtung: in Parqet-verbundenen Depots überschreibt der nächste Sync diese Felder
+        # wieder mit den Parqet-Daten (bewusste Entscheidung, das Frontend warnt davor).
+        POSITION_FIELDS = {"shares": 6, "buy_price_eur": 4}
         for key, val in body.items():
             if key in ALLOWED:
                 stock[key] = val
+            elif key in POSITION_FIELDS:
+                try:
+                    stock[key] = _parse_position_value(val, POSITION_FIELDS[key])
+                    # Manuell geändert → Werte stammen nicht (mehr) von Parqet;
+                    # der nächste Sync setzt das Flag ggf. wieder (und überschreibt die Werte)
+                    stock["parqet_synced"] = False
+                except ValueError as e:
+                    return jsonify({"error": f"Ungültiger Wert für {key}: {e}"}), 400
         save_stocks(depot_id, stocks)
         return jsonify(stock)
 
