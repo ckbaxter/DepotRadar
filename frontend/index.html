@@ -646,6 +646,19 @@ select</style>
         <div id="selectedName" style="font-weight:600"></div>
         <div id="selectedTicker" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
       </div>
+      <!-- Optionale Positionsangaben — nur im Bestand, nicht in Watchlists (v2.13.25) -->
+      <div id="addPositionFields" style="display:none;margin-top:12px">
+        <div style="display:flex;gap:10px">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label class="form-label">Anzahl <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <input class="form-input" id="addShares" type="text" inputmode="decimal" placeholder="z.B. 10" autocomplete="off"/>
+          </div>
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label class="form-label">Einstand (EUR) <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <input class="form-input" id="addBuyPrice" type="text" inputmode="decimal" placeholder="z.B. 95,50" autocomplete="off"/>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('addModal')">Abbrechen</button>
@@ -981,7 +994,7 @@ select</style>
       <details class="help-section">
         <summary class="help-summary"><span class="parqet-badge" style="font-size:11px;margin-right:2px">P</span> Badge</summary>
         <div class="help-body">
-          Aktien mit einem <span class="parqet-badge">P</span> wurden über Parqet importiert.
+          Aktien mit einem <span class="parqet-badge">P</span> haben Einstandskurs und Stückzahl aus Parqet. Werden die Werte manuell geändert, verschwindet das P — bis der nächste Parqet-Sync sie wieder überschreibt.
           Einstandskurs und Stückzahl stammen aus deinem Parqet-Portfolio und werden bei jedem
           Sync aktualisiert.
         </div>
@@ -1116,7 +1129,7 @@ select</style>
             </div>
             <div class="help-btn-row">
               <span class="help-btn-icon">✎</span>
-              <span>Handelsplatz wechseln — tauscht den Ticker z.B. von NASDAQ auf XETRA. Nützlich wenn Yahoo Finance für einen bestimmten Handelsplatz bessere oder aktuellere Kursdaten liefert</span>
+              <span>Aktie bearbeiten — Anzahl und Einstandskurs manuell ändern (in Parqet-verbundenen Depots werden diese beim nächsten Sync wieder überschrieben) sowie den Handelsplatz wechseln, also den Ticker z.B. von NASDAQ auf XETRA tauschen, wenn Yahoo Finance dort bessere Kursdaten liefert</span>
             </div>
             <div class="help-btn-row">
               <span class="help-btn-icon" style="font-size:12px">→🔍</span>
@@ -1588,36 +1601,65 @@ http://depotradar.example.lan</div>
   </div>
 </div>
 
-<!-- Modal: Handelsplatz wechseln -->
+<!-- Modal: Aktie bearbeiten (bis v2.13.24 nur Handelsplatz wechseln — Element-IDs "ct…"
+     und die Modal-ID bewusst beibehalten) -->
 <div class="overlay" id="changeTickerModal" style="display:none" onclick="closeIfOverlay(event,'changeTickerModal')">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:480px">
     <div class="modal-header">
-      <span class="modal-title">&#9998; Handelsplatz wechseln</span>
+      <span class="modal-title">&#9998; Aktie bearbeiten</span>
       <button class="close-btn" onclick="closeModal('changeTickerModal')">&#215;</button>
     </div>
     <div class="modal-body">
-      <div id="ctXetraSuggestion" style="display:none;margin-bottom:14px;padding:12px 14px;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.25);border-radius:8px">
-        <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:6px">&#127482; XETRA EMPFOHLEN</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <div>
-            <span id="ctXetraName" style="font-weight:600;font-size:13px"></span>
-            <span id="ctXetraTicker" style="font-size:12px;color:var(--muted);margin-left:6px"></span>
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="applyXetraSuggestion()">Übernehmen</button>
+      <div id="ctStockName" style="font-weight:600"></div>
+      <div id="ctStockTicker" style="font-size:12px;color:var(--muted);margin:2px 0 14px"></div>
+
+      <!-- Abschnitt: Position (Anzahl / Einstandskurs) -->
+      <div style="font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Position</div>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Anzahl</label>
+          <input class="form-input" id="ctShares" type="text" inputmode="decimal" placeholder="z.B. 10" autocomplete="off"/>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Einstandskurs (EUR)</label>
+          <input class="form-input" id="ctBuyPrice" type="text" inputmode="decimal" placeholder="z.B. 95,50" autocomplete="off"/>
         </div>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Oder manuell suchen:</div>
-      <input class="form-input" id="ctSearchInput" placeholder="Name, Ticker oder ISIN …" autocomplete="off"/>
-      <div id="ctSearchResults" style="margin-top:6px"></div>
-      <div id="ctSelected" style="display:none;margin-top:10px;padding:10px 14px;background:var(--bg3);border:1px solid var(--accent);border-radius:8px">
-        <div id="ctSelectedName" style="font-weight:600"></div>
-        <div id="ctSelectedTicker" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      <div id="ctParqetWarn" style="display:none;margin:2px 0 12px;padding:10px 12px;background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.4);border-radius:8px;font-size:12px;line-height:1.5">
+        <span style="font-weight:600;color:var(--orange)">&#9888; Parqet-Sync aktiv</span><br>
+        Dieses Depot ist mit Parqet verbunden — manuell geänderte Anzahl und Einstandskurse werden
+        beim nächsten Parqet-Sync wieder mit den Parqet-Daten überschrieben.
+      </div>
+
+      <!-- Abschnitt: Handelsplatz (eingeklappt, Suche startet erst beim Aufklappen) -->
+      <button type="button" class="btn btn-ghost" onclick="toggleCtExchange()"
+              style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+        <span>Handelsplatz wechseln</span><span id="ctExchArrow">&#9656;</span>
+      </button>
+      <div id="ctExchSection" style="display:none;margin-top:12px">
+        <div id="ctXetraSuggestion" style="display:none;margin-bottom:14px;padding:12px 14px;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.25);border-radius:8px">
+          <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:6px">&#127482; XETRA EMPFOHLEN</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div>
+              <span id="ctXetraName" style="font-weight:600;font-size:13px"></span>
+              <span id="ctXetraTicker" style="font-size:12px;color:var(--muted);margin-left:6px"></span>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="applyXetraSuggestion()">Übernehmen</button>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Oder manuell suchen:</div>
+        <input class="form-input" id="ctSearchInput" placeholder="Name, Ticker oder ISIN …" autocomplete="off"/>
+        <div id="ctSearchResults" style="margin-top:6px"></div>
+        <div id="ctSelected" style="display:none;margin-top:10px;padding:10px 14px;background:var(--bg3);border:1px solid var(--accent);border-radius:8px">
+          <div id="ctSelectedName" style="font-weight:600"></div>
+          <div id="ctSelectedTicker" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:10px">Beim Handelsplatz-Wechsel bleiben Einstandskurs, Stückzahl &amp; ISIN erhalten.</div>
       </div>
     </div>
     <div class="modal-footer">
-      <div style="font-size:11px;color:var(--muted);flex:1">Einstandskurs, Stückzahl &amp; ISIN bleiben erhalten.</div>
       <button class="btn btn-ghost" onclick="closeModal('changeTickerModal')">Abbrechen</button>
-      <button class="btn btn-primary" id="ctConfirmBtn" onclick="confirmChangeTicker()" disabled>Speichern</button>
+      <button class="btn btn-primary" id="ctConfirmBtn" onclick="confirmEditStock()" disabled>Speichern</button>
     </div>
   </div>
 </div>
@@ -2671,12 +2713,12 @@ function renderTable(stocks){
          ${moveBtn(s.ticker)}
          <button class="icon-btn" onclick="wlDeleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="Entfernen">&#128465;</button>`
       : `<button class="icon-btn" onclick="refreshOne('${s.ticker}','${did}',this)" title="Aktualisieren">&#8635;</button>
-         <button class="icon-btn" onclick="openChangeTickerModal('${s.ticker}')" title="Handelsplatz wechseln" style="font-size:12px">&#9998;</button>
+         <button class="icon-btn" onclick="openEditStockModal('${s.ticker}')" title="Bearbeiten" style="font-size:16px">&#9998;</button>
          ${moveToWlBtn}
          <button class="icon-btn" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')" title="Entfernen">&#128465;</button>`;
     return `<tr class="${c.row}">
       <td>
-        <div class="sn stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(nm)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+        <div class="sn stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(nm)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
         <div class="ss">${s.ticker} · ${s.exchange}${s.isin?` · <span class="isin-tag">${s.isin}</span>`:""}</div>
         ${sectorBadgeHtml(s, did, wl, wlId)}
         ${weightBarHtml(s)}
@@ -2722,14 +2764,14 @@ function renderTable(stocks){
          <button class="icon-btn move btn-sm" onclick="moveToDepot('${s.ticker}')">&#8594; Depot</button>
          <button class="icon-btn btn-sm" onclick="wlDeleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')">&#128465;</button>`
       : `<button class="icon-btn btn-sm" onclick="refreshOne('${s.ticker}','${did}',this)">&#8635;</button>
-         <button class="icon-btn btn-sm" onclick="openChangeTickerModal('${s.ticker}')" style="font-size:12px">&#9998;</button>
+         <button class="icon-btn btn-sm" onclick="openEditStockModal('${s.ticker}')" style="font-size:16px">&#9998;</button>
          ${moveToWlBtn2}
          <button class="icon-btn btn-sm" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')">&#128465;</button>`;
     return `<div class="stock-card ${c.row} ${wl?"wl-card":""}">
       <div class="card-top">
         <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
         <div>
-          <div class="card-name stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(s.name)}${s.buy_price_eur?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+          <div class="card-name stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(s.name)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
           <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
           ${sectorBadgeHtml(s, did, wl, wlId)}
           ${weightBarHtml(s, true)}
@@ -2965,6 +3007,9 @@ function openAddModal(){
   document.getElementById("searchInput").value="";
   document.getElementById("searchResults").innerHTML="";
   document.getElementById("selectedInfo").style.display="none";
+  document.getElementById("addPositionFields").style.display="none";
+  document.getElementById("addShares").value="";
+  document.getElementById("addBuyPrice").value="";
   document.getElementById("confirmAddBtn").disabled=true;
   document.getElementById("addModalTitle").textContent=isWl()?`Zu "${activeView.name}" hinzufügen`:`Zu "${activeDepot.name}" hinzufügen`;
   openModal("addModal");
@@ -3017,12 +3062,38 @@ function selectCompany(idx,co){
   document.getElementById("selectedTicker").textContent=co.ticker+" · "+co.exchange;
   document.getElementById("searchResults").innerHTML="";
   document.getElementById("searchInput").value=co.name;
+  // Anzahl/Einstand nur im Bestand anbieten — Watchlist-Aktien haben diese Felder bewusst nicht
+  document.getElementById("addPositionFields").style.display=isWl()?"none":"block";
   document.getElementById("confirmAddBtn").disabled=false;
+}
+
+// ── Manuelle Positionsangaben (Anzahl/Einstand) — geteilte Helfer (v2.13.25) ──
+function parsePositionInput(raw){
+  // Leer → null (nicht gesetzt bzw. löschen); akzeptiert deutsches Komma und
+  // Tausenderpunkte ("1.234,56"); sonst positive Zahl, alles andere → error
+  const v=(raw||"").trim();
+  if(!v) return {value:null};
+  const t=v.includes(",") ? v.replace(/\./g,"").replace(",",".") : v;
+  const num=Number(t);
+  if(!isFinite(num)||num<=0) return {error:true};
+  return {value:num};
+}
+function readPositionInputs(sharesId, priceId){
+  const s=parsePositionInput(document.getElementById(sharesId).value);
+  if(s.error) return {error:"Ungültige Anzahl — bitte eine Zahl größer 0 eingeben"};
+  const p=parsePositionInput(document.getElementById(priceId).value);
+  if(p.error) return {error:"Ungültiger Einstandskurs — bitte eine Zahl größer 0 eingeben"};
+  return {shares:s.value, buyPrice:p.value};
 }
 
 async function confirmAdd(){
   if(!selectedCompany) return;
   if(!isWl() && !activeDepot) return;
+  let pos=null;
+  if(!isWl()){
+    pos=readPositionInputs("addShares","addBuyPrice");
+    if(pos.error){ toast(pos.error,false); return; }
+  }
   const btn=document.getElementById("confirmAddBtn"); btn.disabled=true; btn.textContent="Lade Daten …";
   try {
     let r;
@@ -3031,7 +3102,8 @@ async function confirmAdd(){
         headers:{"Content-Type":"application/json"},body:JSON.stringify(selectedCompany)});
     } else {
       r=await fetch(`${API}/stocks`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({...selectedCompany,depot:activeDepot.id})});
+        body:JSON.stringify({...selectedCompany,depot:activeDepot.id,
+                             shares:pos.shares,buy_price_eur:pos.buyPrice})});
     }
     const data=await r.json(); if(!r.ok) throw new Error(data.error);
     toast(`${selectedCompany.name} hinzugefügt!`); closeModal("addModal"); loadCurrentStocks();
@@ -4391,6 +4463,13 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "Juli 2026",
+    versions: "Frontend v2.13.27 · Backend v2.8.15",
+    changes: [
+      "Anzahl und Einstandskurs können jetzt manuell erfasst werden: optional direkt beim Hinzufügen einer Aktie (nur Bestand) und nachträglich über den ✎-Button, der zum allgemeinen „Aktie bearbeiten\"-Modal erweitert wurde — der bisherige Handelsplatz-Wechsel liegt dort jetzt in einem Aufklapper. In Parqet-verbundenen Depots warnt das Modal deutlich, dass der nächste Parqet-Sync manuell geänderte Werte wieder überschreibt",
+      "Das P-Badge am Aktiennamen zeigt jetzt die tatsächliche Herkunft an (neues Feld parqet_synced): es erscheint nur noch, wenn Einstandskurs/Stückzahl wirklich von Parqet stammen — manuell erfasste oder geänderte Werte tragen kein P. Bestehende Parqet-Positionen erhalten das Badge mit dem nächsten Sync zurück"
+    ]
+  },{
     label: "Juli 2026",
     versions: "Frontend v2.13.24 · Backend v2.8.13",
     changes: [
@@ -5836,31 +5915,71 @@ async function applyRemovalAll(){
   toast(ok === pending.length ? `${ok} Position(en) entfernt` : `${ok} von ${pending.length} entfernt — Fehler siehe Meldung`, ok === pending.length);
 }
 
-// ── Handelsplatz wechseln ─────────────────────────────────────────
+// ── Aktie bearbeiten (Position + Handelsplatz; bis v2.13.24 nur Handelsplatz) ──
 let _ctStock = null;
 let _ctSelected = null;
 let _ctXetraSuggestion = null;
 let _ctSearchTimer = null;
+let _ctExchLoaded = false;   // Handelsplatz-Suche/XETRA-Lookup nur einmal pro Öffnen
+let _ctOrig = {shares:null, buyPrice:null};  // Ausgangswerte für die Änderungserkennung
 
-function openChangeTickerModal(ticker){
-  _ctStock          = stocksCache.find(s => s.ticker === ticker);
-  _ctSelected       = null;
+function openEditStockModal(ticker){
+  _ctStock           = stocksCache.find(s => s.ticker === ticker);
+  _ctSelected        = null;
   _ctXetraSuggestion = null;
+  _ctExchLoaded      = false;
   if(!_ctStock) return;
 
-  // UI zurücksetzen
-  const suggBox = document.getElementById("ctXetraSuggestion");
-  suggBox.style.display = "none";
+  // Kopfzeile
+  document.getElementById("ctStockName").textContent   = _ctStock.name;
+  document.getElementById("ctStockTicker").textContent = `${_ctStock.ticker} · ${_ctStock.exchange||""}`;
+
+  // Position vorbefüllen (Anzeige mit deutschem Komma, Parsing akzeptiert beides)
+  _ctOrig = {shares: _ctStock.shares ?? null, buyPrice: _ctStock.buy_price_eur ?? null};
+  document.getElementById("ctShares").value   = _ctOrig.shares   != null ? String(_ctOrig.shares).replace(".", ",")   : "";
+  document.getElementById("ctBuyPrice").value = _ctOrig.buyPrice != null ? String(_ctOrig.buyPrice).replace(".", ",") : "";
+
+  // Deutliche Warnung bei Parqet-verbundenem Depot: Sync überschreibt manuelle Werte
+  document.getElementById("ctParqetWarn").style.display =
+    activeDepot?.parqet?.connected ? "block" : "none";
+
+  // Handelsplatz-Abschnitt eingeklappt zurücksetzen — Suche startet erst beim Aufklappen,
+  // damit auf dem Smartphone nicht sofort die Tastatur hochspringt
+  document.getElementById("ctExchSection").style.display = "none";
+  document.getElementById("ctExchArrow").innerHTML = "&#9656;";
+  document.getElementById("ctXetraSuggestion").style.display = "none";
   document.getElementById("ctSelected").style.display = "none";
-  document.getElementById("ctConfirmBtn").disabled = true;
-
-  // Suchfeld vorausfüllen
-  const prefill = _ctStock.name || "";
-  document.getElementById("ctSearchInput").value = prefill;
+  document.getElementById("ctSearchInput").value = _ctStock.name || "";
   document.getElementById("ctSearchResults").innerHTML = "";
+  document.getElementById("ctConfirmBtn").disabled = true;
   openModal("changeTickerModal");
+}
 
-  // Immer Suche nach Name auslösen (Ergebnisse im Suchfeld)
+function ctUpdateSaveState(){
+  // Speichern nur aktiv wenn Positionswerte geändert wurden oder ein neuer Handelsplatz gewählt ist
+  const p = readPositionInputs("ctShares","ctBuyPrice");
+  const posChanged = !p.error && !_ctPositionEquals(p, _ctOrig);
+  document.getElementById("ctConfirmBtn").disabled = !(posChanged || _ctSelected);
+}
+
+function _ctPositionEquals(p, orig){
+  // Gleiche Rundung wie Backend/Parqet-Sync: 6 Stellen Anzahl, 4 Stellen Preis
+  const r=(v,d)=> v==null ? null : Number(v.toFixed(d));
+  return r(p.shares,6)===r(orig.shares,6) && r(p.buyPrice,4)===r(orig.buyPrice,4);
+}
+
+function toggleCtExchange(){
+  const sec  = document.getElementById("ctExchSection");
+  const open = sec.style.display === "none";
+  sec.style.display = open ? "block" : "none";
+  document.getElementById("ctExchArrow").innerHTML = open ? "&#9662;" : "&#9656;";
+  if(open && !_ctExchLoaded){ _ctExchLoaded = true; _ctLoadExchangeOptions(); }
+}
+
+function _ctLoadExchangeOptions(){
+  // Bisheriges Öffnen-Verhalten des Handelsplatz-Modals, jetzt lazy beim Aufklappen:
+  // Namens-Suche + dynamischer XETRA-Lookup via ISIN
+  const prefill = _ctStock?.name || "";
   if(prefill){
     setTimeout(async () => {
       document.getElementById("ctSearchInput").focus();
@@ -5883,8 +6002,7 @@ function openChangeTickerModal(ticker){
     }, 150);
   }
 
-  // Dynamischer XETRA-Lookup via ISIN (falls vorhanden) → Suggestion-Box befüllen
-  if(_ctStock.isin){
+  if(_ctStock?.isin){
     fetch(`${API}/search?q=${encodeURIComponent(_ctStock.isin)}`)
       .then(r => r.json())
       .then(items => {
@@ -5893,13 +6011,9 @@ function openChangeTickerModal(ticker){
         _ctXetraSuggestion = xetra;
         document.getElementById("ctXetraName").textContent   = xetra.name;
         document.getElementById("ctXetraTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
-        suggBox.style.display = "block";
-        // Direkt vorauswählen
-        _ctSelected = xetra;
-        document.getElementById("ctSelected").style.display = "block";
-        document.getElementById("ctSelectedName").textContent   = xetra.name;
-        document.getElementById("ctSelectedTicker").textContent = `${xetra.ticker} · ${xetra.exchange}`;
-        document.getElementById("ctConfirmBtn").disabled = false;
+        document.getElementById("ctXetraSuggestion").style.display = "block";
+        // Anders als früher NICHT direkt vorauswählen — sonst würde "Speichern" schon
+        // durch bloßes Aufklappen einen Handelsplatz-Wechsel scharf schalten
       })
       .catch(()=>{});
   }
@@ -5911,7 +6025,7 @@ function applyXetraSuggestion(){
   document.getElementById("ctSelected").style.display  = "block";
   document.getElementById("ctSelectedName").textContent   = _ctXetraSuggestion.name;
   document.getElementById("ctSelectedTicker").textContent = `${_ctXetraSuggestion.ticker} · ${_ctXetraSuggestion.exchange}`;
-  document.getElementById("ctConfirmBtn").disabled = false;
+  ctUpdateSaveState();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -5939,6 +6053,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 300);
   });
 
+  // Speichern-Button im Bearbeiten-Modal reagiert live auf Positionsänderungen
+  ["ctShares","ctBuyPrice"].forEach(id=>{
+    document.getElementById(id).addEventListener("input", ctUpdateSaveState);
+  });
+
   document.getElementById("searchInput").addEventListener("input",function(){
     clearTimeout(searchTimer); const q=this.value.trim();
     if(q.length<1){document.getElementById("searchResults").innerHTML="";return;}
@@ -5957,23 +6076,38 @@ function ctSelect(co){
   document.getElementById("ctSelected").style.display  = "block";
   document.getElementById("ctSelectedName").textContent   = co.name;
   document.getElementById("ctSelectedTicker").textContent = `${co.ticker} · ${co.exchange}`;
-  document.getElementById("ctConfirmBtn").disabled = false;
+  ctUpdateSaveState();
 }
 
-async function confirmChangeTicker(){
-  if(!_ctSelected || !_ctStock || !activeDepot) return;
+async function confirmEditStock(){
+  if(!_ctStock || !activeDepot) return;
+  const p = readPositionInputs("ctShares","ctBuyPrice");
+  if(p.error){ toast(p.error,false); return; }
+  const posChanged = !_ctPositionEquals(p, _ctOrig);
+  if(!posChanged && !_ctSelected) return;
   const btn = document.getElementById("ctConfirmBtn");
-  btn.disabled = true; btn.textContent = "Lädt …";
+  btn.disabled = true; btn.textContent = "Speichert …";
   try {
-    const r = await fetch(
-      `${API}/stocks/${_ctStock.ticker}/change-ticker?depot=${activeDepot.id}`,
-      {method:"POST", headers:{"Content-Type":"application/json"},
-       body:JSON.stringify({ticker:_ctSelected.ticker, name:_ctSelected.name, exchange:_ctSelected.exchange})}
-    );
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.error);
+    // Reihenfolge bewusst: erst PATCH (trifft noch den alten Ticker), dann Handelsplatz-
+    // Wechsel — change-ticker erhält die Felder anschließend via _make_stock(data, old)
+    if(posChanged){
+      const r = await fetch(`${API}/depots/${activeDepot.id}/stocks/${_ctStock.ticker}`,
+        {method:"PATCH", headers:{"Content-Type":"application/json"},
+         body:JSON.stringify({shares:p.shares, buy_price_eur:p.buyPrice})});
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.error);
+    }
+    if(_ctSelected){
+      const r = await fetch(
+        `${API}/stocks/${_ctStock.ticker}/change-ticker?depot=${activeDepot.id}`,
+        {method:"POST", headers:{"Content-Type":"application/json"},
+         body:JSON.stringify({ticker:_ctSelected.ticker, name:_ctSelected.name, exchange:_ctSelected.exchange})}
+      );
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.error);
+    }
     closeModal("changeTickerModal");
-    toast(`${_ctStock.ticker} → ${_ctSelected.ticker} ✓`);
+    toast(_ctSelected ? `${_ctStock.ticker} → ${_ctSelected.ticker} ✓` : "Position gespeichert ✓");
     loadCurrentStocks();
   } catch(e){ toast("Fehler: "+e.message, false); }
   finally{ btn.disabled=false; btn.textContent="Speichern"; }
@@ -6240,7 +6374,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.24 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.27 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
