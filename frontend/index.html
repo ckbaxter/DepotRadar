@@ -172,6 +172,42 @@ tr:hover td{background:var(--zebra-hover)!important}
 .sn{font-weight:600}
 .stock-name-link{cursor:pointer}
 .stock-name-link:hover{text-decoration:underline}
+
+/* Werkzeuge: einklappbarer Handle über Aktionsleiste + Sortierung — gleicher
+   Look wie der Oberpunkt-Header der Übersichten (.overview-parent-header),
+   da der vorherige Handle (11-12px, grau) zu unscheinbar war. */
+.toolbar-handle{display:flex;align-items:center;padding:9px 16px;cursor:pointer;
+  user-select:none;gap:8px;font-size:13px;font-weight:700;border-top:1px solid var(--border)}
+.toolbar-handle:hover{color:var(--accent)}
+.toolbar-handle-summary{font-size:12px;font-weight:400;color:var(--muted);margin-left:2px}
+
+/* Kompaktansicht */
+.compact-toolbar{display:flex;align-items:center;gap:10px;padding:8px 4px 10px}
+.compact-count{font-size:11.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:99px;padding:2px 9px}
+.compact-filter{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-left:auto;cursor:pointer;user-select:none}
+.compact-switch{position:relative;width:34px;height:20px;background:var(--bg3);border:1px solid var(--border);border-radius:99px;transition:.15s;flex-shrink:0;display:inline-block}
+.compact-switch.on{background:var(--accent);border-color:var(--accent)}
+.compact-switch::after{content:"";position:absolute;top:1px;left:1px;width:16px;height:16px;background:var(--bg2);border-radius:50%;transition:.15s}
+.compact-switch.on::after{transform:translateX(14px);background:#fff}
+.compact-list{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.compact-header{display:flex;align-items:center;gap:9px;padding:0 10px 6px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.compact-row{display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;background:var(--bg2)}
+.compact-row:nth-child(even){background:var(--zebra)}
+.compact-row:hover{background:var(--zebra-hover)}
+.compact-row+.compact-row{border-top:1px solid var(--border)}
+.compact-row.row-green{box-shadow:inset 3px 0 0 0 var(--green)}
+.compact-row.row-yellow{box-shadow:inset 3px 0 0 0 var(--yellow)}
+.compact-row.row-orange{box-shadow:inset 3px 0 0 0 var(--orange)}
+.compact-row.row-red{box-shadow:inset 3px 0 0 0 var(--red)}
+.compact-ticker{font-weight:600;font-size:13px;width:56px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compact-name{font-size:11.5px;color:var(--muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compact-price{font-size:13px;font-weight:600;width:78px;text-align:right;flex-shrink:0;white-space:nowrap}
+.compact-perf{font-size:11.5px;width:52px;text-align:right;flex-shrink:0}
+.compact-perf.pos{color:var(--green)}
+.compact-perf.neg{color:var(--red)}
+.compact-flags{display:flex;gap:3px;width:44px;justify-content:flex-end;flex-shrink:0}
+.compact-flag{font-size:11px;line-height:1}
+.compact-empty{padding:24px 10px;text-align:center;color:var(--muted);font-size:13px}
 .ss{font-size:11px;color:var(--muted);margin-top:1px}
 .weight-wrap{display:flex;align-items:center;gap:6px;margin-top:3px}
 .overview-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;max-width:min(96vw,2200px);margin-left:auto;margin-right:auto}
@@ -531,6 +567,13 @@ select</style>
                 onclick="openAddModal()">+ Aktie hinzufügen</button>
       </div>
     </div>
+    <!-- Werkzeuge (Aktionsleiste + Sortierung): einklappbar, Default ausgeklappt (seit v2.13.35) -->
+    <div class="toolbar-handle" id="toolbarHandle" onclick="toggleToolbar()">
+      <span id="toolbarChev">▼</span>
+      <span>Werkzeuge</span>
+      <span class="toolbar-handle-summary" id="toolbarHandleSummary" style="display:none"></span>
+    </div>
+    <div id="toolbarBody">
     <!-- Einheitliche Aktionsleiste -->
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px">
       <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn" title="Kurse jetzt abrufen">&#8635; Kurse aktualisieren</button>
@@ -546,6 +589,7 @@ select</style>
           <div class="view-opt active" data-view="table" onclick="setViewMode('table')"><span class="view-opt-ic">☰</span> Tabelle <span class="view-opt-chk">✓</span></div>
           <div class="view-opt" data-view="grid" onclick="setViewMode('grid')"><span class="view-opt-ic">🗂</span> Karten <span class="view-opt-chk">✓</span></div>
           <div class="view-opt" id="viewOptTreemap" data-view="treemap" onclick="setViewMode('treemap')" style="display:none"><span class="view-opt-ic">⊞</span> Treemap <span class="view-opt-chk">✓</span></div>
+          <div class="view-opt" data-view="compact" onclick="setViewMode('compact')"><span class="view-opt-ic">▤</span> Kompakt <span class="view-opt-chk">✓</span></div>
         </div>
       </div>
       <div id="stockSearchWrap" style="position:relative;display:flex;align-items:center;margin-left:auto">
@@ -596,6 +640,7 @@ select</style>
       <button class="sort-btn" id="sb-weight"   onclick="setSortKey('weight')">Gewichtung</button>
       <button class="sort-btn active" id="sb-discount" onclick="setSortKey('discount')">% v.ATH ▲</button>
     </div>
+    </div>
     <div class="tbl-scroll">
       <table>
         <thead><tr>
@@ -618,6 +663,23 @@ select</style>
     <div class="cards-view" id="cardsView"></div>
     <div id="treemapView" style="display:none;padding:10px">
       <div id="treemapCanvas" style="width:100%;height:420px;position:relative;border-radius:10px;overflow:hidden"></div>
+    </div>
+    <div id="compactView" style="display:none">
+      <div class="compact-toolbar">
+        <span class="compact-count" id="compactCount"></span>
+        <label class="compact-filter" title="Nur Aktien mit Auffälligkeit zeigen (ausgelöster Alarm, neues ATH, Diversifikations-Lücke, Nachkauf-Kandidat)">
+          <span>Nur Auffällige</span>
+          <span class="compact-switch" id="compactSwitch" onclick="toggleCompactFilter()"></span>
+        </label>
+      </div>
+      <div class="compact-header">
+        <span class="compact-ticker">Ticker</span>
+        <span class="compact-name">Name</span>
+        <span class="compact-price">Kurs</span>
+        <span class="compact-perf">1T</span>
+        <span class="compact-flags"></span>
+      </div>
+      <div class="compact-list" id="compactList"></div>
     </div>
     <div id="emptyState" style="display:none" class="empty">
       <div class="empty-icon" id="emptyIcon">&#128202;</div>
@@ -1932,6 +1994,14 @@ const NACHKAUF_THRESHOLD_MAX     = 50;
 let _buyFilterActive = false;
 let _buyThreshold    = NACHKAUF_THRESHOLD_DEFAULT;   // wird bei jedem loadCurrentStocks() aus dem Depot gesetzt
 
+// Kompaktansicht: "Nur Auffällige" blendet Positionen ohne Flag aus. Persistiert wie
+// der Ansicht-Modus selbst (localStorage), gilt geräte- und depotübergreifend.
+let _compactOnlyFlagged = localStorage.getItem("depotCompactOnlyFlagged") === "1";
+// Hält den zuletzt gerenderten, bereits gefilterten+sortierten Stocks-Array (nach Suche/
+// Sektor-/Nachkauf-Filter), damit toggleCompactFilter() diese Filter nicht verliert —
+// anders als stocksCache, das den unfilterten Rohbestand des Depots/der Watchlist enthält.
+let _lastStocksForCompact = [];
+
 let _summaryFilter = "all";
 let _stockSearchQuery = "";
 
@@ -2052,6 +2122,69 @@ function markSectorGap(stocks){
     const cnt = s.sector ? (info.counts[s.sector] || 0) : null;
     s._isSectorGap = !!(s.sector && cnt < info.avg * info.factor);
   });
+}
+
+// Kompaktansicht: welche Flags gelten für diese Aktie als "auffällig"?
+// Nutzt ausschließlich bereits vorhandene Felder/Flags (last_notified_block,
+// ath_date, _isSectorGap, _isBuyCandidate) — keine neue Berechnung, kein neues Datenfeld.
+function _todayDDMMYYYY(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`;
+}
+function compactFlags(s){
+  const flags = [];
+  if(s.last_notified_block > 0) flags.push({ic:"📉", title:"Discount-Alarm ausgelöst"});
+  if(s.ath_date === _todayDDMMYYYY()) flags.push({ic:"🎉", title:"Neues Allzeithoch heute"});
+  if(s._isSectorGap) flags.push({ic:"⚖️", title:"Diversifikations-Lücke"});
+  if(s._isBuyCandidate) flags.push({ic:"🛒", title:"Nachkauf-Kandidat"});
+  return flags;
+}
+
+function toggleCompactFilter(){
+  _compactOnlyFlagged = !_compactOnlyFlagged;
+  localStorage.setItem("depotCompactOnlyFlagged", _compactOnlyFlagged ? "1" : "0");
+  document.getElementById("compactSwitch")?.classList.toggle("on", _compactOnlyFlagged);
+  renderCompactList(_lastStocksForCompact);
+}
+
+function renderCompactList(stocks){
+  _lastStocksForCompact = stocks;
+  const list  = document.getElementById("compactList");
+  const count = document.getElementById("compactCount");
+  const sw    = document.getElementById("compactSwitch");
+  if(!list) return;
+  sw?.classList.toggle("on", _compactOnlyFlagged);
+
+  const did  = activeDepot ? activeDepot.id : "";
+  const wl   = isWl();
+  const wlId = activeView.id || "";
+
+  const withFlags = stocks.map(s => ({s, flags: compactFlags(s)}));
+  const visible = _compactOnlyFlagged ? withFlags.filter(x => x.flags.length) : withFlags;
+
+  count.textContent = _compactOnlyFlagged
+    ? `${visible.length} auffällig`
+    : `${stocks.length} Position${stocks.length===1?"":"en"}`;
+
+  if(!visible.length){
+    list.innerHTML = `<div class="compact-empty">Keine auffälligen Positionen.</div>`;
+    return;
+  }
+
+  list.innerHTML = visible.map(({s, flags}) => {
+    const d = disc(s), c = dcls(d);
+    const perfClass = s.perf_1d > 0 ? "pos" : (s.perf_1d < 0 ? "neg" : "");
+    const perfSign  = s.perf_1d > 0 ? "+" : "";
+    const perfTxt   = s.perf_1d != null ? `${perfSign}${s.perf_1d.toFixed(1)}%` : "—";
+    return `<div class="compact-row ${c.row}" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">
+      <span class="compact-ticker">${esc(s.ticker)}</span>
+      <span class="compact-name">${esc(s.name)}</span>
+      <span class="compact-price">${fmtEUR(s.current_eur)}</span>
+      <span class="compact-perf ${perfClass}">${perfTxt}</span>
+      <span class="compact-flags">${flags.slice(0,2).map(f=>`<span class="compact-flag" title="${f.title}">${f.ic}</span>`).join("")}</span>
+    </div>`;
+  }).join("");
 }
 
 function toggleBuyFilter() {
@@ -2638,10 +2771,12 @@ function showEmptyState(icon, title, text, withReset){
   const tblWrap = document.querySelector(".tbl-scroll");
   const cards   = document.getElementById("cardsView");
   const treemap = document.getElementById("treemapView");
+  const compact = document.getElementById("compactView");
   const sortBar = document.getElementById("sortBar");
   if(tblWrap) tblWrap.style.display = "none";
   if(cards){ cards.innerHTML = ""; cards.style.display = "none"; }
   if(treemap) treemap.style.display = "none";
+  if(compact){ document.getElementById("compactList").innerHTML = ""; compact.style.display = "none"; }
   if(sortBar) sortBar.style.display = "none";
 }
 
@@ -2820,7 +2955,9 @@ function renderTable(stocks){
     </div>`;
   }).join("");
 
-  // View-Modus anwenden (Tabelle / Treemap) — nach dem Rendern beider Views
+  renderCompactList(sorted);
+
+  // View-Modus anwenden (Tabelle / Treemap / Kompakt) — nach dem Rendern aller Views
   _applyViewMode();
   if(_viewMode === "treemap" && typeof d3 !== "undefined"){
     // Nächster Frame damit der Canvas bereits im DOM liegt und Breite messbar ist
@@ -4495,6 +4632,16 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
+    versions: "Frontend v2.13.36 · Backend v2.8.15",
+    changes: [
+      "Neue Ansicht „▤ Kompakt\" im Ansicht-Dropdown (Tabelle/Karten/Treemap/Kompakt): eine Zeile pro Aktie mit nur Ticker, Kurs, Tagesperformance und Discount-Farbe. Schalter „Nur Auffällige\" blendet Positionen ohne ausgelösten Discount-Alarm, neues Allzeithoch, Diversifikations-Lücke oder Nachkauf-Kandidat aus. Antippen einer Zeile öffnet unverändert das bestehende Aktien-Detail-Modal",
+      "Kompaktansicht: Tabellenkopf (Ticker/Name/Kurs/1T) ergänzt — fehlte in der ersten Fassung",
+      "Bugfix Kompaktansicht: „Nur Auffällige\" verwarf bisher aktive Suche/Sektor-/Nachkauf-Filter beim Umschalten, da gegen den unfilterten Rohbestand statt gegen die zuletzt gefilterte Liste geprüft wurde",
+      "Werkzeuge (Aktionsleiste + Sortierung) sind jetzt über einen Handle einklappbar — für alle Ansichten, Standard: ausgeklappt. Eingeklappt zeigt der Handle kompakt die aktive Ansicht und Sortierung an. Der Handle nutzt denselben Look wie der Oberpunkt-Header der Übersichten (fett, 13px, ▼/▶) statt der anfangs zu unscheinbaren kleinen grauen Variante"
+    ]
+  },
+  {
+    label: "Juli 2026",
     versions: "Frontend v2.13.33 · Backend v2.8.15",
     changes: [
       "Bugfix: Der Link „Weitere Infos in der Hilfe →\" im Sync-Info-Aufklapper öffnete beim Parqet-Status fälschlich den Abschnitt „📋 Watchlists\" statt „🔗 Parqet — nach der Ersteinrichtung\" (falscher Index beim Aufklappen)"
@@ -5102,6 +5249,32 @@ document.addEventListener("click", ()=>{
   document.getElementById("viewSelectBtn")?.classList.remove("open");
 });
 
+let _toolbarCollapsed = localStorage.getItem("depotToolbarCollapsed") === "1";
+
+function toggleToolbar(){
+  _toolbarCollapsed = !_toolbarCollapsed;
+  localStorage.setItem("depotToolbarCollapsed", _toolbarCollapsed ? "1" : "0");
+  _applyToolbarCollapse();
+}
+
+function _applyToolbarCollapse(){
+  const body   = document.getElementById("toolbarBody");
+  const chev   = document.getElementById("toolbarChev");
+  const summary= document.getElementById("toolbarHandleSummary");
+  if(body) body.style.display = _toolbarCollapsed ? "none" : "";
+  if(chev) chev.textContent   = _toolbarCollapsed ? "▶" : "▼";
+  if(summary){
+    summary.style.display = _toolbarCollapsed ? "inline" : "none";
+    if(_toolbarCollapsed){
+      const viewLabels = {table:"☰ Tabelle", grid:"🗂 Karten", treemap:"⊞ Treemap", compact:"▤ Kompakt"};
+      const sortLabels = {name:"Name", current:"Kurs", ath:"ATH", discount:"% v.ATH", weight:"Gewichtung"};
+      summary.textContent = `${viewLabels[_viewMode]||viewLabels.table} · Sortiert: ${sortLabels[sortKey]||"—"} ${sortDir===1?"▲":"▼"}`;
+    } else {
+      summary.textContent = "";
+    }
+  }
+}
+
 function setViewMode(mode){
   const viewOptTreemap = document.getElementById("viewOptTreemap");
   if(mode === "treemap" && viewOptTreemap && viewOptTreemap.style.display === "none") return;
@@ -5114,7 +5287,7 @@ function setViewMode(mode){
 }
 
 function _updateViewMenuUI(){
-  const labels = {table:"☰ Tabelle", grid:"🗂 Karten", treemap:"⊞ Treemap"};
+  const labels = {table:"☰ Tabelle", grid:"🗂 Karten", treemap:"⊞ Treemap", compact:"▤ Kompakt"};
   const lbl = document.getElementById("viewSelectLabel");
   if(lbl) lbl.textContent = labels[_viewMode] || labels.table;
   document.querySelectorAll(".view-opt").forEach(o=>{
@@ -5126,6 +5299,7 @@ function _applyViewMode(){
   const tblWrap = document.querySelector(".tbl-scroll");
   const cardsView = document.getElementById("cardsView");
   const treemapView = document.getElementById("treemapView");
+  const compactView = document.getElementById("compactView");
   const sortBar = document.getElementById("sortBar");
   const isMobile = window.innerWidth <= 640;
 
@@ -5134,23 +5308,33 @@ function _applyViewMode(){
   if(_viewMode === "treemap"){
     if(tblWrap) tblWrap.style.display = "none";
     if(cardsView) cardsView.style.display = "none";
+    if(compactView) compactView.style.display = "none";
     if(sortBar) sortBar.style.display = "none";
     if(treemapView) treemapView.style.display = "block";
   } else if(_viewMode === "grid"){
     if(tblWrap) tblWrap.style.display = "none";
     if(treemapView) treemapView.style.display = "none";
+    if(compactView) compactView.style.display = "none";
     if(cardsView){
       cardsView.style.display = isMobile ? "block" : "grid";
       if(!isMobile) cardsView.classList.add("grid-mode");
     }
     if(sortBar) sortBar.style.display = "flex";
+  } else if(_viewMode === "compact"){
+    if(tblWrap) tblWrap.style.display = "none";
+    if(cardsView) cardsView.style.display = "none";
+    if(treemapView) treemapView.style.display = "none";
+    if(compactView) compactView.style.display = "block";
+    if(sortBar) sortBar.style.display = "flex";
   } else { // "table" — echte Tabelle, auf Mobile mit horizontalem Scroll (.tbl-scroll unterstützt das bereits)
     if(tblWrap) tblWrap.style.display = "";
     if(cardsView) cardsView.style.display = "none";
     if(treemapView) treemapView.style.display = "none";
+    if(compactView) compactView.style.display = "none";
     if(sortBar) sortBar.style.display = isMobile ? "flex" : "none";
   }
   _updateViewMenuUI();
+  _applyToolbarCollapse();
 }
 
 let _lastStocksForTreemap = [];
@@ -6128,6 +6312,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")({newDepotName:createDepot,newWlName:createWatchlist})[id]();});
   });
   updateHealthStatusDot();
+  _applyToolbarCollapse();
 });
 
 function ctSelect(co){
@@ -6441,7 +6626,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.33 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.36 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
