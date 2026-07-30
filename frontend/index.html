@@ -184,6 +184,9 @@ tr:hover td{background:var(--zebra-hover)!important}
 .compact-toolbar{display:flex;align-items:center;gap:10px;padding:8px 4px 10px}
 .compact-count{font-size:11.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:99px;padding:2px 9px}
 .compact-filter{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-left:auto;cursor:pointer;user-select:none}
+.compact-info-btn{font-size:14px;color:var(--muted);cursor:pointer;padding:0 2px;user-select:none}
+.compact-info-btn:hover{color:var(--accent)}
+.compact-legend{font-size:11.5px;color:var(--muted);padding:0 4px 10px;line-height:1.5}
 .compact-switch{position:relative;width:34px;height:20px;background:var(--bg3);border:1px solid var(--border);border-radius:99px;transition:.15s;flex-shrink:0;display:inline-block}
 .compact-switch.on{background:var(--accent);border-color:var(--accent)}
 .compact-switch::after{content:"";position:absolute;top:1px;left:1px;width:16px;height:16px;background:var(--bg2);border-radius:50%;transition:.15s}
@@ -666,10 +669,14 @@ select</style>
     <div id="compactView" style="display:none">
       <div class="compact-toolbar">
         <span class="compact-count" id="compactCount"></span>
-        <label class="compact-filter" title="Nur Aktien mit Auffälligkeit zeigen (ausgelöster Alarm, neues ATH, Diversifikations-Lücke, Nachkauf-Kandidat)">
+        <label class="compact-filter">
           <span>Nur Auffällige</span>
           <span class="compact-switch" id="compactSwitch" onclick="toggleCompactFilter()"></span>
         </label>
+        <span class="compact-info-btn" id="compactInfoBtn" onclick="toggleCompactLegend()" aria-label="Was bedeutet „Nur Auffällige“?">ⓘ</span>
+      </div>
+      <div class="compact-legend" id="compactLegend" style="display:none">
+        Als auffällig gilt: <b>📉</b> Discount-Alarm ausgelöst · <b>🎉</b> neues Allzeithoch heute · <b>⚖️</b> Diversifikations-Lücke · <b>🛒</b> Nachkauf-Kandidat
       </div>
       <div class="compact-header">
         <span class="compact-ticker">Ticker</span>
@@ -2138,6 +2145,12 @@ function compactFlags(s){
   if(s._isSectorGap) flags.push({ic:"⚖️", title:"Diversifikations-Lücke"});
   if(s._isBuyCandidate) flags.push({ic:"🛒", title:"Nachkauf-Kandidat"});
   return flags;
+}
+
+function toggleCompactLegend(){
+  const legend = document.getElementById("compactLegend");
+  if(!legend) return;
+  legend.style.display = legend.style.display === "none" ? "block" : "none";
 }
 
 function toggleCompactFilter(){
@@ -4631,13 +4644,14 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
-    versions: "Frontend v2.13.37 · Backend v2.8.15",
+    versions: "Frontend v2.13.38 · Backend v2.8.15",
     changes: [
       "Neue Ansicht „▤ Kompakt\" im Ansicht-Dropdown (Tabelle/Karten/Treemap/Kompakt): eine Zeile pro Aktie mit nur Ticker, Kurs, Tagesperformance und Discount-Farbe. Schalter „Nur Auffällige\" blendet Positionen ohne ausgelösten Discount-Alarm, neues Allzeithoch, Diversifikations-Lücke oder Nachkauf-Kandidat aus. Antippen einer Zeile öffnet unverändert das bestehende Aktien-Detail-Modal",
       "Kompaktansicht: Tabellenkopf (Ticker/Name/Kurs/1T) ergänzt — fehlte in der ersten Fassung",
       "Bugfix Kompaktansicht: „Nur Auffällige\" verwarf bisher aktive Suche/Sektor-/Nachkauf-Filter beim Umschalten, da gegen den unfilterten Rohbestand statt gegen die zuletzt gefilterte Liste geprüft wurde",
       "Werkzeuge (Aktionsleiste + Sortierung) sind jetzt über einen Handle einklappbar — für alle Ansichten, Standard: ausgeklappt. Eingeklappt zeigt der Handle kompakt die aktive Ansicht und Sortierung an. Der Handle nutzt denselben Look wie der Oberpunkt-Header der Übersichten (fett, 13px, ▼/▶) statt der anfangs zu unscheinbaren kleinen grauen Variante",
-      "Bugfix Werkzeuge-Handle: Text färbte sich beim Hovern blau (versehentlich ergänzter Hover-Effekt) — entfernt, die Übersichten haben ebenfalls keinen Hover-Farbwechsel, nur den Zeiger-Cursor"
+      "Bugfix Werkzeuge-Handle: Text färbte sich beim Hovern blau (versehentlich ergänzter Hover-Effekt) — entfernt, die Übersichten haben ebenfalls keinen Hover-Farbwechsel, nur den Zeiger-Cursor",
+      "Kompaktansicht: „Nur Auffällige\" war bisher nur per Hover-Tooltip erklärt — auf dem Smartphone unsichtbar, da es dort kein Hover gibt. Neues ⓘ-Icon neben dem Schalter blendet stattdessen eine Legende ein/aus, die erklärt, was als „auffällig\" zählt"
     ]
   },
   {
@@ -6626,7 +6640,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.37 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.38 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
