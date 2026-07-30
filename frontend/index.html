@@ -178,6 +178,7 @@ tr:hover td{background:var(--zebra-hover)!important}
    da der vorherige Handle (11-12px, grau) zu unscheinbar war. */
 .toolbar-handle{display:flex;align-items:center;padding:9px 16px;cursor:pointer;
   user-select:none;gap:8px;font-size:13px;font-weight:700;border-top:1px solid var(--border)}
+.toolbar-handle:hover{color:var(--accent)}
 .toolbar-handle-summary{font-size:12px;font-weight:400;color:var(--muted);margin-left:2px}
 
 /* Kompaktansicht */
@@ -4631,13 +4632,12 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "Juli 2026",
-    versions: "Frontend v2.13.37 · Backend v2.8.15",
+    versions: "Frontend v2.13.36 · Backend v2.8.15",
     changes: [
       "Neue Ansicht „▤ Kompakt\" im Ansicht-Dropdown (Tabelle/Karten/Treemap/Kompakt): eine Zeile pro Aktie mit nur Ticker, Kurs, Tagesperformance und Discount-Farbe. Schalter „Nur Auffällige\" blendet Positionen ohne ausgelösten Discount-Alarm, neues Allzeithoch, Diversifikations-Lücke oder Nachkauf-Kandidat aus. Antippen einer Zeile öffnet unverändert das bestehende Aktien-Detail-Modal",
       "Kompaktansicht: Tabellenkopf (Ticker/Name/Kurs/1T) ergänzt — fehlte in der ersten Fassung",
       "Bugfix Kompaktansicht: „Nur Auffällige\" verwarf bisher aktive Suche/Sektor-/Nachkauf-Filter beim Umschalten, da gegen den unfilterten Rohbestand statt gegen die zuletzt gefilterte Liste geprüft wurde",
-      "Werkzeuge (Aktionsleiste + Sortierung) sind jetzt über einen Handle einklappbar — für alle Ansichten, Standard: ausgeklappt. Eingeklappt zeigt der Handle kompakt die aktive Ansicht und Sortierung an. Der Handle nutzt denselben Look wie der Oberpunkt-Header der Übersichten (fett, 13px, ▼/▶) statt der anfangs zu unscheinbaren kleinen grauen Variante",
-      "Bugfix Werkzeuge-Handle: Text färbte sich beim Hovern blau (versehentlich ergänzter Hover-Effekt) — entfernt, die Übersichten haben ebenfalls keinen Hover-Farbwechsel, nur den Zeiger-Cursor"
+      "Werkzeuge (Aktionsleiste + Sortierung) sind jetzt über einen Handle einklappbar — für alle Ansichten, Standard: ausgeklappt. Eingeklappt zeigt der Handle kompakt die aktive Ansicht und Sortierung an. Der Handle nutzt denselben Look wie der Oberpunkt-Header der Übersichten (fett, 13px, ▼/▶) statt der anfangs zu unscheinbaren kleinen grauen Variante"
     ]
   },
   {
@@ -6626,7 +6626,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.37 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.36 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
