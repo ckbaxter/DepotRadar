@@ -2691,6 +2691,15 @@ function toggleAthOverview(){
   localStorage.setItem("athOverviewCollapsed", open ? "1" : "0");
 }
 
+// Watchlists zeigen nur ATH- und Sektor-Übersicht (📉 🏷) — Portfolio-Übersicht
+// und Portfolio-Verlauf (📊 📈) sind für Watchlists ausgeblendet (kein Einstandskurs/
+// Depot-Verlauf). Der Hinweistext im zugeklappten Zustand muss das widerspiegeln.
+function updateOverviewHint(){
+  const hint = document.getElementById("overviewHint");
+  if(!hint) return;
+  hint.textContent = isWl() ? "📉 🏷" : "📊 📉 🏷 📈";
+}
+
 function toggleOverviewGroup(){
   const children = document.getElementById("overviewChildren");
   const icon     = document.getElementById("overviewGroupIcon");
@@ -2698,6 +2707,7 @@ function toggleOverviewGroup(){
   const open     = children.style.display !== "none";
   children.style.display = open ? "none" : "";
   icon.textContent       = open ? "▶" : "▼";
+  updateOverviewHint();
   hint.style.display     = open ? "inline" : "none";
   localStorage.setItem("overviewGroupCollapsed", open ? "1" : "0");
 }
@@ -2854,6 +2864,7 @@ function renderTable(stocks){
   const tscrl=document.querySelector(".tbl-scroll");
   const cards=document.getElementById("cardsView");
   const wl=isWl();
+  updateOverviewHint();
 
   if(!stocks.length){
     showEmptyState(wl ? "🔍" : "📊",
@@ -4675,6 +4686,13 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.40 · Backend v2.8.15",
+    changes: [
+      "Bugfix: der Hinweistext im zugeklappten „Übersichten\"-Oberpunkt zeigte bei Watchlists fälschlich alle vier Emojis (📊 📉 🏷 📈), obwohl im aufgeklappten Zustand korrekt nur zwei Sektionen (📉 ATH-, 🏷 Sektor-Übersicht) angezeigt werden — Portfolio-Übersicht und -Verlauf sind für Watchlists ausgeblendet. Der Hinweis zeigt jetzt bei Watchlists ebenfalls nur „📉 🏷\""
+    ]
+  },
   {
     label: "Juli 2026",
     versions: "Frontend v2.13.39 · Backend v2.8.15",
@@ -6680,7 +6698,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.39 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.40 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
