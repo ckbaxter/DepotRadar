@@ -3239,7 +3239,9 @@ async function doSearch(q){
   res.innerHTML='<div class="search-results"><div class="no-results">Suche …</div></div>';
   try {
     const r=await fetch(`${API}/search?q=${encodeURIComponent(q)}`);
-    const items=await r.json();
+    let items=await r.json();
+    const hasMore=items.some(it=>it.more_results);
+    items=items.filter(it=>!it.more_results);
     if(!items.length){
       const gUrl=`https://www.google.com/search?q=${encodeURIComponent(q+" ISIN")}`;
       res.innerHTML=`<div class="search-results"><div class="no-results" style="padding:10px 12px;line-height:1.7">
@@ -3268,6 +3270,10 @@ async function doSearch(q){
         </div>
       </div>`;
     });
+    if(hasMore)
+      html+=`<div style="display:flex;align-items:center;gap:7px;padding:8px 13px;border-top:1px solid var(--border);color:var(--muted);font-size:11px;line-height:1.4">
+        <span>ℹ️</span><span>Es gibt eventuell weitere Treffer – Suche mit Ticker oder ISIN eingrenzen.</span>
+      </div>`;
     html+='</div>';
     res.innerHTML=html;
   } catch(e){res.innerHTML="";}
@@ -4688,6 +4694,16 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
+<<<<<<< Updated upstream
+=======
+    versions: "Frontend v2.13.41 · Backend v2.8.16",
+    changes: [
+      "Aktiensuche: Backend fragt bei der allgemeinen Namenssuche einen Treffer mehr bei Yahoo an als angezeigt wird (Sentinel-Trick) — kommt er zurück, zeigt ein dezenter Hinweis unter der Trefferliste, dass es eventuell weitere Treffer gibt und die Suche z.B. mit Ticker oder ISIN eingegrenzt werden sollte. Weiterhin maximal 10 angezeigte Treffer (+ optionaler XETRA-Vorschlag), keine Änderung an WKN-/ISIN-Suche"
+    ]
+  },
+  {
+    label: "August 2026",
+>>>>>>> Stashed changes
     versions: "Frontend v2.13.40 · Backend v2.8.15",
     changes: [
       "Bugfix: der Hinweistext im zugeklappten „Übersichten\"-Oberpunkt zeigte bei Watchlists fälschlich alle vier Emojis (📊 📉 🏷 📈), obwohl im aufgeklappten Zustand korrekt nur zwei Sektionen (📉 ATH-, 🏷 Sektor-Übersicht) angezeigt werden — Portfolio-Übersicht und -Verlauf sind für Watchlists ausgeblendet. Der Hinweis zeigt jetzt bei Watchlists ebenfalls nur „📉 🏷\""
@@ -6698,7 +6714,11 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
+<<<<<<< Updated upstream
   <span>Frontend v2.13.40 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+=======
+  <span>Frontend v2.13.41 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+>>>>>>> Stashed changes
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">

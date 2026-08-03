@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.15"
+VERSION           = "2.8.18"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -3163,18 +3163,21 @@ def api_stock_info(ticker):
 
 @app.route("/api/search", methods=["GET"])
 def search_companies():
+    _YAHOO_SEARCH_RAW_CAP = 7  # beobachtetes Hardlimit von v1/finance/search, siehe Kommentar unten
     q = request.args.get("q", "").strip()
     if not q: return jsonify([])
 
-    def yahoo(query):
-        url = f"https://query1.finance.yahoo.com/v1/finance/search?q={urlquote(query)}&quotesCount=10&newsCount=0&listsCount=0"
-        r   = requests.get(url, headers=YH, timeout=8); r.raise_for_status()
-        return [{"name": it.get("longname") or it.get("shortname") or it.get("symbol",""),
-                 "ticker": it.get("symbol",""), "exchange": it.get("exchDisp") or it.get("exchange",""),
-                 "type": it.get("quoteType",""), "isin": it.get("isin","")}
-                for it in r.json().get("quotes", [])
-                if it.get("quoteType","") in ("EQUITY","ETF","MUTUALFUND","INDEX","CRYPTOCURRENCY")
-                and it.get("symbol")]
+    def yahoo(query, count=10):
+        url = f"https://query1.finance.yahoo.com/v1/finance/search?q={urlquote(query)}&quotesCount={count}&newsCount=0&listsCount=0"
+        r     = requests.get(url, headers=YH, timeout=8); r.raise_for_status()
+        quotes = r.json().get("quotes", [])
+        items  = [{"name": it.get("longname") or it.get("shortname") or it.get("symbol",""),
+                   "ticker": it.get("symbol",""), "exchange": it.get("exchDisp") or it.get("exchange",""),
+                   "type": it.get("quoteType",""), "isin": it.get("isin","")}
+                  for it in quotes
+                  if it.get("quoteType","") in ("EQUITY","ETF","MUTUALFUND","INDEX","CRYPTOCURRENCY")
+                  and it.get("symbol")]
+        return items, len(quotes)  # len(quotes) = Yahoo-Rohtrefferzahl VOR unserem Typ-Filter
 
     def bff(term):
         bh = {"User-Agent":"Mozilla/5.0","Accept":"application/json",
@@ -3190,7 +3193,7 @@ def search_companies():
             for item in bff(q.upper()):
                 isin = item.get("isin",""); sfx = f"  [WKN {item.get('wkn',q)}]"
                 try:
-                    yres = yahoo(isin)
+                    yres, _ = yahoo(isin)
                     if yres:
                         for y in yres: y.update({"name": y["name"]+sfx, "isin": isin})
                         res.extend(yres[:3]); continue
@@ -3210,7 +3213,7 @@ def search_companies():
         except Exception as e: log.warning(f"BFF ISIN: {e}")
         for qry in ([bff_name] if bff_name else []) + ([bff_wkn] if bff_wkn else []) + [isin]:
             try:
-                yres = yahoo(qry)
+                yres, _ = yahoo(qry)
                 if yres:
                     for y in yres: y["isin"] = isin
                     return jsonify(yres[:10])
@@ -3221,8 +3224,22 @@ def search_companies():
                              "type": "ETF", "isin": isin, "no_ticker": True}])
 
     # Allgemeine Suche
+    # Sentinel-Signal für "könnte mehr Treffer geben": Yahoo liefert bei
+    # v1/finance/search seit unbekanntem Zeitpunkt (Stand Aug 2026) unabhängig
+    # vom angefragten quotesCount nie mehr als ~_YAHOO_SEARCH_RAW_CAP Rohtreffer
+    # zurück (bestätigt für "apple"/"tesla"/"siemens"/"ishares msci" bei
+    # quotesCount=10/20/40 — quotesCount wird also von Yahoo faktisch ignoriert).
+    # WICHTIG: die Schwelle muss auf der Yahoo-Rohtrefferzahl (raw_count, vor
+    # unserem quoteType-Filter) geprüft werden, nicht auf der bereits gefilterten
+    # Liste — sonst kann ein aussortierter Fremdtyp (z.B. FUTURE/OPTION/CURRENCY)
+    # die gefilterte Länge unter die Schwelle drücken, obwohl Yahoo selbst am
+    # Limit war und es plausibel weitere unangezeigte Treffer gibt (beobachtet
+    # bei "msci": 7 Rohtreffer, aber nur 6 nach Typ-Filter — mit der Prüfung auf
+    # der gefilterten Liste blieb der Hinweis fälschlich aus).
     try:
-        res = yahoo(q)
+        raw_items, raw_count = yahoo(q, count=11)
+        more = raw_count >= _YAHOO_SEARCH_RAW_CAP
+        res  = raw_items[:10]
         if res:
             # XETRA-Vorschlag: erst xetra_map.json (Cache), dann OpenFIGI-Fallback
             _eur_sfx = (".DE",".AS",".PA",".MI",".MC",".BR",".LS",".HE",".CO",".ST",".OL")
@@ -3239,7 +3256,15 @@ def search_companies():
                 if xentry and xentry.get("ticker") and xentry["ticker"] not in {r["ticker"] for r in res}:
                     res = [{**xentry, "type": first_eq["type"], "xetra_suggested": True}] + res
                     log.info(f"XETRA-Vorschlag: {first_eq['ticker']} → {xentry['ticker']}")
-            return jsonify(res[:11])
+            if more:
+                # Neutraler Eintrag mit leeren Pflichtfeldern, damit ältere Konsumenten
+                # dieser Route (Handelsplatz-Wechsel, Parqet-Import-Suche), die die
+                # Antwort weiterhin als reine Trefferliste behandeln, nicht auf undefined
+                # Feldern (z.B. ticker.endsWith) stolpern — nur die Haupt-Suche (doSearch)
+                # kennt und entfernt diesen Marker vor der Anzeige.
+                res.append({"name": "", "ticker": "", "exchange": "", "type": "", "isin": "",
+                            "more_results": True})
+            return jsonify(res)
     except Exception as e: log.warning(f"Yahoo: {e}")
     return jsonify([])
 
