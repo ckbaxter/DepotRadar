@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.18"
+VERSION           = "2.8.19"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -166,9 +166,40 @@ def load_snapshots():     return _load_json(SNAPSHOTS_FILE, [])
 def save_snapshots(s):    _save_json(SNAPSHOTS_FILE, s)
 
 # ── User helpers ──────────────────────────────────────────────────
-def hash_pin(pin):
+_PIN_HASH_ITERATIONS = 100_000  # PBKDF2-HMAC-SHA256 Iterationen (seit v2.8.19)
+
+def hash_pin(pin, salt):
+    """PBKDF2-HMAC-SHA256 Hash einer PIN mit gegebenem Salt (hex-String)."""
     if not pin: return None
-    return hashlib.sha256(str(pin).encode()).hexdigest()
+    return hashlib.pbkdf2_hmac("sha256", str(pin).encode(),
+                                bytes.fromhex(salt), _PIN_HASH_ITERATIONS).hex()
+
+def set_user_pin(user, pin):
+    """Setzt (oder löscht bei leerem/None pin) PIN-Hash + Salt eines Users im neuen Format."""
+    if not pin:
+        user["pin_hash"] = None
+        user["pin_salt"] = None
+        return
+    salt = secrets.token_hex(16)
+    user["pin_hash"] = hash_pin(pin, salt)
+    user["pin_salt"] = salt
+
+def verify_user_pin(user, pin):
+    """Prüft eine PIN gegen den gespeicherten Hash. Erkennt zusätzlich das alte,
+    unsalted SHA256-Format (kein pin_salt vorhanden, Stand vor v2.8.19) und hebt
+    bei erfolgreicher Legacy-Verifikation transparent auf PBKDF2+Salt an — der User
+    merkt davon nichts, muss die PIN nicht neu setzen.
+    Rückgabe: (ok: bool, upgraded: bool) — bei upgraded=True muss der Aufrufer save_users() aufrufen."""
+    stored = user.get("pin_hash")
+    if not stored: return True, False
+    salt = user.get("pin_salt")
+    if salt:
+        return hash_pin(str(pin), salt) == stored, False
+    # Legacy-Format: reines, unsalted SHA256
+    if hashlib.sha256(str(pin).encode()).hexdigest() == stored:
+        set_user_pin(user, pin)
+        return True, True
+    return False, False
 
 def load_users():  return _load_json(USERS_FILE, [])
 def save_users(u): _save_json(USERS_FILE, u)
@@ -339,6 +370,7 @@ def reset_pin_from_env():
     for u in users:
         if u.get("name", "").lower() == reset_name.lower():
             u["pin_hash"] = None
+            u["pin_salt"] = None
             save_users(users)
             log.info(f"PIN für User '{u['name']}' via RESET_PIN_USER zurückgesetzt")
             return
@@ -3329,7 +3361,7 @@ def test_notification():
 @app.route("/api/users", methods=["GET"])
 def api_get_users():
     users = load_users()
-    return jsonify([{**{k: v for k, v in u.items() if k != "pin_hash"},
+    return jsonify([{**{k: v for k, v in u.items() if k not in ("pin_hash", "pin_salt")},
                      "has_pin": bool(u.get("pin_hash")),
                      "is_admin": is_admin_user(u)} for u in users])
 
@@ -3344,7 +3376,8 @@ def api_create_user():
     new_user = {
         "id":                    str(_uuid.uuid4())[:8],
         "name":                  body.get("name", "").strip(),
-        "pin_hash":              hash_pin(body.get("pin")),
+        "pin_hash":              None,
+        "pin_salt":              None,
         "depots":                body.get("depots", []),
         "watchlists":            body.get("watchlists", []),
         "apprise_urls":          body.get("apprise_urls", []),
@@ -3358,9 +3391,10 @@ def api_create_user():
     if "digest_day"        in body: new_user["digest_day"]        = int(body["digest_day"])
     if "digest_time"       in body: new_user["digest_time"]       = str(body["digest_time"])
     if "daily_digest_time" in body: new_user["daily_digest_time"] = str(body["daily_digest_time"])
+    set_user_pin(new_user, body.get("pin"))
     users.append(new_user); save_users(users)
     schedule_user_digest_jobs(new_user)
-    return jsonify({**{k: v for k, v in new_user.items() if k != "pin_hash"},
+    return jsonify({**{k: v for k, v in new_user.items() if k not in ("pin_hash", "pin_salt")},
                     "has_pin": bool(new_user.get("pin_hash")),
                     "is_admin": is_admin_user(new_user)}), 201
 
@@ -3371,7 +3405,7 @@ def api_update_user(user_id):
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return jsonify({"error": "Nicht gefunden"}), 404
     if "name"                 in body: user["name"]                = body["name"].strip()
-    if "pin"                  in body: user["pin_hash"]            = hash_pin(body["pin"])
+    if "pin"                  in body: set_user_pin(user, body["pin"])
     if "depots"               in body: user["depots"]              = body["depots"]
     if "watchlists"           in body: user["watchlists"]           = body["watchlists"]
     if "apprise_urls"         in body: user["apprise_urls"]        = body["apprise_urls"]
@@ -3387,7 +3421,7 @@ def api_update_user(user_id):
         user["daily_digest_time"] = str(body["daily_digest_time"]); digest_changed = True
     save_users(users)
     if digest_changed: schedule_user_digest_jobs(user)
-    return jsonify({**{k: v for k, v in user.items() if k != "pin_hash"},
+    return jsonify({**{k: v for k, v in user.items() if k not in ("pin_hash", "pin_salt")},
                     "has_pin": bool(user.get("pin_hash")),
                     "is_admin": is_admin_user(user)})
 
@@ -3426,8 +3460,9 @@ def api_verify_pin(user_id):
     users = load_users()
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return jsonify({"ok": False}), 404
-    if not user.get("pin_hash"): return jsonify({"ok": True})
-    return jsonify({"ok": hash_pin(str(body.get("pin", ""))) == user["pin_hash"]})
+    ok, upgraded = verify_user_pin(user, str(body.get("pin", "")))
+    if upgraded: save_users(users)
+    return jsonify({"ok": ok})
 
 @app.route("/api/snapshots", methods=["GET"])
 def api_snapshots():
