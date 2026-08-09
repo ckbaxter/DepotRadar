@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.18-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.41-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.15-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.29-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -38,7 +38,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Werkzeuge einklappbar** — Aktionsleiste und Sortierung lassen sich über einen Handle ein-/ausklappen (Standard: ausgeklappt), gilt für alle vier Ansichten gemeinsam; eingeklappt zeigt der Handle kompakt die aktive Ansicht und Sortierung an
 - **Zeilenfarben** — Discount-Stufen werden als schmaler linker Farb-Akzent an Zeile bzw. Karte dargestellt; zusätzlich dezentes Zebra-Muster in der Depot-Tabelle für bessere Lesbarkeit
 - **52-Wochen-Hoch/-Tief-Badge** — `52W-H`/`52W-T` neben den Performance-Badges, wenn der Kurs innerhalb 3% des 52-Wochen-Hochs bzw. -Tiefs liegt
-- **Aktien-Detail-Modal** — Klick auf den Aktiennamen (Tabelle, Karte oder Treemap-Kachel) öffnet ein Modal mit Sektor, ATH-Abstand/-Datum, 52-Wochen-Bereich, P&L, Performance-Badges sowie einer kurzen Unternehmensbeschreibung (Wikipedia)
+- **Aktien-Detail-Modal** — Klick auf den Aktiennamen (Tabelle, Karte oder Treemap-Kachel) öffnet ein Modal mit Sektor, ATH-Abstand/-Datum, 52-Wochen-Bereich, P&L, Performance-Badges sowie einer kurzen Unternehmensbeschreibung (Wikipedia); zeigt zusätzlich 🛒 Nachkauf-Kandidat und/oder ⚖️ Sektor unterrepräsentiert als eigene Status-Zeile, sofern zutreffend (seit v2.13.42)
 - **Kaufempfehlung** — pro Depot ein optionales Kaufbudget; bei Erreichen eines Discount-Blocks wird die empfohlene Stückzahl berechnet — in der App und in Benachrichtigungen
 - **Nachkauf-Kandidaten** — filtert Aktien die günstig UND untergewichtet im Depot sind; Schwellenwert pro Depot einstellbar
 - **Sektor-Tags** — automatische Sektor-Erkennung via Yahoo Finance; manuell anpassbar; Filter und Sektor-Übersicht in der Portfolio-Ansicht
@@ -360,6 +360,8 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.19 / 2.13.43–48 | Portfolio-Übersicht: Top3/Flop3-Karten (Gesamt und Heute) zeigen den Wert wahlweise in % oder €, umschaltbar durch Tippen auf eine der drei Zahlen (gilt für die ganze Karte, Standard %). Bei „Gesamt" exakt berechnet, bei „Heute" aus der bereits gerundeten Tagesperformance abgeleitet. Lange Firmennamen werden einzeilig gekürzt (…), Antippen des Namens zeigt ihn vollständig |
+| 2.8.16 / 2.13.42 | Aktien-Detail-Modal zeigt jetzt 🛒 Nachkauf-Kandidat und/oder ⚖️ Sektor unterrepräsentiert als eigene Status-Zeile direkt unter Name/Ticker/Preis, sofern zutreffend — nutzt die bereits vorhandenen Flags `_isBuyCandidate`/`_isSectorGap` (keine neue Berechnung, kein neues Datenfeld). Zeile entfällt ganz, wenn beides nicht zutrifft |
 | 2.8.16–18 / 2.13.41 | Aktiensuche: dezenter Hinweis unterhalb der Trefferliste, wenn Yahoo an sein Antwortlimit stößt und es eventuell weitere Treffer gibt (Empfehlung: Suche mit Ticker oder ISIN eingrenzen). Dabei entdeckt: `v1/finance/search` liefert unabhängig vom angefragten `quotesCount` nie mehr als ~7 Rohtreffer zurück — Erkennung läuft deshalb über die Rohtrefferzahl vor dem Typ-Filter, nicht über die bereits gefilterte Liste (sonst blieb der Hinweis bei Fremdtypen wie FUTURE fälschlich aus) |
 | 2.8.15 / 2.13.39 | Portfolio-Übersicht: zwei neue Karten „🚀 Top 3 (Heute)" / „📉 Flop 3 (Heute)" zeigen die Tagesgewinner/-verlierer nach Tagesperformance; die bestehenden Top3/Flop3 nach Gesamt-P&L wurden zur Unterscheidung in „(Gesamt)" umbenannt |
 | 2.8.15 / 2.13.34–36 | Neue Ansicht „▤ Kompakt" im Ansicht-Dropdown: eine Zeile pro Aktie mit Ticker, Kurs, Tagesperformance und Discount-Farbe; Schalter „Nur Auffällige" blendet Positionen ohne ausgelösten Discount-Alarm, neues Allzeithoch, Diversifikations-Lücke oder Nachkauf-Kandidat aus (v2.13.34, Tabellenkopf und Bugfix „Nur Auffällige" ignorierte aktive Suche/Sektor-/Nachkauf-Filter in v2.13.35). Aktionsleiste + Sortierung sind jetzt für alle vier Ansichten gemeinsam einklappbar (Standard: ausgeklappt), Handle im Look der Übersichten-Oberpunkte (v2.13.35–36) |
