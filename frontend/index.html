@@ -136,7 +136,9 @@ details[open] .help-summary::after{transform:rotate(90deg)}
 .blurred-val.revealed{filter:none}
 .scard-clickable:hover{box-shadow:0 0 0 2px var(--accent);transform:translateY(-1px)}
 .scard-clickable.active{box-shadow:0 0 0 2px var(--accent);background:var(--accent-dim,rgba(78,124,246,.12))}
-.scard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.scard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;min-width:0}
+.ps-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;min-width:0;flex:1;overflow-wrap:anywhere}
+.ps-name.expanded{white-space:normal;text-overflow:clip;overflow:visible}
 .scard-label{font-size:11px;color:var(--muted);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .scard-val{font-size:20px;font-weight:700}
 @media(max-width:700px){.summary{grid-template-columns:repeat(3,1fr)}}
@@ -2583,6 +2585,24 @@ async function applyAthCorrections(){
 }
 
 // ── Portfolio-Übersicht ──────────────────────────────────────────
+// Top3/Flop3: Umschalten zwischen %- und €-Anzeige, gilt pro Karte (alle 3 Zeilen
+// gemeinsam). Modus wird als data-mode am Container gemerkt und überlebt damit den
+// nächsten Re-Render (renderPortfolioStats setzt den Modus nach jedem innerHTML-Update
+// wieder über applyPsMode zurück).
+function applyPsMode(containerId, mode){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  el.dataset.mode = mode;
+  el.querySelectorAll(".ps-value").forEach(span => {
+    span.textContent = mode === "eur" ? span.dataset.eur : span.dataset.pct;
+  });
+}
+function togglePsMode(containerId){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  applyPsMode(containerId, el.dataset.mode === "eur" ? "pct" : "eur");
+}
+
 function renderPortfolioStats(stocks){
   // Nur für Bestand-Ansicht, nicht Watchlist
   const wrap = document.getElementById("portfolioSummary");
@@ -2601,7 +2621,11 @@ function renderPortfolioStats(stocks){
 
   // Bester / Schlechtester nach P&L %
   const ranked = withCost
-    .map(s => ({name: s.name, pct: ((s.current_eur - s.buy_price_eur) / s.buy_price_eur) * 100}))
+    .map(s => ({
+      name: s.name,
+      pct: ((s.current_eur - s.buy_price_eur) / s.buy_price_eur) * 100,
+      eur: (s.current_eur - s.buy_price_eur) * s.shares
+    }))
     .sort((a,b) => b.pct - a.pct);
   const fmt = v => v.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
 
@@ -2640,24 +2664,39 @@ function renderPortfolioStats(stocks){
   const top3  = ranked.slice(0, 3);
   const flop3 = ranked.slice(-3).reverse();
 
-  document.getElementById("ps-best").innerHTML = top3.map(s =>
-    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-      <span style="color:var(--green);font-size:12px;font-weight:600">${esc(s.name)}</span>
-      <span style="color:var(--green);font-size:11px;margin-left:6px;white-space:nowrap">+${s.pct.toFixed(1)}%</span>
-    </div>`
-  ).join("");
+  document.getElementById("ps-best").innerHTML = top3.map(s => {
+    const eurSign = s.eur >= 0 ? "+" : "";
+    const pctTxt = `+${s.pct.toFixed(1)}%`;
+    const eurTxt = `${eurSign}${fmtEURCompact(s.eur)}`;
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">
+      <span class="ps-name" onclick="this.classList.toggle('expanded')" title="${esc(s.name)}" style="color:var(--green);font-size:12px;font-weight:600">${esc(s.name)}</span>
+      <span class="ps-value" data-pct="${esc(pctTxt)}" data-eur="${esc(eurTxt)}" onclick="togglePsMode('ps-best')" style="color:var(--green);font-size:11px;white-space:nowrap;flex-shrink:0;cursor:pointer">${pctTxt}</span>
+    </div>`;
+  }).join("");
+  applyPsMode("ps-best", document.getElementById("ps-best").dataset.mode || "pct");
 
-  document.getElementById("ps-worst").innerHTML = flop3.map(s =>
-    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-      <span style="color:var(--red);font-size:12px;font-weight:600">${esc(s.name)}</span>
-      <span style="color:var(--red);font-size:11px;margin-left:6px;white-space:nowrap">${s.pct.toFixed(1)}%</span>
-    </div>`
-  ).join("");
+  document.getElementById("ps-worst").innerHTML = flop3.map(s => {
+    const eurSign = s.eur >= 0 ? "+" : "";
+    const pctTxt = `${s.pct.toFixed(1)}%`;
+    const eurTxt = `${eurSign}${fmtEURCompact(s.eur)}`;
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">
+      <span class="ps-name" onclick="this.classList.toggle('expanded')" title="${esc(s.name)}" style="color:var(--red);font-size:12px;font-weight:600">${esc(s.name)}</span>
+      <span class="ps-value" data-pct="${esc(pctTxt)}" data-eur="${esc(eurTxt)}" onclick="togglePsMode('ps-worst')" style="color:var(--red);font-size:11px;white-space:nowrap;flex-shrink:0;cursor:pointer">${pctTxt}</span>
+    </div>`;
+  }).join("");
+  applyPsMode("ps-worst", document.getElementById("ps-worst").dataset.mode || "pct");
 
   // Bester / Schlechtester nach Tagesperformance (perf_1d)
+  // EUR-Wert hier nur abgeleitet (nicht exakt): perf_1d ist bereits auf 1 Nachkommastelle
+  // gerundet, ein eigenes Backend-Feld für den exakten Tages-EUR-Betrag gibt es nicht.
+  // Herleitung aus prev = current/(1+pct/100): Δ€ = shares × current_eur × pct/(100+pct)
   const rankedToday = withCost
     .filter(s => s.perf_1d != null)
-    .map(s => ({name: s.name, pct: s.perf_1d}))
+    .map(s => ({
+      name: s.name,
+      pct: s.perf_1d,
+      eur: s.shares * s.current_eur * (s.perf_1d / (100 + s.perf_1d))
+    }))
     .sort((a,b) => b.pct - a.pct);
   const top3Today  = rankedToday.slice(0, 3);
   const flop3Today = rankedToday.slice(-3).reverse();
@@ -2665,19 +2704,27 @@ function renderPortfolioStats(stocks){
   const bestTodayEl  = document.getElementById("ps-best-today");
   const worstTodayEl = document.getElementById("ps-worst-today");
 
-  bestTodayEl.innerHTML = top3Today.length ? top3Today.map(s =>
-    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-      <span style="color:var(--green);font-size:12px;font-weight:600">${esc(s.name)}</span>
-      <span style="color:var(--green);font-size:11px;margin-left:6px;white-space:nowrap">+${s.pct.toFixed(1)}%</span>
-    </div>`
-  ).join("") : "—";
+  bestTodayEl.innerHTML = top3Today.length ? top3Today.map(s => {
+    const eurSign = s.eur >= 0 ? "+" : "";
+    const pctTxt = `+${s.pct.toFixed(1)}%`;
+    const eurTxt = `${eurSign}${fmtEURCompact(s.eur)}`;
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">
+      <span class="ps-name" onclick="this.classList.toggle('expanded')" title="${esc(s.name)}" style="color:var(--green);font-size:12px;font-weight:600">${esc(s.name)}</span>
+      <span class="ps-value" data-pct="${esc(pctTxt)}" data-eur="${esc(eurTxt)}" onclick="togglePsMode('ps-best-today')" style="color:var(--green);font-size:11px;white-space:nowrap;flex-shrink:0;cursor:pointer">${pctTxt}</span>
+    </div>`;
+  }).join("") : "—";
+  applyPsMode("ps-best-today", document.getElementById("ps-best-today").dataset.mode || "pct");
 
-  worstTodayEl.innerHTML = flop3Today.length ? flop3Today.map(s =>
-    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-      <span style="color:var(--red);font-size:12px;font-weight:600">${esc(s.name)}</span>
-      <span style="color:var(--red);font-size:11px;margin-left:6px;white-space:nowrap">${s.pct.toFixed(1)}%</span>
-    </div>`
-  ).join("") : "—";
+  worstTodayEl.innerHTML = flop3Today.length ? flop3Today.map(s => {
+    const eurSign = s.eur >= 0 ? "+" : "";
+    const pctTxt = `${s.pct.toFixed(1)}%`;
+    const eurTxt = `${eurSign}${fmtEURCompact(s.eur)}`;
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">
+      <span class="ps-name" onclick="this.classList.toggle('expanded')" title="${esc(s.name)}" style="color:var(--red);font-size:12px;font-weight:600">${esc(s.name)}</span>
+      <span class="ps-value" data-pct="${esc(pctTxt)}" data-eur="${esc(eurTxt)}" onclick="togglePsMode('ps-worst-today')" style="color:var(--red);font-size:11px;white-space:nowrap;flex-shrink:0;cursor:pointer">${pctTxt}</span>
+    </div>`;
+  }).join("") : "—";
+  applyPsMode("ps-worst-today", document.getElementById("ps-worst-today").dataset.mode || "pct");
 
   document.getElementById("portfolioSummaryWrap").style.display = "";
   // Gespeicherten Zustand wiederherstellen (Standard: eingeklappt)
@@ -4696,6 +4743,13 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.43–48 · Backend v2.8.19",
+    changes: [
+      "Portfolio-Übersicht: Top3/Flop3-Karten (Gesamt und Heute) zeigen den Wert wahlweise in % oder in Euro — Tippen auf eine der drei Zahlen einer Karte schaltet die ganze Karte gemeinsam um (Standard: %). Bei den Gesamt-Karten exakt berechnet ((current_eur − buy_price_eur) × shares); bei den Heute-Karten aus dem bereits gerundeten perf_1d abgeleitet (kein neues Backend-Feld, daher minimale Rundungstoleranz). Ersetzt die vorherige Lösung mit gleichzeitiger %/€-Anzeige nebeneinander. Lange Firmennamen bleiben weiterhin einzeilig gekürzt (…), Antippen des Namens zeigt ihn vollständig an (.ps-name/.ps-name.expanded). Zudem übersehene hardcodierte Frontend-Versionsnummer im Footer nachgezogen"
+    ]
+  },
   {
     label: "August 2026",
     versions: "Frontend v2.13.42 · Backend v2.8.16",
@@ -6726,7 +6780,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.42 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.48 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
