@@ -319,6 +319,14 @@ DepotRadar verbindet sich mit [Parqet](https://parqet.com) um Einstandskurse und
 3. Redirect URI: `http://DEINE-APP-URL/api/parqet/callback`
 4. Client ID kopieren → in DepotRadar: Depot-Einstellungen → Client ID eintragen → Verbinden
 
+### Portfolio-Auswahl
+
+Hat der verbundene Parqet-Account mehrere Portfolios, wird nach dem Verbinden eines ausgewählt. Der Name des gewählten Portfolios steht danach dauerhaft im Status; über **Portfolio wechseln** lässt sich die Auswahl jederzeit nachträglich ändern (Bestätigungsdialog weist darauf hin, dass der nächste Sync dann gegen das neu gewählte Portfolio abgleicht).
+
+### Token-Erneuerung
+
+Der Access Token ist bei Parqet nur kurzlebig (ca. 1 Stunde). Da der reguläre automatische Kurs-Refresh ausschließlich Yahoo Finance/Frankfurter anspricht, nicht Parqet, erneuert ein täglicher Hintergrund-Job (04:00 Uhr) den Token aller verbundenen Depots automatisch — unabhängig davon, ob zwischenzeitlich manuell synchronisiert wurde. Schlägt das fehl (z.B. weil der Refresh Token selbst ungültig geworden ist), erscheint im Status „🔒 Token abgelaufen" mit der Option **Neu verbinden**.
+
 ### Backup & Rückgängig
 
 Vor jedem Sync wird automatisch ein Backup der Depot-Datei angelegt. Rückgängig über **↩ Rückgängig** in den Depot-Einstellungen.
@@ -360,6 +368,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.20 / 2.13.49 | Parqet-Access-Token wird jetzt täglich um 04:00 Uhr automatisch erneuert (`refresh_parqet_tokens`, neuer Scheduler-Job), unabhängig von manuellen Syncs — der reguläre Auto-Kurs-Refresh spricht ausschließlich Yahoo/Frankfurter an, nie die Parqet-API, wodurch der bei Parqet ca. 1h gültige Access Token zwischen zwei manuellen Syncs sonst ablaufen konnte; Fehlschläge setzen `needs_reconnect` wie beim bestehenden 401-Handling, neuer Verlauf-Eintrag „🔑 Parqet Token-Erneuerung". Depot-Einstellungen zeigen jetzt den Namen des ausgewählten Parqet-Portfolios dauerhaft im Status (vorher nur beim erstmaligen Auswählen sichtbar) und erlauben über „Portfolio wechseln" den nachträglichen Wechsel (vorher nur bei der Erstverbindung möglich, mit Bestätigungsdialog zur Sync-Auswirkung). Depot-Einstellungen-Modal ab Tablet-Breite (≥768px) auf 620px verbreitert, damit die vier Parqet-Aktions-Buttons dort in einer Zeile Platz finden; auf dem Smartphone unverändert |
 | 2.8.19 / 2.13.43–48 | Portfolio-Übersicht: Top3/Flop3-Karten (Gesamt und Heute) zeigen den Wert wahlweise in % oder €, umschaltbar durch Tippen auf eine der drei Zahlen (gilt für die ganze Karte, Standard %). Bei „Gesamt" exakt berechnet, bei „Heute" aus der bereits gerundeten Tagesperformance abgeleitet. Lange Firmennamen werden einzeilig gekürzt (…), Antippen des Namens zeigt ihn vollständig |
 | 2.8.16 / 2.13.42 | Aktien-Detail-Modal zeigt jetzt 🛒 Nachkauf-Kandidat und/oder ⚖️ Sektor unterrepräsentiert als eigene Status-Zeile direkt unter Name/Ticker/Preis, sofern zutreffend — nutzt die bereits vorhandenen Flags `_isBuyCandidate`/`_isSectorGap` (keine neue Berechnung, kein neues Datenfeld). Zeile entfällt ganz, wenn beides nicht zutrifft |
 | 2.8.16–18 / 2.13.41 | Aktiensuche: dezenter Hinweis unterhalb der Trefferliste, wenn Yahoo an sein Antwortlimit stößt und es eventuell weitere Treffer gibt (Empfehlung: Suche mit Ticker oder ISIN eingrenzen). Dabei entdeckt: `v1/finance/search` liefert unabhängig vom angefragten `quotesCount` nie mehr als ~7 Rohtreffer zurück — Erkennung läuft deshalb über die Rohtrefferzahl vor dem Typ-Filter, nicht über die bereits gefilterte Liste (sonst blieb der Hinweis bei Fremdtypen wie FUTURE fälschlich aus) |
