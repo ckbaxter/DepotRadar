@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.20"
+VERSION           = "2.8.21"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -128,6 +128,17 @@ def watchlist_lock(wl_id):
     einer einzelnen, jetzt depot-unabhängigen Watchlist ab (Scheduler-Refresh vs.
     HTTP-Routen auf derselben Watchlist)."""
     return file_lock(f"wl:{wl_id}")
+
+def parqet_token_lock(depot_id):
+    """Eigener, von depot_lock() bewusst getrennter Lock nur für den Parqet-Token-Refresh.
+    _try_refresh_token() kann bei einem 401 auch aus parqet_sync() heraus aufgerufen werden,
+    und zwar während dort bereits depot_lock(depot_id) für den Stock-Merge gehalten wird
+    (siehe /parqet/sync) — ein gemeinsamer Lock-Namensraum würde in diesem Fall deadlocken,
+    da threading.Lock nicht reentrant ist. Der eigentliche Zweck: verhindert, dass zwei
+    Refresh-Versuche (z.B. täglicher Job vs. zeitgleicher manueller Sync) denselben, bei
+    Parqet vermutlich rotierenden refresh_token doppelt verwenden — das kann serverseitig
+    per Reuse-Detection zur Sperre der gesamten Token-Kette führen."""
+    return file_lock(f"parqet-token:{depot_id}")
 
 def _load_json(path, default):
     if not os.path.exists(path):
@@ -1954,26 +1965,39 @@ def pkce_verifier():   return secrets.token_urlsafe(64)
 def pkce_challenge(v): return base64.urlsafe_b64encode(hashlib.sha256(v.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
 
 def _try_refresh_token(depot_id, pq):
-    rt = pq.get("refresh_token")
-    if not rt: return None
-    depots2   = load_depots()
-    depot2    = next((d for d in depots2 if d["id"] == depot_id), {})
-    client_id = get_client_id(depot2)
-    if not client_id: return None
-    try:
-        r = requests.post(PARQET_TOKEN_URL,
-                          data={"grant_type":"refresh_token","refresh_token":rt,"client_id":client_id},
-                          timeout=15)
-        r.raise_for_status(); tokens = r.json()
-        new_pq = {**pq, "access_token": tokens["access_token"],
-                  "refresh_token": tokens.get("refresh_token", rt),
-                  "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600)}
-        depots = load_depots()
-        for d in depots:
-            if d["id"] == depot_id: d["parqet"] = new_pq; break
-        save_depots(depots); log.info(f"Parqet Token erneuert: {depot_id}"); return new_pq
-    except Exception as e:
-        log.error(f"Token Refresh fehlgeschlagen: {e}"); return None
+    if not pq.get("refresh_token"): return None
+    with parqet_token_lock(depot_id):
+        # Innerhalb des Locks IMMER den aktuellsten Stand neu laden, nicht das übergebene
+        # (möglicherweise veraltete) pq verwenden — ein paralleler Aufruf könnte den
+        # refresh_token zwischenzeitlich schon rotiert haben, während wir auf den Lock warteten.
+        depots2 = load_depots()
+        depot2  = next((d for d in depots2 if d["id"] == depot_id), None)
+        if not depot2: return None
+        current_pq = depot2.get("parqet", {})
+        # Falls ein paralleler Aufruf (z.B. Tages-Job vs. zeitgleicher manueller Sync) den
+        # Token bereits erneuert hat, während wir gewartet haben: dessen Ergebnis übernehmen,
+        # statt denselben (jetzt ungültigen) refresh_token ein zweites Mal zu verwenden.
+        if current_pq.get("expires_at", 0) > int(time_mod.time()) + 30:
+            return current_pq
+        rt = current_pq.get("refresh_token")
+        if not rt: return None
+        client_id = get_client_id(depot2)
+        if not client_id: return None
+        try:
+            r = requests.post(PARQET_TOKEN_URL,
+                              data={"grant_type":"refresh_token","refresh_token":rt,"client_id":client_id},
+                              timeout=15)
+            r.raise_for_status(); tokens = r.json()
+            new_pq = {**current_pq, "access_token": tokens["access_token"],
+                      "refresh_token": tokens.get("refresh_token", rt),
+                      "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600),
+                      "needs_reconnect": False}
+            depots = load_depots()
+            for d in depots:
+                if d["id"] == depot_id: d["parqet"] = new_pq; break
+            save_depots(depots); log.info(f"Parqet Token erneuert: {depot_id}"); return new_pq
+        except Exception as e:
+            log.error(f"Token Refresh fehlgeschlagen: {e}"); return None
 
 def refresh_parqet_tokens():
     """Täglicher Job: erneuert den Access Token aller Depots mit aktiver Parqet-Verbindung,
