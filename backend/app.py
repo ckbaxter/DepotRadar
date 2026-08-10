@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.19"
+VERSION           = "2.8.20"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1875,6 +1875,8 @@ def start_scheduler():
     _restore_last_refresh()
     scheduler.add_job(trading_window_check, "cron", minute="*", id="trading_check",
                       replace_existing=True, misfire_grace_time=None)
+    scheduler.add_job(refresh_parqet_tokens, "cron", hour=4, minute=0, id="parqet_token_refresh",
+                      replace_existing=True, misfire_grace_time=None)
     schedule_all_user_digest_jobs()
     if not scheduler.running: scheduler.start()
     log.info("Scheduler gestartet")
@@ -1972,6 +1974,40 @@ def _try_refresh_token(depot_id, pq):
         save_depots(depots); log.info(f"Parqet Token erneuert: {depot_id}"); return new_pq
     except Exception as e:
         log.error(f"Token Refresh fehlgeschlagen: {e}"); return None
+
+def refresh_parqet_tokens():
+    """Täglicher Job: erneuert den Access Token aller Depots mit aktiver Parqet-Verbindung,
+    unabhängig von tatsächlicher Nutzung. Grund: der reguläre Auto-Kurs-Refresh
+    (trading_window_check/_refresh_depot) spricht ausschließlich Yahoo/Frankfurter an, nie
+    die Parqet-API — ohne diesen Job bleibt der Access Token (bei Parqet ~1h gültig) zwischen
+    zwei manuellen Syncs ungenutzt und läuft ab. Der eigentliche Zweck ist, den Refresh Token
+    regelmäßig anzufassen, falls dessen (von Parqet nicht dokumentierte) Gültigkeit an
+    fortlaufende Nutzung gekoppelt ist. Schlägt die Erneuerung fehl (z.B. Refresh Token selbst
+    abgelaufen/widerrufen), wird `needs_reconnect` gesetzt — analog zum bestehenden
+    401-Handling in parqet_api_get."""
+    depots = load_depots()
+    targets = [d["id"] for d in depots if d.get("parqet", {}).get("connected")
+               and d.get("parqet", {}).get("refresh_token")]
+    if not targets: return
+    ok = fail = 0
+    for depot_id in targets:
+        depots_now = load_depots()
+        depot = next((d for d in depots_now if d["id"] == depot_id), None)
+        if not depot: continue
+        pq = depot.get("parqet", {})
+        if _try_refresh_token(depot_id, pq):
+            ok += 1
+        else:
+            fail += 1
+            depots2 = load_depots()
+            for d in depots2:
+                if d["id"] == depot_id and "parqet" in d:
+                    d["parqet"]["needs_reconnect"] = True; break
+            save_depots(depots2)
+    log.info(f"Parqet Token-Erneuerung (täglich): {ok} erfolgreich, {fail} fehlgeschlagen")
+    add_log("system", "🔑 Parqet Token-Erneuerung",
+            f"{ok} Depot(s) erneuert" + (f", {fail} fehlgeschlagen — Reconnect nötig" if fail else ""),
+            success=(fail == 0))
 
 def parqet_api_get(depot, path, depot_id=None):
     pq    = depot.get("parqet", {}); token = pq.get("access_token", "")
