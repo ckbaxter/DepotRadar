@@ -323,6 +323,8 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
 .modal-title{font-size:16px;font-weight:600}
 .modal-body{padding:20px;overflow-y:auto;flex:1 1 auto}
+#depotSettingsModal .modal{max-width:500px}
+@media(min-width:768px){#depotSettingsModal .modal{max-width:620px}}
 .modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .close-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px;min-width:32px;min-height:32px}
 .close-btn:hover{color:var(--text)}
@@ -771,7 +773,7 @@ select</style>
 
 <!-- Modal: Depot-Einstellungen -->
 <div class="overlay" id="depotSettingsModal" style="display:none" onclick="closeIfOverlay(event,'depotSettingsModal')">
-  <div class="modal" onclick="event.stopPropagation()" style="max-width:500px;position:relative">
+  <div class="modal" onclick="event.stopPropagation()" style="position:relative">
     <div class="modal-header">
       <span class="modal-title">&#9881; Depot-Einstellungen</span>
       <button class="close-btn" onclick="closeModal('depotSettingsModal')">&#215;</button>
@@ -4745,6 +4747,14 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
+    versions: "Frontend v2.13.49 · Backend v2.8.20",
+    changes: [
+      "Parqet Access Token wird jetzt täglich um 04:00 Uhr automatisch erneuert, unabhängig von manuellen Syncs (vorher lief das Auto-Refresh nur gegen Yahoo/Frankfurter, nie gegen Parqet — der Access Token, bei Parqet ca. 1h gültig, konnte dadurch zwischen zwei Syncs ablaufen). Neuer Verlauf-Eintrag „🔑 Parqet Token-Erneuerung\" pro Lauf.",
+      "Depot-Einstellungen → Parqet-Integration zeigt jetzt zusätzlich den Namen des ausgewählten Parqet-Portfolios im Status (vorher nur beim erstmaligen Auswählen sichtbar, danach nirgends mehr) und erlaubt über einen neuen „Portfolio wechseln\"-Button den nachträglichen Wechsel (vorher nur einmalig bei der Erstverbindung möglich); ein Bestätigungsdialog weist vorab darauf hin, dass der nächste Sync dann gegen das neu gewählte Portfolio abgeglichen wird. Das Depot-Einstellungen-Modal ist ab Tablet-Breite (≥768px) breiter (620 statt 500px), damit „Sync starten\"/„Portfolio wechseln\"/„Rückgängig\"/„Trennen\" dort in einer Zeile passen; auf dem Smartphone unverändert."
+    ]
+  },
+  {
+    label: "August 2026",
     versions: "Frontend v2.13.43–48 · Backend v2.8.19",
     changes: [
       "Portfolio-Übersicht: Top3/Flop3-Karten (Gesamt und Heute) zeigen den Wert wahlweise in % oder in Euro — Tippen auf eine der drei Zahlen einer Karte schaltet die ganze Karte gemeinsam um (Standard: %). Bei den Gesamt-Karten exakt berechnet ((current_eur − buy_price_eur) × shares); bei den Heute-Karten aus dem bereits gerundeten perf_1d abgeleitet (kein neues Backend-Feld, daher minimale Rundungstoleranz). Ersetzt die vorherige Lösung mit gleichzeitiger %/€-Anzeige nebeneinander. Lange Firmennamen bleiben weiterhin einzeilig gekürzt (…), Antippen des Namens zeigt ihn vollständig an (.ps-name/.ps-name.expanded). Zudem übersehene hardcodierte Frontend-Versionsnummer im Footer nachgezogen"
@@ -5719,7 +5729,9 @@ async function loadParqetStatus(depotId){
   }
   if(s.connected){
     const lastSync = s.last_sync ? `Letzter Sync: ${s.last_sync}` : "Noch nicht synchronisiert";
-    const portInfo = s.portfolio_id ? "" : " — Portfolio noch nicht ausgewählt";
+    const portInfo = s.portfolio_id
+      ? ` — Portfolio: <b style="color:var(--text)">${esc(s.portfolio_name || s.portfolio_id)}</b>`
+      : " — Portfolio noch nicht ausgewählt";
     if(s.needs_reconnect){
       box.innerHTML = `<span style="color:var(--red)">&#128274; Token abgelaufen</span> &nbsp; <span style="color:var(--muted)">${lastSync}</span>`;
       actions.innerHTML = `
@@ -5743,10 +5755,8 @@ async function loadParqetStatus(depotId){
           </span>
         </div>
       </details>
-      <button class="btn btn-ghost btn-sm btn-sync-pulse" onclick="doParqetSync()">&#8635; Sync starten</button>`;
-      if(!s.portfolio_id){
-        btns += `<button class="btn btn-ghost btn-sm" onclick="loadParqetPortfolios()">Portfolio wählen</button>`;
-      }
+      <button class="btn btn-ghost btn-sm btn-sync-pulse" onclick="doParqetSync()">&#8635; Sync starten</button>
+      <button class="btn btn-ghost btn-sm" onclick="${s.portfolio_id ? 'switchParqetPortfolio()' : 'loadParqetPortfolios()'}">${s.portfolio_id ? 'Portfolio wechseln' : 'Portfolio wählen'}</button>`;
       if(s.has_backup){
         const btime = s.backup_time ? `<br><span style="font-size:10px;font-weight:400;opacity:.6">vom ${s.backup_time}</span>` : "";
         btns += `<button class="btn btn-ghost btn-sm" style="color:var(--muted);line-height:1.4"
@@ -5780,6 +5790,11 @@ async function doParqetConnect(){
       if(s.connected && !s.portfolio_id) loadParqetPortfolios();
     }, 3000);
   } catch(e){ toast("Fehler: "+e.message, false); }
+}
+
+async function switchParqetPortfolio(){
+  if(!confirm("Portfolio wechseln?\n\nDer nächste Sync vergleicht deinen Bestand dann gegen das neu gewählte Parqet-Portfolio statt gegen das bisherige.")) return;
+  loadParqetPortfolios();
 }
 
 async function loadParqetPortfolios(){
@@ -5823,11 +5838,12 @@ async function doParqetReconnect(){
 }
 
 async function confirmParqetPortfolio(){
-  const sel = document.getElementById("parqetPortfolioSelect");
-  const pid = sel.value;
+  const sel  = document.getElementById("parqetPortfolioSelect");
+  const pid  = sel.value;
   if(!pid) return;
+  const pname = sel.options[sel.selectedIndex]?.textContent || "";
   await fetch(`${API}/depots/${_parqetDepotId}/parqet/select-portfolio`, {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({portfolio_id:pid})});
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({portfolio_id:pid, portfolio_name:pname})});
   document.getElementById("parqetPortfolioPicker").style.display = "none";
   toast("Portfolio verbunden — Sync kann gestartet werden");
   loadParqetStatus(_parqetDepotId);
@@ -6780,7 +6796,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.48 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.49 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
