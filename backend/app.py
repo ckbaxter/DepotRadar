@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.22"
+VERSION           = "2.8.23"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2342,12 +2342,22 @@ def parqet_sync(depot_id):
         if (updated or new_stocks) and os.path.exists(src):
             shutil.copy2(src, bak)
         save_stocks(depot_id, stocks)
-        for d in depots:
+        # last_sync/needs_reconnect auf FRISCH geladenem Stand setzen, nicht auf dem ganz zu
+        # Beginn der Funktion geladenen `depots` (Zeile ~2234) — der ist veraltet, falls
+        # Schritt 1 oder 3 zwischenzeitlich per 401 einen Parqet-Token-Refresh ausgelöst und
+        # bereits gespeichert hat. Parqet-Refresh-Tokens sind Single-Use: würden wir hier den
+        # alten `depots`-Stand zurückspeichern, überschreiben wir den frisch rotierten Token
+        # wieder mit dem bereits verbrauchten alten — der nächste Sync scheitert dann mit
+        # 400 invalid_grant, obwohl der Refresh Sekunden zuvor noch erfolgreich war (genau so
+        # am 10.08.2026 real beobachtet: Sync 21:37 erfolgreich inkl. Refresh, Sync 21:58
+        # scheitert — 21 Minuten später, weit unter jeder plausiblen Ablauffrist).
+        depots_final = load_depots()
+        for d in depots_final:
             if d["id"] == depot_id:
                 d["parqet"]["last_sync"] = datetime.now().strftime("%d.%m.%Y %H:%M")
                 d["parqet"].pop("needs_reconnect", None)
                 break
-        save_depots(depots)
+        save_depots(depots_final)
         log_body = f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)} | Verkauft: {len(removed)}"
         if updated_details:
             log_body += "\n\nAktualisiert:\n" + "\n".join(updated_details)
