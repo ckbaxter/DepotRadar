@@ -2174,6 +2174,7 @@ def parqet_status(depot_id):
     if not depot: return jsonify({"error": "Nicht gefunden"}), 404
     pq = depot.get("parqet", {})
     return jsonify({"connected": pq.get("connected", False), "portfolio_id": pq.get("portfolio_id"),
+                    "portfolio_name": pq.get("portfolio_name"),
                     "last_sync": pq.get("last_sync"),
                     "has_client_id": bool(get_client_id(depot)),
                     "needs_reconnect": pq.get("needs_reconnect", False),
@@ -2202,11 +2203,17 @@ def parqet_portfolios(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/select-portfolio", methods=["POST"])
 def parqet_select_portfolio(depot_id):
-    pid = (request.get_json() or {}).get("portfolio_id", "")
+    body = request.get_json() or {}
+    pid  = body.get("portfolio_id", "")
     if not pid: return jsonify({"error": "portfolio_id erforderlich"}), 400
+    pname = (body.get("portfolio_name") or "").strip() or None
     depots = load_depots()
     for d in depots:
-        if d["id"] == depot_id: d.setdefault("parqet", {})["portfolio_id"] = pid; break
+        if d["id"] == depot_id:
+            pq = d.setdefault("parqet", {})
+            pq["portfolio_id"]   = pid
+            pq["portfolio_name"] = pname  # nur fürs Anzeigen im Status — kein Feld der Parqet-API selbst
+            break
     save_depots(depots); return jsonify({"ok": True})
 
 def _fetch_all_parqet_activities(depot, depot_id, pid):
