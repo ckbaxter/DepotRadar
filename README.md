@@ -4,7 +4,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.21-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.22-blue)
 ![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.49-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
@@ -325,7 +325,7 @@ Hat der verbundene Parqet-Account mehrere Portfolios, wird nach dem Verbinden ei
 
 ### Token-Erneuerung
 
-Der Access Token ist bei Parqet nur kurzlebig (ca. 1 Stunde). Da der reguläre automatische Kurs-Refresh ausschließlich Yahoo Finance/Frankfurter anspricht, nicht Parqet, erneuert ein täglicher Hintergrund-Job (04:00 Uhr) den Token aller verbundenen Depots automatisch — unabhängig davon, ob zwischenzeitlich manuell synchronisiert wurde. Ein eigener Lock stellt sicher, dass Tages-Job und ein zeitgleicher manueller Sync sich nicht gegenseitig den (bei Parqet vermutlich rotierenden) Refresh Token ungültig machen. Schlägt die Erneuerung fehl (z.B. weil der Refresh Token selbst ungültig geworden ist), erscheint im Status „🔒 Token abgelaufen" mit der Option **Neu verbinden**.
+Der Access Token ist bei Parqet nur kurzlebig (ca. 1 Stunde) und wird beim nächsten Sync automatisch im Hintergrund erneuert, sobald er abgelaufen ist — unbemerkt, ohne Verzögerung oder Meldung. Der zugehörige Refresh Token hat darüber hinaus eine feste absolute Lebensdauer von ca. **2 Stunden ab dem Verbindungsaufbau**, unabhängig davon, wie oft er zwischenzeitlich genutzt wird (kein Rolling Expiry) — vermutlich, aber nicht offiziell bestätigt, an den Status als private Parqet-Connect-Integration gekoppelt. Ist diese Zeitspanne abgelaufen, schlägt die Erneuerung fehl und im Status erscheint „🔒 Token abgelaufen" mit der Option **Neu verbinden** — ein erneuter Reconnect ca. alle 2 Stunden Nutzungspause ist mit dem aktuellen Setup normal und nicht vermeidbar.
 
 ### Backup & Rückgängig
 
@@ -368,6 +368,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.22 | Root Cause für wiederholte Parqet-Reconnects gefunden: der Refresh Token hat eine feste absolute Lebensdauer von ca. 2 Stunden ab Verbindungsaufbau (kein Rolling Expiry, unabhängig von Nutzung) — vermutlich an den Status als private Connect-Integration gekoppelt. Der tägliche Token-Refresh-Job aus v2.8.20 konnte das nicht verhindern (24h >> 2h) und wurde komplett entfernt, da er nur täglich einen nutzlosen Fehlschlag-Eintrag im Verlauf erzeugt hätte. Erneuerung erfolgt wieder rein reaktiv beim Sync; der Locking-Fix aus v2.8.21 bleibt bestehen |
 | 2.8.21 | Bugfix: Race Condition beim Parqet-Token-Refresh behoben — ein Sync konnte kurz nach erfolgreicher automatischer Token-Erneuerung trotzdem „Reconnect nötig" melden, wenn Tages-Job und ein zeitgleicher manueller Sync denselben (bei Parqet vermutlich rotierenden) Refresh Token gleichzeitig verwendeten. Neuer eigener Lock serialisiert Token-Refreshs pro Depot, getrennt vom bestehenden Sync-Lock (Deadlock-Vermeidung); `_try_refresh_token` lädt jetzt vor jedem Versuch den aktuellsten Stand neu |
 | 2.8.20 / 2.13.49 | Parqet-Access-Token wird jetzt täglich um 04:00 Uhr automatisch erneuert (`refresh_parqet_tokens`, neuer Scheduler-Job), unabhängig von manuellen Syncs — der reguläre Auto-Kurs-Refresh spricht ausschließlich Yahoo/Frankfurter an, nie die Parqet-API, wodurch der bei Parqet ca. 1h gültige Access Token zwischen zwei manuellen Syncs sonst ablaufen konnte; Fehlschläge setzen `needs_reconnect` wie beim bestehenden 401-Handling, neuer Verlauf-Eintrag „🔑 Parqet Token-Erneuerung". Depot-Einstellungen zeigen jetzt den Namen des ausgewählten Parqet-Portfolios dauerhaft im Status (vorher nur beim erstmaligen Auswählen sichtbar) und erlauben über „Portfolio wechseln" den nachträglichen Wechsel (vorher nur bei der Erstverbindung möglich, mit Bestätigungsdialog zur Sync-Auswirkung). Depot-Einstellungen-Modal ab Tablet-Breite (≥768px) auf 620px verbreitert, damit die vier Parqet-Aktions-Buttons dort in einer Zeile Platz finden; auf dem Smartphone unverändert |
 | 2.8.19 / 2.13.43–48 | Portfolio-Übersicht: Top3/Flop3-Karten (Gesamt und Heute) zeigen den Wert wahlweise in % oder €, umschaltbar durch Tippen auf eine der drei Zahlen (gilt für die ganze Karte, Standard %). Bei „Gesamt" exakt berechnet, bei „Heute" aus der bereits gerundeten Tagesperformance abgeleitet. Lange Firmennamen werden einzeilig gekürzt (…), Antippen des Namens zeigt ihn vollständig |
