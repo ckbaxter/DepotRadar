@@ -577,6 +577,7 @@ select</style>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%">
         <span style="font-weight:600;font-size:15px" id="viewTitle">—</span>
         <span class="last-update" id="lastUpdate"></span>
+        <span class="last-update" id="parqetSyncInfo" style="display:none"></span>
         <span class="next-refresh" id="nextRefresh"></span>
         <span class="next-refresh" id="depotBudgetInfo" style="color:var(--green)"></span>
         <div style="flex:1"></div>
@@ -595,6 +596,7 @@ select</style>
     <!-- Einheitliche Aktionsleiste -->
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 16px 2px">
       <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshAllBtn" title="Kurse jetzt abrufen">&#8635; Kurse aktualisieren</button>
+      <button class="btn btn-ghost btn-sm" onclick="doParqetSyncMain()" id="parqetSyncMainBtn" title="Mit Parqet synchronisieren" style="display:none">&#128279; Parqet Sync</button>
       <button class="btn btn-ghost btn-sm" onclick="openAthCheck()" id="athCheckBtn" title="ATH-Werte mit Yahoo vergleichen"
               style="display:none">&#128269; ATH prüfen</button>
       <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()" title="Nachkauf-Kandidaten anzeigen">🛒 Nachkauf</button>
@@ -1836,7 +1838,7 @@ async function loadDepots(){
     const wl = watchlistsCache.find(w => w.id === savedView.id);
     if(wl) activeView = {type:"watchlist", id:wl.id, name:wl.name};
   }
-  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection();
+  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection(); updateParqetSyncUI();
 }
 
 function renderDepotTabs(){
@@ -1891,14 +1893,14 @@ function switchDepot(depot){
   resetViewFilters();
   localStorage.setItem("activeDepot", depot.id);
   localStorage.setItem("activeView", JSON.stringify(activeView));
-  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection();
+  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection(); updateParqetSyncUI();
 }
 
 function switchWatchlist(wl){
   activeView={type:"watchlist", id:wl.id, name:wl.name};
   resetViewFilters();
   localStorage.setItem("activeView", JSON.stringify(activeView));
-  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection();
+  renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection(); updateParqetSyncUI();
 }
 
 
@@ -4747,6 +4749,14 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
+    versions: "Frontend v2.13.50 · Backend v2.8.24",
+    changes: [
+      "Parqet-Sync jetzt auch direkt in der Hauptansicht möglich, ohne die Depot-Einstellungen öffnen zu müssen: neuer „🔗 Parqet Sync\"-Button in der Werkzeugleiste (neben „Kurse aktualisieren\") plus Info „Parqet: zuletzt …\" in der Kopfzeile — beides nur sichtbar, wenn das aktive Depot mit Parqet verbunden ist. Bleibt automatisch mit dem Depot-Einstellungen-Modal synchron, egal wo der Sync ausgelöst wird.",
+      "Sicherheits-Härtung: GET /api/depots lieferte bisher ungefiltert auch die Parqet Access-/Refresh-Token an das Frontend aus, obwohl dort nirgends gelesen — werden jetzt vor der Auslieferung entfernt (keine Funktionsänderung, reine Härtung)."
+    ]
+  },
+  {
+    label: "August 2026",
     versions: "Frontend v2.13.49 · Backend v2.8.20",
     changes: [
       "Parqet Access Token wird jetzt täglich um 04:00 Uhr automatisch erneuert, unabhängig von manuellen Syncs (vorher lief das Auto-Refresh nur gegen Yahoo/Frankfurter, nie gegen Parqet — der Access Token, bei Parqet ca. 1h gültig, konnte dadurch zwischen zwei Syncs ablaufen). Neuer Verlauf-Eintrag „🔑 Parqet Token-Erneuerung\" pro Lauf.",
@@ -5718,6 +5728,15 @@ async function loadParqetStatus(depotId){
   _parqetDepotId = depotId;
   const r = await fetch(`${API}/depots/${depotId}/parqet/status`);
   const s = await r.json();
+  // Hauptansicht (Kopfzeile-Info + Werkzeugleisten-Button) mitziehen, falls gerade dieses
+  // Depot aktiv ist — sonst bliebe sie veraltet, wenn Sync/Reconnect/Portfolio-Wechsel über
+  // dieses Modal statt über den Button in der Hauptansicht ausgelöst wird.
+  if(activeDepot?.id === depotId){
+    activeDepot.parqet = {...(activeDepot.parqet||{}), connected: s.connected,
+      last_sync: s.last_sync, needs_reconnect: s.needs_reconnect,
+      portfolio_id: s.portfolio_id, portfolio_name: s.portfolio_name};
+    updateParqetSyncUI();
+  }
   const box     = document.getElementById("parqetStatusBox");
   const actions = document.getElementById("parqetActions");
   const picker  = document.getElementById("parqetPortfolioPicker");
@@ -5860,6 +5879,57 @@ async function parqetUndoSync(depotId){
     const e = await r.json();
     toast(e.error||"Fehler beim Rückgängigmachen", false);
   }
+}
+
+
+// ── Parqet Sync — Hauptansicht (Kopfzeile-Info + Werkzeugleisten-Button) ─────
+// Getrennt von doParqetSync() (nutzt _parqetDepotId, ist ans geöffnete Depot-Einstellungen-
+// Modal gekoppelt und schreibt bei 401 direkt in dessen #parqetActions-DOM). Hier läuft der
+// Sync direkt über activeDepot.id, unabhängig davon, ob das Modal je geöffnet war — daher
+// eigene, schlankere Fehlerbehandlung ohne Zugriff auf modal-only Elemente.
+function updateParqetSyncUI(){
+  const btn  = document.getElementById("parqetSyncMainBtn");
+  const info = document.getElementById("parqetSyncInfo");
+  const pq   = activeDepot?.parqet;
+  if(!activeDepot || !pq?.connected){
+    btn.style.display = "none"; info.style.display = "none";
+    return;
+  }
+  btn.style.display  = "";
+  info.style.display = pq.last_sync ? "" : "none";
+  if(pq.last_sync) info.textContent = `Parqet: zuletzt ${pq.last_sync}`;
+}
+
+async function doParqetSyncMain(){
+  if(!activeDepot?.parqet?.connected) return;
+  const depotId = activeDepot.id;
+  toast("Parqet Sync läuft …");
+  try {
+    const r = await fetch(`${API}/depots/${depotId}/parqet/sync`, {method:"POST"});
+    const d = await r.json();
+    if(r.status === 401 || d.needs_reconnect){
+      toast("Token abgelaufen — bitte in den Depot-Einstellungen neu verbinden", false);
+      activeDepot.parqet.needs_reconnect = true;
+      return;
+    }
+    if(!r.ok) throw new Error(d.error);
+    // activeDepot lokal nachziehen, damit die Kopfzeile sofort den neuen Stand zeigt,
+    // ohne auf den nächsten vollen Depots-Reload warten zu müssen.
+    activeDepot.parqet.last_sync = new Date().toLocaleString("de-DE",
+      {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(",", "");
+    updateParqetSyncUI();
+    if(d.updated && d.updated.length > 0){
+      toast(`${d.updated.length} Aktie(n) aktualisiert: ${d.updated.join(", ")}`);
+      loadCurrentStocks();
+    }
+    if(d.mismatches && d.mismatches.length > 0) openMismatchModal(d.mismatches);
+    if(d.removed && d.removed.length > 0) openRemovedModal(d.removed);
+    if(d.new_stocks && d.new_stocks.length > 0){
+      openParqetImportModal(d.new_stocks);
+    } else if((!d.updated || d.updated.length === 0) && (!d.removed || d.removed.length === 0)){
+      toast("Sync abgeschlossen — keine Änderungen");
+    }
+  } catch(e){ toast("Sync Fehler: "+e.message, false); }
 }
 
 async function doParqetSync(){
@@ -6796,7 +6866,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.49 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.50 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
