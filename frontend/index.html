@@ -4749,6 +4749,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
+    versions: "Frontend v2.13.51 · Backend v2.8.24",
+    changes: [
+      "Bugfix: der neue „Parqet Sync\"-Button + „Parqet: zuletzt …\"-Info (v2.13.50) tauchte fälschlich auch in Watchlisten auf, da activeDepot beim Wechsel zu einer Watchlist unverändert bestehen bleibt (nur activeView wechselt). Sichtbarkeits-Prüfung berücksichtigt jetzt zusätzlich activeView.type — Parqet-Kram erscheint nur noch in echten Depot-Ansichten."
+    ]
+  },
+  {
+    label: "August 2026",
     versions: "Frontend v2.13.50 · Backend v2.8.24",
     changes: [
       "Parqet-Sync jetzt auch direkt in der Hauptansicht möglich, ohne die Depot-Einstellungen öffnen zu müssen: neuer „🔗 Parqet Sync\"-Button in der Werkzeugleiste (neben „Kurse aktualisieren\") plus Info „Parqet: zuletzt …\" in der Kopfzeile — beides nur sichtbar, wenn das aktive Depot mit Parqet verbunden ist. Bleibt automatisch mit dem Depot-Einstellungen-Modal synchron, egal wo der Sync ausgelöst wird.",
@@ -5891,7 +5898,10 @@ function updateParqetSyncUI(){
   const btn  = document.getElementById("parqetSyncMainBtn");
   const info = document.getElementById("parqetSyncInfo");
   const pq   = activeDepot?.parqet;
-  if(!activeDepot || !pq?.connected){
+  // activeDepot bleibt beim Wechsel zu einer Watchlist unverändert bestehen (switchWatchlist()
+  // ändert nur activeView, nicht activeDepot) — daher zusätzlich prüfen, dass wirklich eine
+  // Depot-Ansicht aktiv ist, sonst würde der Parqet-Kram fälschlich in Watchlisten auftauchen.
+  if(activeView.type !== "depot" || !activeDepot || !pq?.connected){
     btn.style.display = "none"; info.style.display = "none";
     return;
   }
@@ -5901,7 +5911,7 @@ function updateParqetSyncUI(){
 }
 
 async function doParqetSyncMain(){
-  if(!activeDepot?.parqet?.connected) return;
+  if(activeView.type !== "depot" || !activeDepot?.parqet?.connected) return;
   const depotId = activeDepot.id;
   toast("Parqet Sync läuft …");
   try {
@@ -6866,7 +6876,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.50 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.51 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
