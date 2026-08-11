@@ -25,7 +25,7 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.23"
+VERSION           = "2.8.24"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2760,7 +2760,20 @@ def splits_stocks_with_isin():
 
 # ── Depot CRUD ────────────────────────────────────────────────────
 @app.route("/api/depots", methods=["GET"])
-def get_depots(): return jsonify(load_depots())
+def get_depots():
+    # access_token/refresh_token werden vom Frontend nirgends gelesen (nur intern für die
+    # Parqet-API-Calls gebraucht) — hier bewusst rausfiltern, statt sie unnötig im Browser
+    # landen zu lassen. Restliche parqet-Felder (connected, last_sync, portfolio_name,
+    # needs_reconnect, ...) bleiben erhalten, die braucht das Frontend für Anzeige/Buttons.
+    depots = load_depots()
+    out = []
+    for d in depots:
+        d = dict(d)
+        if "parqet" in d:
+            pq = dict(d["parqet"]); pq.pop("access_token", None); pq.pop("refresh_token", None)
+            d["parqet"] = pq
+        out.append(d)
+    return jsonify(out)
 
 @app.route("/api/depots", methods=["POST"])
 def create_depot():
