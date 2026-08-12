@@ -23,9 +23,11 @@ USERS_FILE     = os.path.join(DATA_DIR, "users.json")
 SNAPSHOTS_FILE  = os.path.join(DATA_DIR, "snapshots.json")
 HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
+REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
+DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.24"
+VERSION           = "2.8.28"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -73,6 +75,15 @@ def splits_as_dict():
     for s in load_splits():
         result.setdefault(s["isin"], []).append((s["date"], s["ratio"]))
     return result
+
+# ── Realisierte Gewinne/Verluste & Dividenden (aus Parqet-Sync, seit v2.8.25) ──
+# Globale Dateien (analog zu splits.json/notifications.json), Einträge per depot_id
+# gefiltert statt eine Datei pro Depot — siehe PROJECT_CONTEXT. Datenquelle ausschließlich
+# Parqet-Aktivitäten (type=sell bzw. type=dividend), kein manueller Erfassungsweg.
+def load_realized_gains(): return _load_json(REALIZED_GAINS_FILE, [])
+def save_realized_gains(data): _save_json(REALIZED_GAINS_FILE, data)
+def load_dividends(): return _load_json(DIVIDENDS_FILE, [])
+def save_dividends(data): _save_json(DIVIDENDS_FILE, data)
 
 
 
@@ -2211,14 +2222,18 @@ def parqet_select_portfolio(depot_id):
     save_depots(depots); return jsonify({"ok": True})
 
 def _fetch_all_parqet_activities(depot, depot_id, pid):
-    """Lädt alle Parqet-Aktivitäten (buy/sell/transfer) vollständig paginiert.
+    """Lädt alle Parqet-Aktivitäten (buy/sell/transfer/dividend) vollständig paginiert.
     Kapselt den while-True/cursor-Loop der zuvor in parqet_sync und parqet_debug
-    dupliziert war. Wirft eine Exception bei Netzwerk- oder API-Fehlern."""
+    dupliziert war. Wirft eine Exception bei Netzwerk- oder API-Fehlern.
+    dividend seit v2.8.25 ergänzt (für _sync_earnings) — calculate_holdings() ignoriert
+    den Typ unverändert (nur buy/sell/transfer_* werden dort behandelt), kein Risiko
+    für die bestehende Holdings-Berechnung."""
     all_activities = []; cursor = None
     while True:
         url = (f"/portfolios/{pid}/activities"
                f"?activityType=buy&activityType=sell"
                f"&activityType=transfer_in&activityType=transfer_out"
+               f"&activityType=dividend"
                f"&assetType=security&limit=500")
         if cursor: url += f"&cursor={cursor}"
         data   = parqet_api_get(depot, url, depot_id)
@@ -2227,6 +2242,130 @@ def _fetch_all_parqet_activities(depot, depot_id, pid):
         cursor = data.get("nextCursor") if isinstance(data, dict) else None
         if not cursor: break
     return all_activities
+
+def _resolve_isin_name(isin):
+    """Best-effort Namensauflösung per ISIN. Fallback für Fälle, in denen weder die lokale
+    Depot-Aktie (mehr) existiert noch Parqet selbst einen Namen liefert — Parqets
+    Activities-Antworten enthalten für Wertpapiere laut offizieller API-Doku nur
+    assetIdentifierType/isin, anders als /holdings (das asset.name liefert, aber nur für
+    aktuell gehaltene Positionen — bei komplett verkauften/entfernten Positionen hilft das
+    also auch nicht). Zwei Versuche nacheinander, dieselben zwei Quellen wie in der
+    ISIN-Suche im Hinzufügen-Modal (api_search):
+    1) Börse Frankfurt quick_search — für viele deutsche/europäische Listings zuständig
+    2) Yahoo Finance search — deckt auch große, primär im Ausland gehandelte Werte ab, bei
+       denen Börse Frankfurt keinen Treffer liefert (z.B. wenn dort nur ein selten
+       gehandeltes Zweitlisting oder gar kein Eintrag existiert)
+    Gibt None bei Fehlschlag beider Versuche zurück, wirft nie."""
+    if not isin: return None
+    try:
+        bh = {"User-Agent":"Mozilla/5.0","Accept":"application/json",
+              "Origin":"https://www.boerse-frankfurt.de","Referer":"https://www.boerse-frankfurt.de/"}
+        r = requests.get(f"https://api.boerse-frankfurt.de/v1/search/quick_search?searchTerms={isin}&limit=1",
+                         headers=bh, timeout=8)
+        items = r.json().get("data", [])
+        if items and items[0].get("name"):
+            return items[0]["name"]
+        log.info(f"ISIN-Namensauflösung: Börse Frankfurt kein Treffer für {isin} (Status {r.status_code})")
+    except Exception as e:
+        log.warning(f"ISIN-Namensauflösung (Börse Frankfurt) fehlgeschlagen für {isin}: {e}")
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v1/finance/search"
+                         f"?q={urlquote(isin)}&quotesCount=1&newsCount=0&listsCount=0",
+                         headers=YH, timeout=8)
+        quotes = r.json().get("quotes", [])
+        if quotes:
+            name = quotes[0].get("longname") or quotes[0].get("shortname")
+            if name: return name
+        log.info(f"ISIN-Namensauflösung: auch Yahoo kein Treffer für {isin} (Status {r.status_code})")
+    except Exception as e:
+        log.warning(f"ISIN-Namensauflösung (Yahoo) fehlgeschlagen für {isin}: {e}")
+    return None
+
+_MAX_RESOLVE_ATTEMPTS = 5
+
+def _heal_unresolved_names(entries):
+    """Trägt fehlende Namen nach — sowohl bei frisch erzeugten Einträgen ohne lokalen
+    Stocks-Match/Parqet-Namen als auch bei älteren, bereits ohne Namen gespeicherten Einträgen
+    (z.B. aus der Zeit vor dieser Auflösung, oder von Positionen die schon vor diesem Sync aus
+    dem Bestand entfernt wurden). Begrenzter Zähler statt dauerhaftem Boolean-Flag (v2.8.28) —
+    damit ein Eintrag, der z.B. nur an einem kurzzeitigen API-Fehlschlag oder einer inzwischen
+    verbesserten Auflösungslogik (Yahoo-Fallback ergänzt) scheiterte, bei einem der nächsten
+    Syncs noch eine Chance bekommt, statt für immer hängen zu bleiben. Nach _MAX_RESOLVE_ATTEMPTS
+    erfolglosen Versuchen wird endgültig aufgegeben (vermutlich delistetes/obskures Papier).
+    Gibt zurück, ob sich an der Liste etwas geändert hat (steuert, ob ein Save nötig ist)."""
+    changed = False
+    for e in entries:
+        if e.get("name"): continue
+        attempts = e.get("name_resolve_attempts", 0)
+        if attempts >= _MAX_RESOLVE_ATTEMPTS: continue
+        resolved = _resolve_isin_name(e.get("isin"))
+        if resolved:
+            e["name"] = resolved
+            e.pop("name_resolve_attempts", None)
+        else:
+            e["name_resolve_attempts"] = attempts + 1
+        e.pop("name_unresolved", None)  # Altfeld aus v2.8.26 — durch den Zähler abgelöst
+        changed = True
+    return changed
+
+def _sync_earnings(depot_id, activities, stocks):
+    """Extrahiert Sell- (realisierte G/V) und Dividend-Aktivitäten aus einer per Parqet-Sync
+    geladenen Aktivitätenliste und ergänzt realized_gains.json/dividends.json um neue
+    Einträge. Dedup über Parqets eigene, global eindeutige Aktivitäts-ID (`id`) — bei jedem
+    Sync werden alle Aktivitäten seit Anfang erneut geladen, nicht nur neue. Rein additiv,
+    verändert weder stocks noch die Holdings-Berechnung. Gibt (neue_dividenden, neue_realized)
+    für den Sync-Verlaufseintrag zurück."""
+    isin_lookup = {s.get("isin"): (s.get("ticker", ""), s.get("name", ""))
+                   for s in stocks if s.get("isin")}
+
+    realized  = load_realized_gains()
+    known_rg  = {e["activity_id"] for e in realized if e.get("activity_id")}
+    new_rg    = 0
+    for a in activities:
+        if a.get("type") != "sell": continue
+        aid = a.get("id")
+        if not aid or aid in known_rg: continue
+        isin          = a.get("asset", {}).get("isin")
+        curr          = a.get("currency", "EUR")
+        eur           = get_eur_rate(curr)
+        ticker, name  = isin_lookup.get(isin, ("", ""))
+        gains, gains_net = a.get("realizedGains"), a.get("realizedGainsNet")
+        realized.append({
+            "id": str(_uuid.uuid4())[:8], "activity_id": aid, "depot_id": depot_id,
+            "isin": isin, "ticker": ticker, "name": name or a.get("asset", {}).get("name", ""),
+            "sell_datetime": a.get("datetime"), "shares": a.get("shares"), "price": a.get("price"),
+            "currency": curr,
+            "realized_gains": gains, "realized_gains_net": gains_net,
+            "realized_gains_eur":     round((gains or 0) * eur, 2),
+            "realized_gains_net_eur": round((gains_net or 0) * eur, 2),
+            "avg_holding_period_days": a.get("avgHoldingPeriod"),
+        })
+        known_rg.add(aid); new_rg += 1
+    if _heal_unresolved_names(realized) or new_rg: save_realized_gains(realized)
+
+    dividends = load_dividends()
+    known_div = {e["activity_id"] for e in dividends if e.get("activity_id")}
+    new_div   = 0
+    for a in activities:
+        if a.get("type") != "dividend": continue
+        aid = a.get("id")
+        if not aid or aid in known_div: continue
+        isin          = a.get("asset", {}).get("isin")
+        curr          = a.get("currency", "EUR")
+        eur           = get_eur_rate(curr)
+        ticker, name  = isin_lookup.get(isin, ("", ""))
+        amount        = a.get("amount")
+        dividends.append({
+            "id": str(_uuid.uuid4())[:8], "activity_id": aid, "depot_id": depot_id,
+            "isin": isin, "ticker": ticker, "name": name or a.get("asset", {}).get("name", ""),
+            "pay_datetime": a.get("datetime"), "amount": amount,
+            "tax": a.get("tax"), "fee": a.get("fee"), "currency": curr,
+            "amount_eur": round((amount or 0) * eur, 2),
+        })
+        known_div.add(aid); new_div += 1
+    if _heal_unresolved_names(dividends) or new_div: save_dividends(dividends)
+
+    return new_div, new_rg
 
 
 @app.route("/api/depots/<depot_id>/parqet/sync", methods=["POST"])
@@ -2358,7 +2497,14 @@ def parqet_sync(depot_id):
                 d["parqet"].pop("needs_reconnect", None)
                 break
         save_depots(depots_final)
+
+        # Erträge (realisierte G/V + Dividenden) — rein additiv, siehe _sync_earnings.
+        # Nutzt dieselbe bereits geladene all_activities-Liste, kein zusätzlicher API-Call.
+        new_div, new_rg = _sync_earnings(depot_id, all_activities, stocks)
+
         log_body = f"Aktualisiert: {len(updated)} | Neu: {len(new_stocks)} | Konflikte: {len(mismatches)} | Verkauft: {len(removed)}"
+        if new_div or new_rg:
+            log_body += f" | Neue Dividenden: {new_div} | Neue realisierte G/V: {new_rg}"
         if updated_details:
             log_body += "\n\nAktualisiert:\n" + "\n".join(updated_details)
         add_log("manual_refresh", f"Parqet Sync: {depot['name']}", log_body,
@@ -2496,6 +2642,55 @@ def parqet_debug(depot_id):
     except Exception as e:
         out["error"] = str(e)
     return jsonify(out)
+
+@app.route("/api/depots/<depot_id>/earnings", methods=["GET"])
+def get_depot_earnings(depot_id):
+    """Liest realisierte G/V + Dividenden für dieses Depot (befüllt ausschließlich durch
+    parqet_sync/_sync_earnings). Deckt auch komplett verkaufte, aus dem Bestand entfernte
+    Positionen ab, da die Einträge unabhängig von stocks.json fortbestehen. Die Unterscheidung
+    Teil-/Komplettverkauf (isin noch in stocks vorhanden?) macht bewusst das Frontend anhand
+    des ohnehin geladenen stocksCache, kein zusätzliches Feld nötig."""
+    realized  = sorted((e for e in load_realized_gains() if e["depot_id"] == depot_id),
+                       key=lambda e: e.get("sell_datetime", ""), reverse=True)
+    dividends = sorted((e for e in load_dividends() if e["depot_id"] == depot_id),
+                       key=lambda e: e.get("pay_datetime", ""), reverse=True)
+    return jsonify({
+        "realized_gains": realized,
+        "dividends": dividends,
+        "total_realized_gains_eur":     round(sum(e.get("realized_gains_eur") or 0 for e in realized), 2),
+        "total_realized_gains_net_eur": round(sum(e.get("realized_gains_net_eur") or 0 for e in realized), 2),
+        "total_dividends_eur":          round(sum(e.get("amount_eur") or 0 for e in dividends), 2),
+    })
+
+def _patch_earning_name(depot_id, entry_id, load_fn, save_fn):
+    """Gemeinsame Logik für die beiden Namens-PATCH-Routen unten. Setzt name manuell und
+    entfernt die Auflösungs-Bookkeeping-Felder (name_resolve_attempts, Altfeld name_unresolved)
+    — die beschreiben nur den Zustand 'automatische Auflösung (noch) nicht erfolgreich',
+    nach manueller Vergabe trifft das nicht mehr zu."""
+    body = request.get_json() or {}
+    name = (body.get("name") or "").strip()
+    if not name: return jsonify({"error": "Name erforderlich"}), 400
+    with depot_lock(depot_id):
+        entries = load_fn()
+        entry   = next((e for e in entries if e.get("id") == entry_id and e.get("depot_id") == depot_id), None)
+        if not entry: return jsonify({"error": "Nicht gefunden"}), 404
+        entry["name"] = name
+        entry.pop("name_unresolved", None)
+        entry.pop("name_resolve_attempts", None)
+        save_fn(entries)
+    return jsonify({"ok": True, "name": name})
+
+@app.route("/api/depots/<depot_id>/realized-gains/<entry_id>", methods=["PATCH"])
+def patch_realized_gain_name(depot_id, entry_id):
+    """Manuelle Namensvergabe für einen realized_gains-Eintrag, dessen automatische Auflösung
+    fehlgeschlagen ist (name_unresolved, siehe _heal_unresolved_names)."""
+    return _patch_earning_name(depot_id, entry_id, load_realized_gains, save_realized_gains)
+
+@app.route("/api/depots/<depot_id>/dividends/<entry_id>", methods=["PATCH"])
+def patch_dividend_name(depot_id, entry_id):
+    """Manuelle Namensvergabe für einen dividends-Eintrag, dessen automatische Auflösung
+    fehlgeschlagen ist (name_unresolved, siehe _heal_unresolved_names)."""
+    return _patch_earning_name(depot_id, entry_id, load_dividends, save_dividends)
 
 
 # ── ATH-Prüfung ──────────────────────────────────────────────────
