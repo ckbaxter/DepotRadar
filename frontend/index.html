@@ -408,6 +408,37 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .sd-spinner{width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sd-spin .7s linear infinite;flex-shrink:0}
 @keyframes sd-spin{to{transform:rotate(360deg)}}
 .sd-source{font-size:10px;color:var(--muted);margin-top:10px;opacity:.7}
+
+/* Erträge-Modal (Dividenden + realisierte G/V aus Parqet-Sync, seit v2.13.52) */
+.eg-search-wrap{position:relative;display:flex;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.eg-search-icon{position:absolute;left:9px;font-size:13px;color:var(--muted);pointer-events:none}
+.eg-search-input{width:100%;padding:7px 30px 7px 28px;border:1px solid var(--border);border-radius:20px;background:var(--bg3);color:var(--text);font-size:13px;outline:none;transition:border-color .2s;box-sizing:border-box}
+.eg-search-input:focus{border-color:var(--accent)}
+.eg-search-clear{display:none;position:absolute;right:9px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0;line-height:1}
+.eg-search-clear.show{display:block}
+.eg-totals{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+.eg-total-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:box-shadow .15s}
+.eg-total-card.filtered{box-shadow:0 0 0 1.5px var(--accent)}
+.eg-total-card .lbl{font-size:11px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+.eg-total-card .lbl .tag{font-size:9px;background:var(--accent);color:#fff;padding:1px 5px;border-radius:4px;display:none}
+.eg-total-card.filtered .lbl .tag{display:inline-block}
+.eg-total-card .val{font-size:17px;font-weight:700}
+.eg-list{display:flex;flex-direction:column;gap:2px}
+.eg-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--border)}
+.eg-row:last-child{border-bottom:none}
+.eg-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.eg-info{flex:1;min-width:0;cursor:pointer}
+.eg-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eg-name:hover{color:var(--accent)}
+.eg-date{font-size:11px;color:var(--muted)}
+.eg-amount{font-size:13px;font-weight:700;flex-shrink:0}
+.eg-empty{font-size:12px;color:var(--muted);text-align:center;padding:20px 0}
+.eg-name-unresolved{font-size:12px;color:var(--muted);font-family:monospace}
+.eg-edit-name-btn{background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;padding:2px 6px;margin-left:4px;border-radius:4px}
+.eg-edit-name-btn:hover{background:var(--bg2)}
+.eg-name-edit-row{display:flex;gap:6px;align-items:center}
+.eg-name-input{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--accent);border-radius:6px;background:var(--bg2);color:var(--text);font-size:12px;outline:none}
+
 .btn.btn-ghost.btn-sm.active{background:rgba(78,124,246,.15);color:var(--accent);border-color:var(--accent)}
 .threshold-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .threshold-wrap input[type=range]{width:120px;min-height:28px;accent-color:#22c55e}
@@ -491,6 +522,10 @@ select</style>
               <div class="scard-val" id="ps-pnl">—</div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-pnl-pct"></div>
             </div>
+          </div>
+          <div class="scard scard-clickable" id="ps-earnings-card" style="display:none;cursor:pointer" onclick="openEarningsModal()" title="Details anzeigen">
+            <div class="scard-label">&#128176; Erträge gesamt</div>
+            <div class="scard-val" id="ps-earnings" style="color:var(--text)">—</div>
           </div>
           <div class="scard">
             <div class="scard-label">&#127881; Top 3 (Gesamt)</div>
@@ -975,6 +1010,45 @@ select</style>
     <div class="modal-body" id="sdBody"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('stockDetailModal')">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Erträge (Dividenden + realisierte G/V aus Parqet-Sync, seit v2.13.52) -->
+<div class="overlay" id="earningsModal" style="display:none" onclick="closeIfOverlay(event,'earningsModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">&#128176; Erträge</span>
+      <button class="close-btn" onclick="closeModal('earningsModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
+        <button class="btn btn-ghost btn-sm notif-filter-btn active" id="egfAll" onclick="setEgTypeFilter('all')" style="font-size:12px">Alle</button>
+        <button class="btn btn-ghost btn-sm notif-filter-btn" id="egfDiv" onclick="setEgTypeFilter('div')" style="font-size:12px">&#128181; Dividenden</button>
+        <button class="btn btn-ghost btn-sm notif-filter-btn" id="egfSell" onclick="setEgTypeFilter('sell')" style="font-size:12px">&#128200; Verkäufe</button>
+      </div>
+      <div class="eg-search-wrap">
+        <span class="eg-search-icon">&#128269;</span>
+        <input class="eg-search-input" id="egSearch" type="text" placeholder="Aktie suchen…" autocomplete="off" oninput="onEgSearch(this.value)"/>
+        <button class="eg-search-clear" id="egSearchClear" onclick="clearEgSearch()">&#10005;</button>
+      </div>
+      <div class="eg-totals">
+        <div class="eg-total-card" id="egCardDiv">
+          <div class="lbl"><span>Dividenden</span><span class="tag">gefiltert</span></div>
+          <div class="val" id="egValDiv" style="color:var(--green)">—</div>
+        </div>
+        <div class="eg-total-card" id="egCardSell">
+          <div class="lbl"><span>Realisierte G/V</span><span class="tag">gefiltert</span></div>
+          <div class="val" id="egValSell" style="color:var(--green)">—</div>
+        </div>
+      </div>
+      <div class="sd-divider"></div>
+      <div class="sd-section-lbl">Verlauf</div>
+      <div class="eg-list" id="egList"></div>
+      <div class="eg-empty" id="egEmpty" style="display:none">Keine Einträge für diesen Filter.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('earningsModal')">Schließen</button>
     </div>
   </div>
 </div>
@@ -1839,6 +1913,7 @@ async function loadDepots(){
     if(wl) activeView = {type:"watchlist", id:wl.id, name:wl.name};
   }
   renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection(); updateParqetSyncUI();
+  loadEarnings(activeView.type === "depot" ? activeDepot?.id : null);
 }
 
 function renderDepotTabs(){
@@ -1894,6 +1969,7 @@ function switchDepot(depot){
   localStorage.setItem("activeDepot", depot.id);
   localStorage.setItem("activeView", JSON.stringify(activeView));
   renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection(); updateParqetSyncUI();
+  loadEarnings(depot.id);
 }
 
 function switchWatchlist(wl){
@@ -1901,6 +1977,7 @@ function switchWatchlist(wl){
   resetViewFilters();
   localStorage.setItem("activeView", JSON.stringify(activeView));
   renderDepotTabs(); applyViewUiState(); loadCurrentStocks(); renderSnapshotSection(); updateParqetSyncUI();
+  loadEarnings(null);
 }
 
 
@@ -4749,6 +4826,27 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
+    versions: "Frontend v2.13.54 · Backend v2.8.28",
+    changes: [
+      "Bugfix: automatische ISIN-Namensauflösung bei komplett verkauften Positionen scheiterte auch für bekannte, große Unternehmen — Börse-Frankfurt-Suche allein reichte nicht aus. Yahoo Finance als zweite Quelle ergänzt (dieselbe Methode wie im Hinzufügen-Modal). Zusätzlich: einmal fehlgeschlagene Einträge blieben bisher dauerhaft blockiert (name_unresolved) statt bei künftigen Syncs erneut versucht zu werden — jetzt ein begrenzter Zähler (5 Versuche über mehrere Syncs verteilt) statt eines dauerhaften Stopp-Flags."
+    ]
+  },
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.53 · Backend v2.8.27",
+    changes: [
+      "Erträge-Modal: Einträge, deren Name nicht automatisch aufgelöst werden konnte (name_unresolved), zeigen jetzt ISIN + „✎ Namen vergeben\" — Tap klappt die Zeile zu einem Textfeld auf, Speichern schreibt den Namen dauerhaft über zwei neue PATCH-Endpoints (/realized-gains/<id>, /dividends/<id>)."
+    ]
+  },
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.52 · Backend v2.8.25",
+    changes: [
+      "Neu: „💰 Erträge gesamt\"-Kachel in der Portfolio-Übersicht (nur sichtbar bei vorhandenen Daten) öffnet ein neues Erträge-Modal mit Dividenden und realisierten Gewinnen/Verlusten aus dem Parqet-Sync — inkl. Typ-Filter (Alle/Dividenden/Verkäufe) und Aktien-Suche, die die Summenkacheln live umrechnet. Zeigt auch Positionen, die inzwischen komplett verkauft und aus dem Bestand entfernt wurden. Datenquelle ausschließlich Parqet, keine manuelle Erfassung."
+    ]
+  },
+  {
+    label: "August 2026",
     versions: "Frontend v2.13.51 · Backend v2.8.24",
     changes: [
       "Bugfix: der neue „Parqet Sync\"-Button + „Parqet: zuletzt …\"-Info (v2.13.50) tauchte fälschlich auch in Watchlisten auf, da activeDepot beim Wechsel zu einer Watchlist unverändert bestehen bleibt (nur activeView wechselt). Sichtbarkeits-Prüfung berücksichtigt jetzt zusätzlich activeView.type — Parqet-Kram erscheint nur noch in echten Depot-Ansichten."
@@ -5728,6 +5826,183 @@ async function loadCompanyInfo(ticker, name){
   }
 }
 
+// ── Erträge (Dividenden + realisierte G/V aus Parqet-Sync, seit v2.13.52) ────
+// Reine Anzeige, Datenquelle ausschließlich Parqet (siehe Backend _sync_earnings —
+// kein manueller Erfassungsweg, bewusste Design-Entscheidung). Kombiniert beide
+// Listen zu einer gemeinsamen, nach Datum sortierten Verlaufsliste; Teil- vs.
+// Komplettverkauf wird rein im Frontend anhand von stocksCache unterschieden
+// (kein zusätzliches Backend-Feld), deckt aber bewusst auch Positionen ab, die
+// komplett verkauft und aus stocksCache entfernt wurden — die Kachel/Modal-Summen
+// zeigen depotweit alles, unabhängig vom aktuellen Bestand.
+let _earningsData = null;   // {realized_gains, dividends, total_realized_gains_eur, total_dividends_eur}
+let _egType = "all", _egRows = [];
+
+async function loadEarnings(depotId){
+  // activeDepot bleibt beim Wechsel zu einer Watchlist unverändert bestehen
+  // (switchWatchlist() ändert nur activeView) — deshalb zusätzlich activeView.type
+  // prüfen, sonst würde die Kachel fälschlich auch in Watchlisten auftauchen
+  // (derselbe Bug-Typ wie beim Parqet-Sync-Button, siehe v2.13.51).
+  if(activeView.type !== "depot" || !depotId){
+    const card = document.getElementById("ps-earnings-card");
+    if(card) card.style.display = "none";
+    return;
+  }
+  try{
+    const r = await fetch(`${API}/depots/${depotId}/earnings`);
+    const d = await r.json();
+    if(activeView.type !== "depot" || activeDepot?.id !== depotId) return; // inzwischen gewechselt
+    _earningsData = d;
+  } catch(e){
+    _earningsData = null;
+  }
+  renderEarningsCard();
+}
+
+function renderEarningsCard(){
+  const card = document.getElementById("ps-earnings-card");
+  if(!card) return;
+  const d = _earningsData;
+  const has = d && (d.realized_gains.length || d.dividends.length);
+  if(!has){ card.style.display = "none"; return; }
+  const total = (d.total_realized_gains_eur || 0) + (d.total_dividends_eur || 0);
+  const el = document.getElementById("ps-earnings");
+  el.textContent = (total >= 0 ? "+" : "") + total.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2}) + " EUR";
+  el.style.color = total >= 0 ? "var(--green)" : "var(--red)";
+  card.style.display = "";
+}
+
+function fmtEgAmount(n){
+  return (n >= 0 ? "+" : "−") + Math.abs(n).toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2}) + " €";
+}
+function fmtEgDate(iso){
+  if(!iso) return "";
+  const dt = new Date(iso);
+  return isNaN(dt) ? iso : dt.toLocaleDateString("de-DE");
+}
+
+function openEarningsModal(){
+  if(!_earningsData) return;
+  _egType = "all";
+  ["egfAll","egfDiv","egfSell"].forEach(id => document.getElementById(id).classList.remove("active"));
+  document.getElementById("egfAll").classList.add("active");
+  document.getElementById("egSearch").value = "";
+  document.getElementById("egSearchClear").classList.remove("show");
+
+  const isHeld = isin => stocksCache.some(s => s.isin === isin);
+  // "unresolved" hängt bewusst nur am fehlenden Namen (nicht am internen Backend-Zähler
+  // name_resolve_attempts) — Bearbeiten anbieten ist unabhängig davon sinnvoll, ob das
+  // Backend noch automatisch weiterversucht oder schon aufgegeben hat.
+  const divRows  = _earningsData.dividends.map(e => ({
+    id:e.id, type:"div", isin:e.isin, ticker:e.ticker, name: e.name || e.ticker || e.isin || "—",
+    unresolved: !e.name,
+    date:e.pay_datetime, amount:e.amount_eur, label:"Dividende"
+  }));
+  const sellRows = _earningsData.realized_gains.map(e => ({
+    id:e.id, type:"sell", isin:e.isin, ticker:e.ticker, name: e.name || e.ticker || e.isin || "—",
+    unresolved: !e.name,
+    date:e.sell_datetime, amount:e.realized_gains_eur,
+    label: isHeld(e.isin) ? "Teilverkauf" : "Komplettverkauf"
+  }));
+  _egRows = [...divRows, ...sellRows].sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+
+  renderEgList();
+  openModal("earningsModal");
+}
+
+function renderEgList(){
+  const q = document.getElementById("egSearch").value.trim().toLowerCase();
+  const matchesSearch = r => !q || r.name.toLowerCase().includes(q) || (r.ticker || "").toLowerCase().includes(q);
+  const filtered = _egRows.filter(r => (_egType === "all" || r.type === _egType) && matchesSearch(r));
+
+  const list = document.getElementById("egList");
+  list.innerHTML = filtered.map(r => `
+    <div class="eg-row" id="eg-row-${r.id}">
+      <div class="eg-icon">${r.type === "div" ? "&#128181;" : "&#128200;"}</div>
+      <div class="eg-info" data-name="${esc(r.name)}"${r.unresolved ? "" : ` onclick="pickEgStock(this.dataset.name)"`}>
+        ${r.unresolved
+          ? `<span class="eg-name-unresolved">ISIN ${esc(r.isin || "—")}</span><button class="eg-edit-name-btn" onclick="event.stopPropagation();startEgNameEdit('${r.id}','${r.type}')">&#9998; Namen vergeben</button>`
+          : `<div class="eg-name">${esc(r.name)}${r.ticker ? ` (${esc(r.ticker)})` : ""}</div>`}
+        <div class="eg-date">${fmtEgDate(r.date)} · ${r.label}</div>
+      </div>
+      <div class="eg-amount" style="color:${r.amount >= 0 ? "var(--green)" : "var(--red)"}">${fmtEgAmount(r.amount)}</div>
+    </div>`).join("");
+  document.getElementById("egEmpty").style.display = filtered.length ? "none" : "block";
+
+  // Summenkacheln: Typ-Filter lässt sie bewusst unverändert ("gesamt"), die Suche
+  // rechnet sie auf die gefundene(n) Aktie(n) um (siehe Session-Diskussion).
+  const searchRows = _egRows.filter(matchesSearch);
+  const sumDiv  = searchRows.filter(r => r.type === "div").reduce((a,r) => a + r.amount, 0);
+  const sumSell = searchRows.filter(r => r.type === "sell").reduce((a,r) => a + r.amount, 0);
+  const valDiv  = document.getElementById("egValDiv"), valSell = document.getElementById("egValSell");
+  valDiv.textContent  = fmtEgAmount(sumDiv);  valDiv.style.color  = sumDiv  >= 0 ? "var(--green)" : "var(--red)";
+  valSell.textContent = fmtEgAmount(sumSell); valSell.style.color = sumSell >= 0 ? "var(--green)" : "var(--red)";
+  document.getElementById("egCardDiv").classList.toggle("filtered", !!q);
+  document.getElementById("egCardSell").classList.toggle("filtered", !!q);
+}
+
+function setEgTypeFilter(t){
+  _egType = t;
+  ["egfAll","egfDiv","egfSell"].forEach(id => document.getElementById(id).classList.remove("active"));
+  document.getElementById(t === "all" ? "egfAll" : t === "div" ? "egfDiv" : "egfSell").classList.add("active");
+  renderEgList();
+}
+function onEgSearch(v){
+  document.getElementById("egSearchClear").classList.toggle("show", !!v);
+  renderEgList();
+}
+function pickEgStock(name){
+  const inp = document.getElementById("egSearch");
+  inp.value = name;
+  onEgSearch(name);
+  inp.focus();
+}
+function clearEgSearch(){
+  const inp = document.getElementById("egSearch");
+  inp.value = "";
+  onEgSearch("");
+}
+
+// Inline-Namensvergabe für Einträge, deren automatische Auflösung fehlgeschlagen ist
+// (name_unresolved, siehe Backend _heal_unresolved_names). Klappt die betroffene Zeile
+// direkt zu einem Textfeld auf statt ein zweites Modal über dem bereits offenen zu öffnen.
+function startEgNameEdit(id, type){
+  const row = document.getElementById(`eg-row-${id}`);
+  if(!row) return;
+  const info = row.querySelector(".eg-info");
+  info.removeAttribute("onclick");
+  info.innerHTML = `
+    <div class="eg-name-edit-row" onclick="event.stopPropagation()">
+      <input type="text" class="eg-name-input" id="eg-name-input-${id}" placeholder="Name eingeben…"
+             onkeydown="if(event.key==='Enter')saveEgName('${id}','${type}');if(event.key==='Escape')renderEgList()"/>
+      <button class="btn btn-primary btn-sm" onclick="saveEgName('${id}','${type}')">&#10003;</button>
+      <button class="btn btn-ghost btn-sm" onclick="renderEgList()">&#10005;</button>
+    </div>`;
+  document.getElementById(`eg-name-input-${id}`).focus();
+}
+
+async function saveEgName(id, type){
+  const input = document.getElementById(`eg-name-input-${id}`);
+  const name  = input.value.trim();
+  if(!name) return;
+  const endpoint = type === "div" ? "dividends" : "realized-gains";
+  try{
+    const r = await fetch(`${API}/depots/${activeDepot.id}/${endpoint}/${id}`, {
+      method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name})
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "Fehler beim Speichern");
+    // Lokalen Stand nachziehen (_egRows fürs Rendering, _earningsData fürs Kachel-Total
+    // und für einen erneuten Modal-Öffnen-Durchlauf ohne Reload)
+    const rowObj = _egRows.find(x => x.id === id && x.type === type);
+    if(rowObj){ rowObj.name = name; rowObj.unresolved = false; }
+    const src = type === "div" ? _earningsData.dividends : _earningsData.realized_gains;
+    const srcEntry = src?.find(e => e.id === id);
+    if(srcEntry){ srcEntry.name = name; delete srcEntry.name_unresolved; delete srcEntry.name_resolve_attempts; }
+    renderEgList();
+    toast("Name gespeichert");
+  } catch(e){ toast("Fehler: "+e.message, false); }
+}
+
 // ── Parqet Integration ───────────────────────────────────────────
 let _parqetDepotId = null;
 
@@ -5928,6 +6203,7 @@ async function doParqetSyncMain(){
     activeDepot.parqet.last_sync = new Date().toLocaleString("de-DE",
       {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(",", "");
     updateParqetSyncUI();
+    loadEarnings(depotId);
     if(d.updated && d.updated.length > 0){
       toast(`${d.updated.length} Aktie(n) aktualisiert: ${d.updated.join(", ")}`);
       loadCurrentStocks();
@@ -5961,6 +6237,7 @@ async function doParqetSync(){
     }
     if(!r.ok) throw new Error(d.error);
     loadParqetStatus(_parqetDepotId);
+    if(activeDepot?.id === _parqetDepotId) loadEarnings(_parqetDepotId);
     if(d.updated && d.updated.length > 0){
       toast(`${d.updated.length} Aktie(n) aktualisiert: ${d.updated.join(", ")}`);
       loadCurrentStocks();
@@ -6876,7 +7153,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.51 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.54 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
