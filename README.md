@@ -50,6 +50,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Aktiensplits** — über die UI verwaltbar; splitbereinigter Einstandskurs bei Parqet-Sync
 - **Manuelle Positionserfassung** — Anzahl und Einstandskurs müssen nicht zwingend von Parqet stammen: optional direkt beim Hinzufügen einer Aktie im Bestand erfassbar, nachträglich änderbar über das „Aktie bearbeiten"-Modal (✎-Button, dort auch der Handelsplatz-Wechsel als Aufklapper). Ein P-Badge am Aktiennamen zeigt, ob die aktuellen Werte tatsächlich von Parqet stammen — manuell erfasste oder geänderte Werte tragen kein P. In Parqet-verbundenen Depots überschreibt der nächste Sync manuell geänderte Werte wieder (Modal warnt davor)
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion; bei Parqet komplett verkaufte Positionen werden erkannt und erst nach Bestätigung (einzeln oder gesammelt über „Alle entfernen") aus dem ATH-Tracker gelöscht
+- **Erträge (Dividenden & realisierte Gewinne/Verluste)** — werden beim Parqet-Sync automatisch miterfasst (Datenquelle ausschließlich Parqet, keine manuelle Buchung); „💰 Erträge gesamt"-Kachel in der Portfolio-Übersicht öffnet ein Modal mit Typ-Filter (Alle/Dividenden/Verkäufe) und Aktien-Suche, die die Summen live umrechnet; zeigt auch bereits komplett verkaufte und aus dem Bestand entfernte Positionen. Kann die automatische Namensauflösung für eine ISIN ausnahmsweise keinen Treffer finden, lässt sich der Name direkt in der Zeile manuell nachtragen
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance, verfügbar im Bestand und in jeder Watchlist; Korrekturen direkt in der App möglich
 - **XETRA-Unterstützung** — bei der Aktiensuche wird automatisch das passende XETRA-Listing vorgeschlagen; bekannte Aktien sofort aus lokalem Cache (`xetra_map.json`), unbekannte dynamisch via OpenFIGI und dann gecacht. Seit v2.8.16–18 zusätzlich ein Hinweis, wenn Yahoo an sein Antwortlimit stößt und die Suche eventuell eingegrenzt werden sollte (Ticker/ISIN statt Firmenname)
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
@@ -118,7 +119,9 @@ DepotRadar/
 │   ├── snapshots.json         # Tägliche Portfolio-Snapshots
 │   ├── notifications.json     # Verlauf / Benachrichtigungshistorie
 │   ├── health.json            # Gesundheits-Statistiken (persistiert für System-Status)
-│   └── eur_rates.json         # Gecachte EUR-Wechselkurse
+│   ├── eur_rates.json         # Gecachte EUR-Wechselkurse
+│   ├── realized_gains.json    # Realisierte Gewinne/Verluste aus Parqet-Sell-Aktivitäten
+│   └── dividends.json         # Dividenden aus Parqet-Aktivitäten
 └── docker-compose.yml
 ```
 
