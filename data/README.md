@@ -1,30 +1,33 @@
-# data/ – Übersicht der persistenten Dateien
+# data/ – Persistente Daten
 
-Alle Laufzeitdaten von DepotRadar liegen als JSON-Dateien in diesem Verzeichnis (Docker-Volume `./data:/data`). Zugriff ausschließlich über `_load_json`/`_save_json` (atomares Schreiben via Temp-Datei + `os.replace`), in der Regel gekapselt in eigenen `load_X()`/`save_X()`-Funktionen in `app.py`.
+Alle Laufzeitdaten von DepotRadar liegen hier als einfache JSON-Dateien (Docker-Volume `./data:/data`). Bewusst keine Datenbank — passend zur Design-Philosophie des Projekts: kein Build-Step, kein ORM, leicht zu inspizieren und zu sichern. Alle Schreibzugriffe erfolgen atomar (Temp-Datei + Rename), sodass ein Absturz mitten im Schreiben keine korrupte Datei hinterlässt.
 
-| Datei | Zweck | Struktur | Schreibt | Liest |
-|---|---|---|---|---|
-| `xetra_map.json` | US-Ticker → bevorzugtes EUR-Listing (XETRA/Amsterdam etc.), self-expanding via OpenFIGI | `{TICKER: {ticker, name, exchange}}` | `save_xetra_map()` | `load_xetra_map()` |
-| `depots.json` | Depot-Metadaten aller User | `[{id, name, …}]` | `save_depots()` | `load_depots()` |
-| `depot_<id>.json` | Bestand eines Depots (dynamischer Dateiname, ein File pro Depot) | Liste von Stock-Objekten | `save_stocks()` | `load_stocks()` |
-| `depot_<id>_backup.json` | Automatisches Backup vor jedem Parqet-Sync | wie `depot_<id>.json` | Dateikopie in `parqet_sync()` (kein JSON-Load/Save) | Undo-Route (`/api/depots/<id>/parqet/undo`) |
-| `watchlists.json` | Watchlist-Metadaten (eigenständig seit v2.8.0, nicht mehr Teil eines Depots) | `[{id, name, notifications_enabled}]` | `save_watchlists()` | `load_watchlists()` |
-| `wl_<id>.json` | Aktien einer Watchlist (dynamischer Dateiname) | Liste von Stock-Objekten | `save_wl_stocks()` | `load_wl_stocks()` |
-| `splits.json` | Erfasste Aktiensplits | `[{isin, name, date, ratio}]`, `ratio` auch < 1 für Reverse Splits | `save_splits()` | `load_splits()` |
-| `settings.json` | Globale Einstellungen (Zeitzone, Handelstage/-zeiten, Refresh-Intervall, Verlaufsbereinigung) | Dict | `save_settings()` — **zusätzlich 2 Stellen mit direktem `_save_json`** (Migrations-Marker) | `load_settings()` (merged Defaults) — **zusätzlich 2 Stellen mit direktem `_load_json`** (roher Dict ohne Default-Merge, für Migrations-Checks) |
-| `users.json` | Benutzerprofile (PIN-Hash, Depot-/Watchlist-Zuordnung, Digest-Einstellungen) | Liste von User-Objekten | `save_users()` | `load_users()` |
-| `snapshots.json` | Tägliche Portfolio-Gesamtwert-Punkte für den Verlaufschart | `[{date, depots: {<id>: {name, value, cost}}}]` | `save_snapshots()` | `load_snapshots()` |
-| `notifications.json` | Verlauf/Benachrichtigungshistorie | Liste von Log-Einträgen | `save_notifications()` | `load_notifications()` |
-| `health.json` | Kumulative Health-Zähler (Refreshes, Yahoo-Calls, Fehler, Cache-Hits) | Dict | `save_health()` | `load_health()` |
-| `eur_rates.json` | Gecachte EUR-Wechselkurse (Frankfurter API) | `{currency: rate}` | `save_eur_rates()` | `load_eur_rates()` |
-| `realized_gains.json` | Realisierte Gewinne/Verluste aus Parqet-Sell-Aktivitäten | Liste von Einträgen, je mit `depot_id` | `save_realized_gains()` | `load_realized_gains()` |
-| `dividends.json` | Dividenden aus Parqet-Aktivitäten | Liste von Einträgen, je mit `depot_id` | `save_dividends()` | `load_dividends()` |
+Die meisten Dateien werden beim ersten Start automatisch mit sinnvollen Defaults angelegt — für den Betrieb muss hier nichts manuell erstellt werden.
 
-## Bekannte Ausnahmen
+## Dateien
 
-- **`settings.json`**: `load_settings()`/`save_settings()` decken den normalen Zugriff ab. Drei Stellen im Code umgehen das bewusst und lesen/schreiben den rohen Dict direkt (`_load_json`/`_save_json`) — u. a. für Migrations-Marker-Checks, wo der Default-Merge von `load_settings()` störend wäre. Nicht weiter vereinheitlicht (siehe `PROJECT_CONTEXT.md`).
-- **`depot_<id>_backup.json`**: kein `_load_json`/`_save_json`-Zugriff, sondern eine reine Dateikopie vor dem Parqet-Sync — konzeptionell kein „Datenmodell", sondern ein Snapshot-Backup.
+| Datei | Zweck | Struktur |
+|---|---|---|
+| `xetra_map.json` | Mapping von US-Tickern auf ihr bevorzugtes EUR-Listing (z. B. XETRA), self-expanding via OpenFIGI. Einzige Datei mit Seed-Daten im Repository. | `{TICKER: {ticker, name, exchange}}` |
+| `depots.json` | Metadaten aller Depots | Liste von Depot-Objekten |
+| `depot_<id>.json` | Bestand eines einzelnen Depots (eine Datei pro Depot) | Liste von Stock-Objekten |
+| `depot_<id>_backup.json` | Automatisches Backup vor jedem Parqet-Sync | wie `depot_<id>.json` |
+| `watchlists.json` | Metadaten aller Watchlists | Liste von Watchlist-Objekten |
+| `wl_<id>.json` | Aktien einer einzelnen Watchlist | Liste von Stock-Objekten |
+| `splits.json` | Erfasste Aktiensplits | Liste von Split-Einträgen |
+| `settings.json` | Globale Einstellungen (Zeitzone, Handelstage/-zeiten, Refresh-Intervall) | Dict |
+| `users.json` | Benutzerprofile (PIN-Hash, Depot-/Watchlist-Zuordnung) | Liste von User-Objekten |
+| `snapshots.json` | Tägliche Portfolio-Gesamtwert-Punkte für den Verlaufschart | Liste von Snapshot-Einträgen |
+| `notifications.json` | Benachrichtigungsverlauf | Liste von Log-Einträgen |
+| `health.json` | Kumulative Statistiken für den System-Status | Dict |
+| `eur_rates.json` | Gecachte EUR-Wechselkurse | `{Währung: Kurs}` |
+| `realized_gains.json` | Realisierte Gewinne/Verluste aus Parqet-Verkäufen | Liste von Einträgen |
+| `dividends.json` | Dividenden aus Parqet-Aktivitäten | Liste von Einträgen |
 
-## Warum JSON statt Datenbank?
+## Backup
 
-Bewusste Design-Entscheidung für die aktuelle Größenordnung (Homelab, überschaubare Anzahl User/Depots/Positionen) — kein ORM, keine zusätzliche Infrastruktur, einfach zu inspizieren und zu sichern (LXC-Snapshot reicht). Bekannte Schwachstelle: jede Schreibung lädt/schreibt die komplette Datei neu (siehe `CURRENT_STATE.md` → Technische Schulden). Bei aktueller Nutzung kein spürbares Problem; falls doch relevant, wäre Write-Debouncing/Batching der naheliegendere erste Schritt vor einem vollständigen DB-Wechsel.
+Da alle Daten als reguläre JSON-Dateien vorliegen, genügt eine normale Dateisicherung des gesamten `data/`-Verzeichnisses (z. B. Snapshot oder `rsync`) für ein vollständiges Backup — kein Datenbank-Dump nötig.
+
+## Hinweis für Mitwirkende
+
+`data/` ist komplett in `.gitignore` ausgeschlossen, da hier ausschließlich Lauf­zeit- und Nutzerdaten liegen. `xetra_map.json` und diese README sind bewusste Ausnahmen und müssen mit `git add -f` versioniert werden.
