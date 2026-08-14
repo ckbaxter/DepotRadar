@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.28"
+VERSION           = "2.8.29"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -68,6 +68,8 @@ def load_splits():
     if not os.path.exists(SPLITS_FILE):
         _save_json(SPLITS_FILE, DEFAULT_SPLITS)
     return _load_json(SPLITS_FILE, DEFAULT_SPLITS)
+
+def save_splits(s): _save_json(SPLITS_FILE, s)
 
 def splits_as_dict():
     """Gibt Splits als Dict {isin: [(date, ratio)]} zurück."""
@@ -192,6 +194,15 @@ def save_watchlists(w):   _save_json(WATCHLISTS_FILE, w)
 def load_notifications(): return _load_json(NOTIF_FILE, [])
 def load_snapshots():     return _load_json(SNAPSHOTS_FILE, [])
 def save_snapshots(s):    _save_json(SNAPSHOTS_FILE, s)
+
+# Seit v2.8.29: einheitliche Wrapper auch für health/eur_rates/xetra_map (vorher
+# direkte _load_json/_save_json-Aufrufe verstreut an den jeweiligen Nutzungsstellen).
+def load_health():        return _load_json(HEALTH_FILE, {})
+def save_health(h):       _save_json(HEALTH_FILE, h)
+def load_eur_rates():     return _load_json(EUR_RATES_FILE, {})
+def save_eur_rates(r):    _save_json(EUR_RATES_FILE, r)
+def load_xetra_map():     return _load_json(XETRA_MAP_FILE, {})
+def save_xetra_map(m):    _save_json(XETRA_MAP_FILE, m)
 
 # ── User helpers ──────────────────────────────────────────────────
 _PIN_HASH_ITERATIONS = 100_000  # PBKDF2-HMAC-SHA256 Iterationen (seit v2.8.19)
@@ -752,11 +763,11 @@ def get_eur_rate(currency):
     try:
         r    = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
         rate = float(r.json()["rates"]["EUR"])
-        cache = _load_json(EUR_RATES_FILE, {}); cache[currency] = rate
-        _save_json(EUR_RATES_FILE, cache)
+        cache = load_eur_rates(); cache[currency] = rate
+        save_eur_rates(cache)
         return rate
     except:
-        cache = _load_json(EUR_RATES_FILE, {})
+        cache = load_eur_rates()
         if currency in cache:
             log.warning(f"Frankfurter API nicht erreichbar — gecachter Kurs für {currency}: {cache[currency]}")
             return cache[currency]
@@ -1288,7 +1299,7 @@ def _restore_health_stats():
     """Lädt persistierte Zähler aus health.json beim Start — damit kumulative Statistiken
     Container-Neustarts überleben. Nur die stabilen Zähler werden geladen; recent_errors
     und last_refresh_stats bleiben absichtlich In-Memory."""
-    persisted = _load_json(HEALTH_FILE, {})
+    persisted = load_health()
     _health_stats["total_refreshes"]    = persisted.get("total_refreshes",    0)
     _health_stats["total_yahoo_calls"]  = persisted.get("total_yahoo_calls",  0)
     _health_stats["failed_yahoo_calls"] = persisted.get("failed_yahoo_calls", 0)
@@ -1297,7 +1308,7 @@ def _restore_health_stats():
 def _persist_health_stats():
     """Schreibt kumulative Zähler atomar in health.json. Wird am Ende jedes
     refresh_all_depots-Aufrufs ausgeführt — einmal pro Zyklus statt pro Yahoo-Call."""
-    _save_json(HEALTH_FILE, {
+    save_health({
         "total_refreshes":    _health_stats["total_refreshes"],
         "total_yahoo_calls":  _health_stats["total_yahoo_calls"],
         "failed_yahoo_calls": _health_stats["failed_yahoo_calls"],
@@ -2863,7 +2874,7 @@ def add_split():
     entry = {"isin": isin, "name": name, "date": date, "ratio": ratio}
     splits.append(entry)
     splits.sort(key=lambda s: (s["date"], s["isin"]))
-    _save_json(SPLITS_FILE, splits)
+    save_splits(splits)
     return jsonify(entry), 201
 
 @app.route("/api/splits/<isin>/<date>", methods=["DELETE"])
@@ -2872,14 +2883,14 @@ def delete_split(isin, date):
     new    = [s for s in splits if not (s["isin"] == isin and s["date"] == date)]
     if len(new) == len(splits):
         return jsonify({"error": "Nicht gefunden"}), 404
-    _save_json(SPLITS_FILE, new)
+    save_splits(new)
     return jsonify({"ok": True})
 
 def _resolve_split_source_ticker(ticker):
     """Führt XETRA-/EU-Zweitlistings auf das Original-Listing zurück (z.B. NVD.DE → NVDA).
     Yahoo liefert Split-Events am Heimat-Listing zuverlässiger als an Zweitlistings.
     Rückwärts-Lookup über xetra_map.json: der Map-Key ist der Original-Ticker."""
-    xmap = _load_json(XETRA_MAP_FILE, {})
+    xmap = load_xetra_map()
     for orig, entry in xmap.items():
         if isinstance(entry, dict) and entry.get("ticker", "").upper() == ticker.upper():
             return orig
@@ -3429,9 +3440,9 @@ def _xetra_lookup(name, ticker):
         return None
     entry = {"ticker": f"{figi_ticker}.DE", "name": hit.get("name","").title(), "exchange": "XETRA"}
     # Ergebnis in xetra_map.json cachen — kein zweiter API-Call beim nächsten Mal
-    xmap = _load_json(XETRA_MAP_FILE, {})
+    xmap = load_xetra_map()
     xmap[ticker] = entry
-    _save_json(XETRA_MAP_FILE, xmap)
+    save_xetra_map(xmap)
     log.info(f"OpenFIGI: {ticker} → {entry['ticker']} gecacht in xetra_map.json")
     return entry
 
@@ -3533,7 +3544,7 @@ def search_companies():
             first_eq = next((r for r in res if r.get("type") in ("EQUITY","ETF")
                              and not any(r["ticker"].endswith(s) for s in _eur_sfx)), None)
             if first_eq:
-                xmap  = _load_json(XETRA_MAP_FILE, {})
+                xmap  = load_xetra_map()
                 xentry = xmap.get(first_eq["ticker"])
                 if not xentry:
                     try:
