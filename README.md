@@ -4,7 +4,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.28-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.29-blue)
 ![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.54-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
@@ -107,6 +107,7 @@ DepotRadar/
 ├── nginx/
 │   └── nginx.conf
 ├── data/
+│   ├── README.md              # Übersicht aller Dateien: Zweck, Struktur, Schreiber/Leser
 │   ├── xetra_map.json         # XETRA-Ticker-Mapping (im Repo, selbst-erweiternd via OpenFIGI)
 │   ├── depots.json            # Wird beim ersten Start automatisch angelegt
 │   ├── depot_*.json
@@ -371,6 +372,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.29 | Code-Konsistenz: `health.json`, `eur_rates.json`, `xetra_map.json` (bisher direkte `_load_json`/`_save_json`-Aufrufe an mehreren Stellen) sowie das Schreiben von `splits.json` bekommen einheitliche `load_X()`/`save_X()`-Wrapper nach dem Muster der bereits bestehenden Funktionen (z. B. `load_depots()`). Reines Rename, keine Verhaltensänderung. Neue `data/README.md` dokumentiert alle persistenten Dateien (Zweck, Struktur, Schreiber/Leser) |
 | 2.8.28 / 2.13.54 | Bugfix: automatische ISIN-Namensauflösung bei komplett verkauften Positionen scheiterte auch für bekannte, große Unternehmen — Börse-Frankfurt-Suche allein reichte nicht aus. Yahoo Finance als zweite Quelle ergänzt (`_resolve_isin_name`, dieselbe Methode wie im Hinzufügen-Modal), Timeout auf 8s erhöht, bessere Diagnose-Logs. Zusätzlich: das alte `name_unresolved`-Boolean blockierte einen Eintrag nach dem ersten Fehlschlag dauerhaft — ersetzt durch einen begrenzten Zähler `name_resolve_attempts` (5 Versuche über mehrere Syncs verteilt), damit bereits fehlgeschlagene Alt-Einträge von der verbesserten Auflösung profitieren. Frontend: „✎ Namen vergeben" hängt jetzt nur noch am fehlenden Namen, nicht mehr am internen Backend-Feldnamen |
 | 2.8.27 / 2.13.53 | Erträge-Modal: Einträge mit `name_unresolved` (automatische ISIN-Namensauflösung fehlgeschlagen) zeigen jetzt ISIN + „✎ Namen vergeben" — Tap klappt die Zeile inline zu einem Textfeld auf (kein zweites Modal). Zwei neue PATCH-Endpoints `/api/depots/<id>/realized-gains/<entry_id>` und `/api/depots/<id>/dividends/<entry_id>` setzen den Namen dauerhaft und entfernen `name_unresolved` |
 | 2.8.26 | Bugfix: Bei komplett verkauften Positionen, die schon vor dem Erträge-Feature (v2.8.25) aus dem Bestand entfernt worden waren, zeigten Erträge-Einträge nur die ISIN statt eines Namens — Parqets Activities-Antworten liefern für Wertpapiere laut offizieller API-Doku nur `isin`, keinen Namen (anders als `/holdings`, das aber nur aktuell gehaltene Positionen abdeckt). Neuer Fallback `_resolve_isin_name()` über dieselbe Börse-Frankfurt-API wie die ISIN-Suche im Hinzufügen-Modal. **Selbstheilend:** bereits kaputt gespeicherte Einträge werden beim nächsten Sync automatisch nachgetragen (`_heal_unresolved_names()`, analog zum Lazy-Upgrade der PIN-Hashes), endgültige Fehlschläge werden markiert (`name_unresolved`) und nicht erneut versucht |
