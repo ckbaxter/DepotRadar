@@ -5,7 +5,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
 ![Version Backend](https://img.shields.io/badge/Backend-v2.8.29-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.54-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.56-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -51,6 +51,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Manuelle Positionserfassung** — Anzahl und Einstandskurs müssen nicht zwingend von Parqet stammen: optional direkt beim Hinzufügen einer Aktie im Bestand erfassbar, nachträglich änderbar über das „Aktie bearbeiten"-Modal (✎-Button, dort auch der Handelsplatz-Wechsel als Aufklapper). Ein P-Badge am Aktiennamen zeigt, ob die aktuellen Werte tatsächlich von Parqet stammen — manuell erfasste oder geänderte Werte tragen kein P. In Parqet-verbundenen Depots überschreibt der nächste Sync manuell geänderte Werte wieder (Modal warnt davor)
 - **Parqet-Integration** — OAuth-Sync von Einstandskurs und Stückzahl, pro Depot eigene Client ID; Backup vor jedem Sync mit Rückgängig-Funktion; bei Parqet komplett verkaufte Positionen werden erkannt und erst nach Bestätigung (einzeln oder gesammelt über „Alle entfernen") aus dem ATH-Tracker gelöscht
 - **Erträge (Dividenden & realisierte Gewinne/Verluste)** — werden beim Parqet-Sync automatisch miterfasst (Datenquelle ausschließlich Parqet, keine manuelle Buchung); „💰 Erträge gesamt"-Kachel in der Portfolio-Übersicht öffnet ein Modal mit Typ-Filter (Alle/Dividenden/Verkäufe) und Aktien-Suche, die die Summen live umrechnet; zeigt auch bereits komplett verkaufte und aus dem Bestand entfernte Positionen. Kann die automatische Namensauflösung für eine ISIN ausnahmsweise keinen Treffer finden, lässt sich der Name direkt in der Zeile manuell nachtragen
+- **Rebalancing** — „⚖️ Rebalancing"-Kachel in der Portfolio-Übersicht zeigt Kauf-/Verkaufsempfehlungen, um alle Positionen im Bestand gleich zu gewichten (Ziel = 100% ÷ Anzahl Positionen); rein automatisch berechnet, keine manuelle Zielvorgabe pro Aktie nötig. Zweiter Modus verteilt ein optional hinterlegtes Kaufbudget proportional auf die unterrepräsentierten Positionen. Nicht für Watchlists verfügbar
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance, verfügbar im Bestand und in jeder Watchlist; Korrekturen direkt in der App möglich
 - **XETRA-Unterstützung** — bei der Aktiensuche wird automatisch das passende XETRA-Listing vorgeschlagen; bekannte Aktien sofort aus lokalem Cache (`xetra_map.json`), unbekannte dynamisch via OpenFIGI und dann gecacht. Seit v2.8.16–18 zusätzlich ein Hinweis, wenn Yahoo an sein Antwortlimit stößt und die Suche eventuell eingegrenzt werden sollte (Ticker/ISIN statt Firmenname)
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
@@ -296,6 +297,23 @@ Das ⚖️-Symbol markiert Aktien aus Sektoren, die im Bestand unterrepräsentie
 
 -----
 
+## Rebalancing
+
+Die „⚖️ Rebalancing"-Kachel in der Portfolio-Übersicht zeigt, wie viele Positionen von einer **Gleichgewichtung** abweichen — jede Position im Bestand soll rechnerisch gleich viel wert sein.
+
+**Berechnung:** Ziel-Gewicht pro Position = 100% ÷ Anzahl Positionen mit bekanntem Kurs und Bestand (dieselbe Basis wie die Portfolio-Gewichtung). Verschiebt sich automatisch, wenn Positionen hinzukommen oder wegfallen — keine manuelle Zielvorgabe pro Aktie nötig. Nur Abweichungen ab 2 %-Punkten werden angezeigt, der Rest gilt als „im Rahmen der Toleranz".
+
+**Zwei Ansichten im Modal:**
+
+- **Anzeige** — jede abweichende Position mit IST-/Ziel-Balken, Kauf- oder Verkaufsempfehlung (Stückzahl + ≈-Betrag). Die Berechnung berücksichtigt, dass die Transaktion selbst den Depot-Gesamtwert verschiebt, damit die Zielquote danach exakt stimmt
+- **Mit Kaufbudget** — ein in den Depot-Einstellungen hinterlegtes Kaufbudget wird proportional zum jeweils benötigten Kaufbetrag auf die unterrepräsentierten Positionen verteilt (nur Käufe; Verkaufsempfehlungen bleiben unverändert). Reicht der zugeteilte Anteil einer Position nicht für ein ganzes Stück, wird das mit einem Hinweis angezeigt statt die Position kommentarlos wegzulassen
+
+Verkaufsempfehlungen sind reine Anzeige — es wird keine Stückzahl automatisch reduziert, das bleibt wie bisher dem „Aktie bearbeiten"-Modal oder dem nächsten Parqet-Sync vorbehalten.
+
+**Watchlists:** nicht verfügbar (kein Einstandskurs/Stückzahl).
+
+-----
+
 ## Aktiensplits
 
 Splits werden in `data/splits.json` gespeichert und über **⚙ Einstellungen → Aktiensplits** verwaltet. Die Liste gruppiert nach Aktie — Antippen einer Zeile klappt die einzelnen Splits auf.
@@ -372,6 +390,7 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.13.55–56 | Neu: „⚖️ Rebalancing"-Kachel in der Portfolio-Übersicht — Ziel-Gewicht je Position wird automatisch als Gleichgewichtung berechnet (100% ÷ Anzahl Positionen im Bestand), keine manuelle Zielvorgabe pro Aktie. Modal zeigt Kauf-/Verkaufsempfehlung je Position, die um mehr als 2 %-Punkte abweicht (Stückzahl + ≈-Betrag, Berechnung berücksichtigt die Verschiebung des Gesamtwerts durch die Transaktion selbst); zweiter Modus verteilt ein hinterlegtes Kaufbudget proportional auf die unterrepräsentierten Positionen. Rein laufzeitberechnet wie die Diversifikations-Lücke — kein neues Datenfeld, keine Backend-Änderung. Nicht für Watchlists. Bugfix (v2.13.56): Positionen verschwanden im Kaufbudget-Modus kommentarlos, wenn ihr proportionaler Anteil nicht für ein ganzes Stück reichte — zeigen jetzt stattdessen einen Hinweis |
 | 2.8.29 | Code-Konsistenz: `health.json`, `eur_rates.json`, `xetra_map.json` (bisher direkte `_load_json`/`_save_json`-Aufrufe an mehreren Stellen) sowie das Schreiben von `splits.json` bekommen einheitliche `load_X()`/`save_X()`-Wrapper nach dem Muster der bereits bestehenden Funktionen (z. B. `load_depots()`). Reines Rename, keine Verhaltensänderung. Neue `data/README.md` dokumentiert alle persistenten Dateien (Zweck, Struktur, Schreiber/Leser) |
 | 2.8.28 / 2.13.54 | Bugfix: automatische ISIN-Namensauflösung bei komplett verkauften Positionen scheiterte auch für bekannte, große Unternehmen — Börse-Frankfurt-Suche allein reichte nicht aus. Yahoo Finance als zweite Quelle ergänzt (`_resolve_isin_name`, dieselbe Methode wie im Hinzufügen-Modal), Timeout auf 8s erhöht, bessere Diagnose-Logs. Zusätzlich: das alte `name_unresolved`-Boolean blockierte einen Eintrag nach dem ersten Fehlschlag dauerhaft — ersetzt durch einen begrenzten Zähler `name_resolve_attempts` (5 Versuche über mehrere Syncs verteilt), damit bereits fehlgeschlagene Alt-Einträge von der verbesserten Auflösung profitieren. Frontend: „✎ Namen vergeben" hängt jetzt nur noch am fehlenden Namen, nicht mehr am internen Backend-Feldnamen |
 | 2.8.27 / 2.13.53 | Erträge-Modal: Einträge mit `name_unresolved` (automatische ISIN-Namensauflösung fehlgeschlagen) zeigen jetzt ISIN + „✎ Namen vergeben" — Tap klappt die Zeile inline zu einem Textfeld auf (kein zweites Modal). Zwei neue PATCH-Endpoints `/api/depots/<id>/realized-gains/<entry_id>` und `/api/depots/<id>/dividends/<entry_id>` setzen den Namen dauerhaft und entfernen `name_unresolved` |
