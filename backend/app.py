@@ -69,8 +69,6 @@ def load_splits():
         _save_json(SPLITS_FILE, DEFAULT_SPLITS)
     return _load_json(SPLITS_FILE, DEFAULT_SPLITS)
 
-def save_splits(s): _save_json(SPLITS_FILE, s)
-
 def splits_as_dict():
     """Gibt Splits als Dict {isin: [(date, ratio)]} zurück."""
     result = {}
@@ -194,15 +192,6 @@ def save_watchlists(w):   _save_json(WATCHLISTS_FILE, w)
 def load_notifications(): return _load_json(NOTIF_FILE, [])
 def load_snapshots():     return _load_json(SNAPSHOTS_FILE, [])
 def save_snapshots(s):    _save_json(SNAPSHOTS_FILE, s)
-
-# Seit v2.8.29: einheitliche Wrapper auch für health/eur_rates/xetra_map (vorher
-# direkte _load_json/_save_json-Aufrufe verstreut an den jeweiligen Nutzungsstellen).
-def load_health():        return _load_json(HEALTH_FILE, {})
-def save_health(h):       _save_json(HEALTH_FILE, h)
-def load_eur_rates():     return _load_json(EUR_RATES_FILE, {})
-def save_eur_rates(r):    _save_json(EUR_RATES_FILE, r)
-def load_xetra_map():     return _load_json(XETRA_MAP_FILE, {})
-def save_xetra_map(m):    _save_json(XETRA_MAP_FILE, m)
 
 # ── User helpers ──────────────────────────────────────────────────
 _PIN_HASH_ITERATIONS = 100_000  # PBKDF2-HMAC-SHA256 Iterationen (seit v2.8.19)
@@ -763,11 +752,11 @@ def get_eur_rate(currency):
     try:
         r    = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
         rate = float(r.json()["rates"]["EUR"])
-        cache = load_eur_rates(); cache[currency] = rate
-        save_eur_rates(cache)
+        cache = _load_json(EUR_RATES_FILE, {}); cache[currency] = rate
+        _save_json(EUR_RATES_FILE, cache)
         return rate
     except:
-        cache = load_eur_rates()
+        cache = _load_json(EUR_RATES_FILE, {})
         if currency in cache:
             log.warning(f"Frankfurter API nicht erreichbar — gecachter Kurs für {currency}: {cache[currency]}")
             return cache[currency]
@@ -1299,7 +1288,7 @@ def _restore_health_stats():
     """Lädt persistierte Zähler aus health.json beim Start — damit kumulative Statistiken
     Container-Neustarts überleben. Nur die stabilen Zähler werden geladen; recent_errors
     und last_refresh_stats bleiben absichtlich In-Memory."""
-    persisted = load_health()
+    persisted = _load_json(HEALTH_FILE, {})
     _health_stats["total_refreshes"]    = persisted.get("total_refreshes",    0)
     _health_stats["total_yahoo_calls"]  = persisted.get("total_yahoo_calls",  0)
     _health_stats["failed_yahoo_calls"] = persisted.get("failed_yahoo_calls", 0)
@@ -1308,7 +1297,7 @@ def _restore_health_stats():
 def _persist_health_stats():
     """Schreibt kumulative Zähler atomar in health.json. Wird am Ende jedes
     refresh_all_depots-Aufrufs ausgeführt — einmal pro Zyklus statt pro Yahoo-Call."""
-    save_health({
+    _save_json(HEALTH_FILE, {
         "total_refreshes":    _health_stats["total_refreshes"],
         "total_yahoo_calls":  _health_stats["total_yahoo_calls"],
         "failed_yahoo_calls": _health_stats["failed_yahoo_calls"],
@@ -2365,16 +2354,34 @@ def _sync_earnings(depot_id, activities, stocks):
         curr          = a.get("currency", "EUR")
         eur           = get_eur_rate(curr)
         ticker, name  = isin_lookup.get(isin, ("", ""))
-        amount        = a.get("amount")
+        amount, amount_net = a.get("amount"), a.get("amountNet")
         dividends.append({
             "id": str(_uuid.uuid4())[:8], "activity_id": aid, "depot_id": depot_id,
             "isin": isin, "ticker": ticker, "name": name or a.get("asset", {}).get("name", ""),
-            "pay_datetime": a.get("datetime"), "amount": amount,
+            "pay_datetime": a.get("datetime"), "amount": amount, "amount_net": amount_net,
             "tax": a.get("tax"), "fee": a.get("fee"), "currency": curr,
-            "amount_eur": round((amount or 0) * eur, 2),
+            "amount_eur":     round((amount or 0) * eur, 2),
+            "amount_net_eur": round((amount_net if amount_net is not None else amount or 0) * eur, 2),
         })
         known_div.add(aid); new_div += 1
-    if _heal_unresolved_names(dividends) or new_div: save_dividends(dividends)
+
+    # Nachtrag für Alt-Einträge aus der Zeit vor v2.8.29, die noch kein amount_net_eur
+    # haben (damals wurde nur der Brutto-Betrag übernommen, Steuer/Gebühr blieben
+    # unberücksichtigt obwohl Parqet amountNet mitliefert) — die Rohaktivität ist in
+    # diesem Sync ohnehin schon geladen, kein zusätzlicher API-Call nötig.
+    activities_by_id = {a.get("id"): a for a in activities if a.get("id")}
+    backfilled = 0
+    for e in dividends:
+        if e.get("amount_net_eur") is not None: continue
+        raw = activities_by_id.get(e.get("activity_id"))
+        if not raw: continue
+        amount_net = raw.get("amountNet")
+        eur = get_eur_rate(e.get("currency", "EUR"))
+        e["amount_net"]     = amount_net
+        e["amount_net_eur"] = round((amount_net if amount_net is not None else e.get("amount") or 0) * eur, 2)
+        backfilled += 1
+
+    if _heal_unresolved_names(dividends) or new_div or backfilled: save_dividends(dividends)
 
     return new_div, new_rg
 
@@ -2671,6 +2678,7 @@ def get_depot_earnings(depot_id):
         "total_realized_gains_eur":     round(sum(e.get("realized_gains_eur") or 0 for e in realized), 2),
         "total_realized_gains_net_eur": round(sum(e.get("realized_gains_net_eur") or 0 for e in realized), 2),
         "total_dividends_eur":          round(sum(e.get("amount_eur") or 0 for e in dividends), 2),
+        "total_dividends_net_eur":      round(sum(e.get("amount_net_eur") or 0 for e in dividends), 2),
     })
 
 def _patch_earning_name(depot_id, entry_id, load_fn, save_fn):
@@ -2874,7 +2882,7 @@ def add_split():
     entry = {"isin": isin, "name": name, "date": date, "ratio": ratio}
     splits.append(entry)
     splits.sort(key=lambda s: (s["date"], s["isin"]))
-    save_splits(splits)
+    _save_json(SPLITS_FILE, splits)
     return jsonify(entry), 201
 
 @app.route("/api/splits/<isin>/<date>", methods=["DELETE"])
@@ -2883,14 +2891,14 @@ def delete_split(isin, date):
     new    = [s for s in splits if not (s["isin"] == isin and s["date"] == date)]
     if len(new) == len(splits):
         return jsonify({"error": "Nicht gefunden"}), 404
-    save_splits(new)
+    _save_json(SPLITS_FILE, new)
     return jsonify({"ok": True})
 
 def _resolve_split_source_ticker(ticker):
     """Führt XETRA-/EU-Zweitlistings auf das Original-Listing zurück (z.B. NVD.DE → NVDA).
     Yahoo liefert Split-Events am Heimat-Listing zuverlässiger als an Zweitlistings.
     Rückwärts-Lookup über xetra_map.json: der Map-Key ist der Original-Ticker."""
-    xmap = load_xetra_map()
+    xmap = _load_json(XETRA_MAP_FILE, {})
     for orig, entry in xmap.items():
         if isinstance(entry, dict) and entry.get("ticker", "").upper() == ticker.upper():
             return orig
@@ -3440,9 +3448,9 @@ def _xetra_lookup(name, ticker):
         return None
     entry = {"ticker": f"{figi_ticker}.DE", "name": hit.get("name","").title(), "exchange": "XETRA"}
     # Ergebnis in xetra_map.json cachen — kein zweiter API-Call beim nächsten Mal
-    xmap = load_xetra_map()
+    xmap = _load_json(XETRA_MAP_FILE, {})
     xmap[ticker] = entry
-    save_xetra_map(xmap)
+    _save_json(XETRA_MAP_FILE, xmap)
     log.info(f"OpenFIGI: {ticker} → {entry['ticker']} gecacht in xetra_map.json")
     return entry
 
@@ -3544,7 +3552,7 @@ def search_companies():
             first_eq = next((r for r in res if r.get("type") in ("EQUITY","ETF")
                              and not any(r["ticker"].endswith(s) for s in _eur_sfx)), None)
             if first_eq:
-                xmap  = load_xetra_map()
+                xmap  = _load_json(XETRA_MAP_FILE, {})
                 xentry = xmap.get(first_eq["ticker"])
                 if not xentry:
                     try:
