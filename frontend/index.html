@@ -439,34 +439,6 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .eg-name-edit-row{display:flex;gap:6px;align-items:center}
 .eg-name-input{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--accent);border-radius:6px;background:var(--bg2);color:var(--text);font-size:12px;outline:none}
 
-/* Rebalancing-Modal (Gleichgewichtung über alle Positionen, seit v2.13.55) */
-.rb-info{font-size:11.5px;color:var(--muted);line-height:1.5;padding:10px 12px;background:var(--bg3);border-radius:8px;margin-bottom:14px}
-.rb-row{padding:11px 0;border-bottom:1px solid var(--border)}
-.rb-row:last-child{border-bottom:none}
-.rb-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
-.rb-name{font-size:13.5px;font-weight:600}
-.rb-ticker{font-size:11px;color:var(--muted);margin-left:5px;font-weight:400}
-.rb-diff{font-size:11.5px;font-weight:600;padding:2px 7px;border-radius:5px;white-space:nowrap;flex-shrink:0}
-.rb-diff.over{background:rgba(239,68,68,.12);color:var(--red)}
-.rb-diff.under{background:rgba(34,197,94,.12);color:var(--green)}
-.rb-bar-wrap{position:relative;height:6px;background:rgba(100,116,139,.2);border-radius:3px;margin-bottom:7px}
-.rb-bar-fill{position:absolute;left:0;top:0;height:100%;border-radius:3px;background:var(--accent);transition:width .3s}
-.rb-bar-target{position:absolute;top:-3px;width:2px;height:12px;background:var(--text);border-radius:1px}
-.rb-legend{display:flex;gap:12px;font-size:10.5px;color:var(--muted);margin-top:10px}
-.rb-legend span{display:inline-flex;align-items:center;gap:4px}
-.rb-swatch{width:8px;height:8px;border-radius:2px;display:inline-block;flex-shrink:0}
-.rb-rec{display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
-.rb-rec-action{font-weight:600}
-.rb-rec-action.buy{color:var(--green)}
-.rb-rec-action.sell{color:var(--red)}
-.rb-rec-eur{color:var(--muted)}
-.rb-hidden-note{font-size:11.5px;color:var(--muted);text-align:center;padding:10px 0 0}
-.rb-budget-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
-.rb-budget-row:last-child{border-bottom:none}
-.rb-budget-name{font-weight:600}
-.rb-budget-amt{color:var(--green);font-weight:600;flex-shrink:0}
-.rb-budget-stk{color:var(--muted);font-size:11.5px;margin-top:1px}
-
 .btn.btn-ghost.btn-sm.active{background:rgba(78,124,246,.15);color:var(--accent);border-color:var(--accent)}
 .threshold-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .threshold-wrap input[type=range]{width:120px;min-height:28px;accent-color:#22c55e}
@@ -554,11 +526,6 @@ select</style>
           <div class="scard scard-clickable" id="ps-earnings-card" style="display:none;cursor:pointer" onclick="openEarningsModal()" title="Details anzeigen">
             <div class="scard-label">&#128176; Erträge gesamt</div>
             <div class="scard-val" id="ps-earnings" style="color:var(--text)">—</div>
-          </div>
-          <div class="scard scard-clickable" id="ps-rebalance-card" style="display:none;cursor:pointer" onclick="openRebalanceModal()" title="Details anzeigen">
-            <div class="scard-label">&#9878;&#65039; Rebalancing</div>
-            <div class="scard-val" id="ps-rebalance">—</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ps-rebalance-sub"></div>
           </div>
           <div class="scard">
             <div class="scard-label">&#127881; Top 3 (Gesamt)</div>
@@ -1082,34 +1049,6 @@ select</style>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('earningsModal')">Schließen</button>
-    </div>
-  </div>
-</div>
-
-<div class="overlay" id="rebalanceModal" style="display:none" onclick="closeIfOverlay(event,'rebalanceModal')">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <span class="modal-title">&#9878;&#65039; Rebalancing</span>
-      <button class="close-btn" onclick="closeModal('rebalanceModal')">&#215;</button>
-    </div>
-    <div class="modal-body">
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">
-        <button class="btn btn-ghost btn-sm notif-filter-btn active" id="rbfView" onclick="setRbTab('view')" style="font-size:12px">Anzeige</button>
-        <button class="btn btn-ghost btn-sm notif-filter-btn" id="rbfBudget" onclick="setRbTab('budget')" style="font-size:12px">Mit Kaufbudget</button>
-      </div>
-      <div id="rbViewTab">
-        <div class="rb-info" id="rbInfo"></div>
-        <div id="rbList"></div>
-        <div class="rb-hidden-note" id="rbHiddenNote" style="display:none"></div>
-        <div class="rb-legend">
-          <span><span class="rb-swatch" style="background:var(--accent)"></span>IST-Gewicht</span>
-          <span><span class="rb-swatch" style="background:var(--text)"></span>Ziel-Marke</span>
-        </div>
-      </div>
-      <div id="rbBudgetTab" style="display:none"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('rebalanceModal')">Schließen</button>
     </div>
   </div>
 </div>
@@ -2867,8 +2806,6 @@ function renderPortfolioStats(stocks){
     </div>`;
   }).join("") : "—";
   applyPsMode("ps-worst-today", document.getElementById("ps-worst-today").dataset.mode || "pct");
-
-  renderRebalanceCard(withCost, totalVal);
 
   document.getElementById("portfolioSummaryWrap").style.display = "";
   // Gespeicherten Zustand wiederherstellen (Standard: eingeklappt)
@@ -4889,9 +4826,16 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
-    versions: "Frontend v2.13.55–56 · Backend v2.8.29",
+    versions: "Frontend v2.13.56",
     changes: [
-      "Neu: „⚖️ Rebalancing\"-Kachel in der Portfolio-Übersicht — zeigt, wie viele Positionen von einer Gleichgewichtung (Ziel = 100% ÷ Anzahl Positionen im Bestand) um mehr als 2 %-Punkte abweichen. Antippen öffnet ein Modal mit Kauf-/Verkaufsempfehlung je abweichender Position (Stückzahl + ≈-Betrag), sowie einem zweiten Modus, der ein hinterlegtes Kaufbudget proportional auf die unterrepräsentierten Positionen verteilt. Rein laufzeitberechnet wie die Diversifikations-Lücke (⚖️) — keine manuelle Zielvorgabe pro Aktie, kein neues Datenfeld, keine Backend-Änderung. Positionen innerhalb der Toleranz werden zusammengefasst ausgeblendet. Nur im Bestand verfügbar, nicht in Watchlists (kein Einstandskurs/Stückzahl). Bugfix (v2.13.56): im Kaufbudget-Modus verschwanden Positionen kommentarlos aus der Liste, wenn ihr proportionaler Budget-Anteil nicht für ein ganzes Stück reichte (abgerundet auf 0, dann gefiltert) — betraf v. a. teure Aktien bei mehreren gleichzeitig unterrepräsentierten Positionen. Diese Positionen bleiben jetzt sichtbar mit Hinweis „Anteil X € reicht nicht für 1 Stk.\" statt zu verschwinden."
+      "Realisierte Gewinne/Verluste im Erträge-Modal zeigen jetzt ebenfalls den Netto-Betrag (realized_gains_net_eur) statt brutto — analog zum Dividenden-Fix in v2.8.29/v2.13.55. Reine Frontend-Umstellung, das Netto-Feld lag im Backend schon seit Einführung des Features vor (v2.8.25), wurde bisher nur nicht angezeigt."
+    ]
+  },
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.55 · Backend v2.8.29",
+    changes: [
+      "Bugfix: Dividenden im Erträge-Modal zeigten bisher den Brutto-Betrag inkl. einbehaltener Steuer statt des tatsächlich zugeflossenen Netto-Betrags. Parqet liefert amountNet bereits mit — wird jetzt für Anzeige, Summenkachel und Suche verwendet. Bereits gespeicherte Alt-Einträge werden beim nächsten Sync automatisch nachgerechnet, kein Datenverlust."
     ]
   },
   {
@@ -5904,7 +5848,7 @@ async function loadCompanyInfo(ticker, name){
 // (kein zusätzliches Backend-Feld), deckt aber bewusst auch Positionen ab, die
 // komplett verkauft und aus stocksCache entfernt wurden — die Kachel/Modal-Summen
 // zeigen depotweit alles, unabhängig vom aktuellen Bestand.
-let _earningsData = null;   // {realized_gains, dividends, total_realized_gains_eur, total_dividends_eur}
+let _earningsData = null;   // {realized_gains, dividends, total_realized_gains_eur, total_realized_gains_net_eur, total_dividends_eur, total_dividends_net_eur}
 let _egType = "all", _egRows = [];
 
 async function loadEarnings(depotId){
@@ -5934,7 +5878,11 @@ function renderEarningsCard(){
   const d = _earningsData;
   const has = d && (d.realized_gains.length || d.dividends.length);
   if(!has){ card.style.display = "none"; return; }
-  const total = (d.total_realized_gains_eur || 0) + (d.total_dividends_eur || 0);
+  // Dividenden gehen netto (nach Steuer/Gebühr) ein, nicht brutto — realisierte G/V
+  // bewusst weiterhin brutto, siehe Diskussion zum analogen Fall bei Kapitalertragsteuer
+  // Beide Erträge-Arten gehen jetzt netto (nach Steuer/Gebühr) in die Summe ein — analog
+  // zum Dividenden-Fix, Kapitalertragsteuer wird bei Verkäufen genauso einbehalten
+  const total = (d.total_realized_gains_net_eur || 0) + (d.total_dividends_net_eur || 0);
   const el = document.getElementById("ps-earnings");
   el.textContent = (total >= 0 ? "+" : "") + total.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2}) + " EUR";
   el.style.color = total >= 0 ? "var(--green)" : "var(--red)";
@@ -5965,12 +5913,12 @@ function openEarningsModal(){
   const divRows  = _earningsData.dividends.map(e => ({
     id:e.id, type:"div", isin:e.isin, ticker:e.ticker, name: e.name || e.ticker || e.isin || "—",
     unresolved: !e.name,
-    date:e.pay_datetime, amount:e.amount_eur, label:"Dividende"
+    date:e.pay_datetime, amount: e.amount_net_eur ?? e.amount_eur, label:"Dividende"
   }));
   const sellRows = _earningsData.realized_gains.map(e => ({
     id:e.id, type:"sell", isin:e.isin, ticker:e.ticker, name: e.name || e.ticker || e.isin || "—",
     unresolved: !e.name,
-    date:e.sell_datetime, amount:e.realized_gains_eur,
+    date:e.sell_datetime, amount: e.realized_gains_net_eur ?? e.realized_gains_eur,
     label: isHeld(e.isin) ? "Teilverkauf" : "Komplettverkauf"
   }));
   _egRows = [...divRows, ...sellRows].sort((a,b) => (b.date || "").localeCompare(a.date || ""));
@@ -6071,184 +6019,6 @@ async function saveEgName(id, type){
     renderEgList();
     toast("Name gespeichert");
   } catch(e){ toast("Fehler: "+e.message, false); }
-}
-
-// ── Rebalancing (Gleichgewichtung über alle Positionen, seit v2.13.55) ───────
-// Ziel jeder Position = 100% / Anzahl Positionen mit bekanntem Kurs+Bestand
-// (dieselbe withCost-Basis wie die Portfolio-Gewichtung/renderPortfolioStats),
-// rein laufzeitberechnet wie die Diversifikations-Lücke (⚖️) — kein neues
-// Datenfeld, keine manuelle Zielvorgabe pro Aktie nötig.
-const REBALANCE_TOLERANCE_PP = 2; // Toleranzband in %-Punkten, sonst Mini-Empfehlungen bei vielen Positionen
-let _rebalanceData = null;
-
-function renderRebalanceCard(stocks, totalVal){
-  const card = document.getElementById("ps-rebalance-card");
-  if(!card) return;
-  const n = stocks.length;
-  if(n < 2 || totalVal <= 0){ card.style.display = "none"; _rebalanceData = null; return; }
-
-  const targetPct = 100 / n;
-  const rows = stocks.map(s => {
-    const value = s.current_eur * s.shares;
-    const weightPct = value / totalVal * 100;
-    const diffPp = weightPct - targetPct;
-    return {
-      name: s.name, ticker: s.ticker, price: s.current_eur, value, weightPct, diffPp,
-      withinTolerance: Math.abs(diffPp) < REBALANCE_TOLERANCE_PP
-    };
-  }).sort((a,b) => Math.abs(b.diffPp) - Math.abs(a.diffPp));
-
-  _rebalanceData = { rows, totalVal, n, targetPct };
-
-  const outCount = rows.filter(r => !r.withinTolerance).length;
-  const valEl = document.getElementById("ps-rebalance");
-  valEl.textContent = outCount;
-  valEl.style.color = outCount > 0 ? "var(--orange)" : "var(--green)";
-  document.getElementById("ps-rebalance-sub").textContent =
-    outCount > 0 ? "außerhalb der Toleranz" : "im Gleichgewicht";
-  card.style.display = "";
-}
-
-// Kauf-/Verkaufsbetrag, der die Verschiebung des Gesamtwerts durch die
-// Transaktion selbst mit einrechnet (sonst stimmt die Zielquote danach nicht
-// mehr exakt). Positiv = Kaufbetrag, negativ = Verkaufsbetrag.
-function rebalanceAmount(value, totalVal, targetPct){
-  const targetFraction = targetPct / 100;
-  return (targetFraction * totalVal - value) / (1 - targetFraction);
-}
-function rebalanceShares(amount, price){
-  if(!price || price <= 0) return 0;
-  return Math.max(1, Math.round(Math.abs(amount) / price));
-}
-
-function openRebalanceModal(){
-  if(!_rebalanceData) return;
-  const budget = activeDepot && activeDepot.buy_budget;
-  document.getElementById("rbfBudget").textContent =
-    budget ? `Mit Kaufbudget (${fmtEURCompact(budget)})` : "Mit Kaufbudget";
-  setRbTab("view");
-  renderRebalanceView();
-  openModal("rebalanceModal");
-}
-
-function setRbTab(tab){
-  document.getElementById("rbfView").classList.toggle("active", tab === "view");
-  document.getElementById("rbfBudget").classList.toggle("active", tab === "budget");
-  document.getElementById("rbViewTab").style.display   = tab === "view"   ? "block" : "none";
-  document.getElementById("rbBudgetTab").style.display = tab === "budget" ? "block" : "none";
-  if(tab === "budget") renderRebalanceBudget();
-}
-
-function renderRebalanceView(){
-  const d = _rebalanceData;
-  if(!d) return;
-  const out = d.rows.filter(r => !r.withinTolerance);
-  const hiddenCount = d.rows.length - out.length;
-  const targetTxt = d.targetPct.toLocaleString("de-DE", {minimumFractionDigits:1, maximumFractionDigits:1});
-
-  document.getElementById("rbInfo").textContent =
-    `Ziel: Gleichgewichtung über alle ${d.n} Positionen im Bestand (je ${targetTxt} %).`
-    + (out.length
-        ? ` ${out.length} Position${out.length === 1 ? "" : "en"} weich${out.length === 1 ? "t" : "en"} um mehr als ${REBALANCE_TOLERANCE_PP} %-Punkte ab.`
-        : " Alle Positionen liegen innerhalb der Toleranz.");
-
-  const listEl = document.getElementById("rbList");
-  if(!out.length){
-    listEl.innerHTML = `<div class="eg-empty">Kein Rebalancing nötig — alles im Rahmen der Toleranz (±${REBALANCE_TOLERANCE_PP} %-Pkt.).</div>`;
-  } else {
-    listEl.innerHTML = out.map(r => {
-      const isOver   = r.diffPp > 0;
-      const amount   = rebalanceAmount(r.value, d.totalVal, d.targetPct);
-      const qty      = rebalanceShares(amount, r.price);
-      const diffTxt  = (isOver ? "+" : "−") + Math.abs(r.diffPp).toLocaleString("de-DE", {minimumFractionDigits:1, maximumFractionDigits:1}) + " %-Pkt.";
-      const actionTxt = (isOver ? "Verkaufen: " : "Kaufen: ") + qty + " Stk.";
-      return `<div class="rb-row">
-        <div class="rb-top">
-          <div><span class="rb-name">${esc(r.name)}</span><span class="rb-ticker">${esc(r.ticker || "")}</span></div>
-          <div class="rb-diff ${isOver ? "over" : "under"}">${diffTxt}</div>
-        </div>
-        <div class="rb-bar-wrap">
-          <div class="rb-bar-fill" style="width:${Math.min(r.weightPct,100)}%;background:${isOver ? "var(--red)" : "var(--accent)"}"></div>
-          <div class="rb-bar-target" style="left:${Math.min(d.targetPct,100)}%"></div>
-        </div>
-        <div class="rb-rec">
-          <span class="rb-rec-action ${isOver ? "sell" : "buy"}">${actionTxt}</span>
-          <span class="rb-rec-eur">≈ ${fmtEUR(Math.abs(amount))}</span>
-        </div>
-      </div>`;
-    }).join("");
-  }
-
-  const hiddenEl = document.getElementById("rbHiddenNote");
-  if(hiddenCount > 0){
-    hiddenEl.textContent = `${hiddenCount} weitere Position${hiddenCount === 1 ? "" : "en"} liegen innerhalb der Toleranz (±${REBALANCE_TOLERANCE_PP} %-Pkt.) und werden ausgeblendet.`;
-    hiddenEl.style.display = "";
-  } else {
-    hiddenEl.style.display = "none";
-  }
-}
-
-// Verteilt das Kaufbudget proportional zum jeweils benötigten Kaufbetrag auf
-// die unterrepräsentierten Positionen — nur Käufe, Verkaufs-Empfehlungen aus
-// der Anzeige bleiben davon unberührt. Rundung analog zu calcBuyQty (Kaufempfehlung):
-// abrunden, dann bei ≤20% Überschreitung des zugeteilten Anteils ein Stück aufrunden.
-// Positionen, deren Anteil nicht für ein ganzes Stück reicht (qty=0), werden NICHT
-// gefiltert (Bugfix v2.13.56) — sie blieben sonst kommentarlos aus der Liste
-// verschwunden, obwohl sie weiterhin die größte Abweichung vom Ziel haben können.
-// renderRebalanceBudget() zeigt sie stattdessen mit Hinweis statt Kauf-Betrag.
-function computeBudgetDistribution(){
-  const d = _rebalanceData;
-  const budget = activeDepot && activeDepot.buy_budget;
-  if(!d || !budget) return [];
-  const buyRows = d.rows.filter(r => !r.withinTolerance && r.diffPp < 0);
-  if(!buyRows.length) return [];
-  const amounts   = buyRows.map(r => rebalanceAmount(r.value, d.totalVal, d.targetPct));
-  const sumNeeded = amounts.reduce((a,b) => a + b, 0);
-  if(sumNeeded <= 0) return [];
-  return buyRows.map((r,i) => {
-    const share = budget * (amounts[i] / sumNeeded);
-    let qty = Math.floor(share / r.price);
-    if((qty + 1) * r.price <= share * 1.2) qty += 1;
-    return { name: r.name, ticker: r.ticker, price: r.price, qty, amount: qty * r.price, share };
-  }).sort((a,b) => b.amount - a.amount || b.share - a.share);
-}
-
-function renderRebalanceBudget(){
-  const wrap   = document.getElementById("rbBudgetTab");
-  const budget = activeDepot && activeDepot.buy_budget;
-  if(!budget){
-    wrap.innerHTML = `<div class="rb-info">Kein Kaufbudget hinterlegt — einstellbar in den Depot-Einstellungen (⚙).</div>`;
-    return;
-  }
-  const dist = computeBudgetDistribution();
-  if(!dist.length){
-    wrap.innerHTML = `<div class="rb-info">Aktuell keine unterrepräsentierten Positionen — kein Kaufbudget zu verteilen.</div>`;
-    return;
-  }
-  const funded   = dist.filter(r => r.qty > 0);
-  const unfunded = dist.filter(r => r.qty === 0);
-
-  const fundedRows = funded.map(r => `<div class="rb-budget-row">
-      <div>
-        <div class="rb-budget-name">${esc(r.name)}</div>
-        <div class="rb-budget-stk">≈ ${r.qty} Stk. à ${fmtEUR(r.price)}</div>
-      </div>
-      <div class="rb-budget-amt">${fmtEUR(r.amount)}</div>
-    </div>`).join("");
-
-  const unfundedRows = unfunded.map(r => `<div class="rb-budget-row">
-      <div>
-        <div class="rb-budget-name">${esc(r.name)}</div>
-        <div class="rb-budget-stk">Anteil ${fmtEUR(r.share)} reicht nicht für 1 Stk. à ${fmtEUR(r.price)}</div>
-      </div>
-      <div class="rb-budget-amt" style="color:var(--muted);font-weight:400">—</div>
-    </div>`).join("");
-
-  const infoTxt = funded.length
-    ? `${fmtEUR(budget)} Kaufbudget verteilt auf ${dist.length} unterrepräsentierte Position${dist.length === 1 ? "" : "en"}, proportional zum jeweils benötigten Kaufbetrag. Nur Käufe — Verkaufs-Empfehlungen bleiben unverändert in der Anzeige.`
-    : `${fmtEUR(budget)} Kaufbudget reicht bei aktueller Verteilung für keine ganze Aktie einer unterrepräsentierten Position.`;
-
-  wrap.innerHTML = `<div class="rb-info">${infoTxt}</div>` + fundedRows + unfundedRows;
 }
 
 // ── Parqet Integration ───────────────────────────────────────────
