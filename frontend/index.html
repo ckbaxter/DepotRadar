@@ -4919,6 +4919,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
+    versions: "Frontend v2.13.60–61",
+    changes: [
+      "System-Status-Modal: Button „✕ Leeren\" bei „Letzte Fehler\" ergänzt (nur sichtbar, wenn Einträge vorhanden) — ruft den bereits länger bestehenden Backend-Endpoint `POST /api/health/clear-errors` auf und lädt das Modal danach neu. Der Endpoint war zwar in Doku und Changelog bereits erwähnt, es fehlte aber die JS-seitige Anbindung im Frontend — der Button war dadurch faktisch nie aufrufbar. **Bugfix (v2.13.61):** der Footer-Statusdot (`updateHealthStatusDot`) hat den Rot/Grün-Zustand entgegen der Doku weiterhin über die Länge des `recent_errors`-Ring-Buffers bestimmt statt über das dafür vorgesehene, vom Backend bereits korrekt gelieferte `last_refresh_had_errors`-Flag — der Dot blieb dadurch bis zum manuellen Leeren rot, auch wenn der nächste Refresh-Zyklus bereits fehlerfrei durchlief. Jetzt liest die Funktion das Flag aus; der Dot springt damit wie ursprünglich vorgesehen nach dem nächsten sauberen Zyklus automatisch auf Grün."
+    ]
+  },
+  {
+    label: "August 2026",
     versions: "Frontend v2.13.58–59",
     changes: [
       "Erträge-Modal: neue Monatsübersicht als Balkenchart (Jan–Dez, Jahres-Umschalter ‹ › mit oberer Grenze = laufendes Kalenderjahr, untere Grenze = Jahr des ältesten Erträge-Eintrags) — Dividenden grün, realisierte Gewinne/Verluste blau, Verluste unterhalb der Nulllinie in Rot. Reagiert auf den bestehenden Typ-Filter (Alle/Dividenden/Verkäufe) und die Aktien-Suche, genau wie die Liste darunter. Rein frontend-seitige Aggregation der bereits geladenen Erträge-Daten — kein neuer Backend-Endpoint. **Bugfix (v2.13.59):** auf Touch-Geräten (z.B. iPad) verschwand der Tooltip beim Antippen eines Balkens sofort wieder, statt lesbar stehen zu bleiben — lag am ursprünglich genutzten Press-and-Hold-Muster (pointerdown/pointerup, analog zum Crosshair im Portfolio-Verlauf-Chart), das für diskrete Balken ungeeignet ist. Umgestellt auf Tap-Toggle: Klick zeigt/versteckt, bleibt stehen bis ein anderer Balken oder wo anders im Modal getippt wird."
@@ -5579,10 +5586,13 @@ async function openHealthModal(){
         <span>${cacheStr}</span>
         ${d.cache_hits_total > 0 ? `<span style="margin-left:auto;font-size:11px;color:var(--muted)">${(d.cache_hits_total||0).toLocaleString("de-DE")} kumuliert</span>` : ""}
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px">
         <span style="font-size:12px;font-weight:600;color:var(--muted)">Letzte Fehler</span>
-        <span style="font-size:11px;color:${(d.recent_errors||[]).length>0?"var(--orange)":"var(--green)"}">
-          ${(d.recent_errors||[]).length} Einträge</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:${(d.recent_errors||[]).length>0?"var(--orange)":"var(--green)"}">
+            ${(d.recent_errors||[]).length} Einträge</span>
+          ${(d.recent_errors||[]).length>0 ? `<button class="btn btn-ghost btn-sm" onclick="clearHealthErrors()">✕ Leeren</button>` : ""}
+        </div>
       </div>
       <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
         ${errItems}
@@ -5593,6 +5603,18 @@ async function openHealthModal(){
   } catch(e) {
     document.getElementById("healthBody").innerHTML =
       `<div style="color:var(--red);font-size:13px;text-align:center;padding:24px">Fehler beim Laden der Statusdaten.</div>`;
+  }
+}
+
+async function clearHealthErrors(){
+  if(!confirm("Fehler-Log wirklich leeren?")) return;
+  try {
+    const r = await fetch(`${API}/health/clear-errors`, {method:"POST"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    await openHealthModal();
+    updateHealthStatusDot();
+  } catch(e) {
+    toast("Fehler beim Leeren des Fehler-Logs.", false);
   }
 }
 
@@ -5608,10 +5630,10 @@ async function updateHealthStatusDot(){
       dot.style.background = "var(--muted)";
       dot.style.boxShadow  = "none";
       dot.title = "Außerhalb Handelszeit";
-    } else if((d.recent_errors||[]).length > 0){
+    } else if(d.last_refresh_had_errors){
       dot.style.background = "var(--red)";
       dot.style.boxShadow  = "0 0 5px color-mix(in srgb,var(--red) 60%,transparent)";
-      dot.title = `${d.recent_errors.length} Yahoo-Fehler seit letztem Start`;
+      dot.title = "Der letzte Refresh-Zyklus hatte Yahoo-Fehler";
     } else {
       dot.style.background = "var(--green)";
       dot.style.boxShadow  = "0 0 5px color-mix(in srgb,var(--green) 60%,transparent)";
@@ -7568,7 +7590,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.59 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.61 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
