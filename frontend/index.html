@@ -4919,16 +4919,9 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
-    versions: "Frontend v2.13.59",
+    versions: "Frontend v2.13.58–59",
     changes: [
-      "Bugfix Erträge-Chart: auf Touch-Geräten (z.B. iPad) verschwand der Tooltip beim Antippen eines Balkens sofort wieder, statt lesbar stehen zu bleiben — lag an pointerup/pointerleave, die beim Loslassen des Fingers direkt ausblendeten. Umgestellt auf Tap-Toggle (Klick zeigt/versteckt, bleibt stehen bis ein anderer Balken oder wo anders im Modal getippt wird), passender für diskrete Balken als das Press-and-Hold-Muster des Crosshairs im Verlaufschart."
-    ]
-  },
-  {
-    label: "August 2026",
-    versions: "Frontend v2.13.58",
-    changes: [
-      "Erträge-Modal: neue Monatsübersicht als Balkenchart (Jan–Dez, Jahres-Umschalter ‹ › mit oberer Grenze = laufendes Kalenderjahr, untere Grenze = Jahr des ältesten Erträge-Eintrags) — Dividenden grün, realisierte Gewinne/Verluste blau, Verluste unterhalb der Nulllinie in Rot. Reagiert auf den bestehenden Typ-Filter (Alle/Dividenden/Verkäufe) und die Aktien-Suche, genau wie die Liste darunter. Tap/Hover auf einen Balken zeigt Monat und exakten Betrag, über Pointer Events (gleiches Muster wie beim Crosshair im Portfolio-Verlauf-Chart). Rein frontend-seitige Aggregation der bereits geladenen Erträge-Daten — kein neuer Backend-Endpoint."
+      "Erträge-Modal: neue Monatsübersicht als Balkenchart (Jan–Dez, Jahres-Umschalter ‹ › mit oberer Grenze = laufendes Kalenderjahr, untere Grenze = Jahr des ältesten Erträge-Eintrags) — Dividenden grün, realisierte Gewinne/Verluste blau, Verluste unterhalb der Nulllinie in Rot. Reagiert auf den bestehenden Typ-Filter (Alle/Dividenden/Verkäufe) und die Aktien-Suche, genau wie die Liste darunter. Rein frontend-seitige Aggregation der bereits geladenen Erträge-Daten — kein neuer Backend-Endpoint. **Bugfix (v2.13.59):** auf Touch-Geräten (z.B. iPad) verschwand der Tooltip beim Antippen eines Balkens sofort wieder, statt lesbar stehen zu bleiben — lag am ursprünglich genutzten Press-and-Hold-Muster (pointerdown/pointerup, analog zum Crosshair im Portfolio-Verlauf-Chart), das für diskrete Balken ungeeignet ist. Umgestellt auf Tap-Toggle: Klick zeigt/versteckt, bleibt stehen bis ein anderer Balken oder wo anders im Modal getippt wird."
     ]
   },
   {
