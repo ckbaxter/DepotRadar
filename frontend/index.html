@@ -439,6 +439,20 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .eg-name-edit-row{display:flex;gap:6px;align-items:center}
 .eg-name-input{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--accent);border-radius:6px;background:var(--bg2);color:var(--text);font-size:12px;outline:none}
 
+/* Erträge-Chart: Monatsübersicht Jan-Dez mit Jahres-Umschalter (seit v2.13.58) */
+.eg-year-stepper{display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-weight:500}
+.eg-year-stepper #egYearLabel{font-size:11px;color:var(--text);min-width:28px;text-align:center}
+.eg-year-btn{background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--muted);font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.eg-year-btn:hover{background:var(--bg2);color:var(--text)}
+.eg-year-btn:disabled{opacity:.3;cursor:default;pointer-events:none}
+.eg-chart-wrap{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 10px 8px;margin-bottom:18px}
+.eg-chart-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-bottom:6px;padding:0 4px}
+.eg-chart-legend span{display:flex;align-items:center;gap:5px}
+.eg-chart-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.eg-chart-svg-wrap{position:relative}
+.eg-bar{cursor:pointer;touch-action:none}
+.eg-chart-tooltip{position:fixed;background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:11px;line-height:1.5;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.35);white-space:nowrap;transform:translate(-50%,-100%);margin-top:-8px;z-index:200}
+
 /* Rebalancing-Modal (Gleichgewichtung über alle Positionen, seit v2.13.55) */
 .rb-info{font-size:11.5px;color:var(--muted);line-height:1.5;padding:10px 12px;background:var(--bg3);border-radius:8px;margin-bottom:14px}
 .rb-row{padding:11px 0;border-bottom:1px solid var(--border)}
@@ -1075,6 +1089,22 @@ select</style>
           <div class="val" id="egValSell" style="color:var(--green)">—</div>
         </div>
       </div>
+      <div class="sd-section-lbl">
+        <span>&#128202; Verlauf über Zeit</span>
+        <span class="eg-year-stepper">
+          <button class="eg-year-btn" id="egYearPrev" onclick="stepEgYear(-1)">&#8249;</button>
+          <span id="egYearLabel">–</span>
+          <button class="eg-year-btn" id="egYearNext" onclick="stepEgYear(1)">&#8250;</button>
+        </span>
+      </div>
+      <div class="eg-chart-wrap">
+        <div class="eg-chart-legend" id="egChartLegend">
+          <span><i style="background:var(--green)"></i>Dividenden</span>
+          <span><i style="background:var(--accent)"></i>Realisierte G/V</span>
+        </div>
+        <div class="eg-chart-svg-wrap" id="egChartWrap"></div>
+      </div>
+
       <div class="sd-divider"></div>
       <div class="sd-section-lbl">Verlauf</div>
       <div class="eg-list" id="egList"></div>
@@ -4889,6 +4919,20 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
+    versions: "Frontend v2.13.59",
+    changes: [
+      "Bugfix Erträge-Chart: auf Touch-Geräten (z.B. iPad) verschwand der Tooltip beim Antippen eines Balkens sofort wieder, statt lesbar stehen zu bleiben — lag an pointerup/pointerleave, die beim Loslassen des Fingers direkt ausblendeten. Umgestellt auf Tap-Toggle (Klick zeigt/versteckt, bleibt stehen bis ein anderer Balken oder wo anders im Modal getippt wird), passender für diskrete Balken als das Press-and-Hold-Muster des Crosshairs im Verlaufschart."
+    ]
+  },
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.58",
+    changes: [
+      "Erträge-Modal: neue Monatsübersicht als Balkenchart (Jan–Dez, Jahres-Umschalter ‹ › mit oberer Grenze = laufendes Kalenderjahr, untere Grenze = Jahr des ältesten Erträge-Eintrags) — Dividenden grün, realisierte Gewinne/Verluste blau, Verluste unterhalb der Nulllinie in Rot. Reagiert auf den bestehenden Typ-Filter (Alle/Dividenden/Verkäufe) und die Aktien-Suche, genau wie die Liste darunter. Tap/Hover auf einen Balken zeigt Monat und exakten Betrag, über Pointer Events (gleiches Muster wie beim Crosshair im Portfolio-Verlauf-Chart). Rein frontend-seitige Aggregation der bereits geladenen Erträge-Daten — kein neuer Backend-Endpoint."
+    ]
+  },
+  {
+    label: "August 2026",
     versions: "Frontend v2.13.57 · Backend v2.8.30",
     changes: [
       "Erträge-Modal: Dividenden und realisierte Gewinne/Verluste zeigen jetzt den tatsächlich zugeflossenen Netto-Betrag (nach Steuer/Gebühr, von Parqet als amountNet/realizedGainsNet mitgeliefert) statt brutto — sowohl in Zeilenanzeige, Summenkachel als auch Suche. Bereits gespeicherte Dividenden-Alt-Einträge ohne Netto-Feld werden beim nächsten Sync automatisch nachgerechnet. Versionssprung bereinigt eine Kollision zwischen zwei parallel entstandenen Änderungssträngen (Erträge-Feature und Rebalancing hatten unabhängig überlappende Versionsnummern vergeben) — Rebalancing ist davon inhaltlich nicht betroffen und vollständig enthalten."
@@ -5913,6 +5957,8 @@ async function loadCompanyInfo(ticker, name){
 // zeigen depotweit alles, unabhängig vom aktuellen Bestand.
 let _earningsData = null;   // {realized_gains, dividends, total_realized_gains_eur, total_realized_gains_net_eur, total_dividends_eur, total_dividends_net_eur}
 let _egType = "all", _egRows = [];
+let _egChartYear = new Date().getFullYear(), _egYearMin = _egChartYear;
+const EG_MONTHS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 
 async function loadEarnings(depotId){
   // activeDepot bleibt beim Wechsel zu einer Watchlist unverändert bestehen
@@ -5983,9 +6029,127 @@ function openEarningsModal(){
   }));
   _egRows = [...divRows, ...sellRows].sort((a,b) => (b.date || "").localeCompare(a.date || ""));
 
+  // Jahres-Umschalter im Chart: obere Grenze immer das laufende Kalenderjahr (kein
+  // Blick in die Zukunft), untere Grenze das Jahr des ältesten Eintrags — bezieht sich
+  // bewusst auf ALLE Einträge, nicht auf die aktuell per Typ/Suche gefilterte Teilmenge,
+  // damit der Umschalter beim Filtern nicht ständig seine Grenzen verschiebt.
+  const thisYear = new Date().getFullYear();
+  let oldestYear = thisYear;
+  _egRows.forEach(r => {
+    const d = new Date(r.date);
+    if(!isNaN(d)) oldestYear = Math.min(oldestYear, d.getFullYear());
+  });
+  _egYearMin = oldestYear;
+  _egChartYear = thisYear;
+
   renderEgList();
   openModal("earningsModal");
 }
+
+function stepEgYear(delta){
+  const next = _egChartYear + delta;
+  const thisYear = new Date().getFullYear();
+  if(next > thisYear || next < _egYearMin) return;
+  _egChartYear = next;
+  renderEgChart();
+}
+
+// Aggregiert die bereits geladenen Erträge-Zeilen (_egRows) auf Monatssummen für das
+// gewählte Kalenderjahr — rein frontend-seitig, kein neuer Backend-Endpoint nötig, da
+// dividends.json/realized_gains.json ohnehin komplett über /earnings geladen werden.
+function renderEgChart(){
+  const q = document.getElementById("egSearch").value.trim().toLowerCase();
+  const matchesSearch = r => !q || r.name.toLowerCase().includes(q) || (r.ticker || "").toLowerCase().includes(q);
+  const inYear = r => { const d = new Date(r.date); return !isNaN(d) && d.getFullYear() === _egChartYear; };
+
+  const divMonthly = new Array(12).fill(0);
+  const sellMonthly = new Array(12).fill(0);
+  _egRows.filter(matchesSearch).filter(inYear).forEach(r => {
+    const m = new Date(r.date).getMonth();
+    if(r.type === "div") divMonthly[m] += r.amount;
+    else sellMonthly[m] += r.amount;
+  });
+
+  const thisYear = new Date().getFullYear();
+  document.getElementById("egYearLabel").textContent = _egChartYear;
+  document.getElementById("egYearNext").disabled = _egChartYear >= thisYear;
+  document.getElementById("egYearPrev").disabled = _egChartYear <= _egYearMin;
+
+  // Typ-Filter steuert wie in der Liste darunter, welche Reihe(n) sichtbar sind —
+  // die Suche wirkt schon über matchesSearch oben in beide Reihen hinein.
+  const showDiv  = _egType === "all" || _egType === "div";
+  const showSell = _egType === "all" || _egType === "sell";
+  document.getElementById("egChartLegend").style.display = (showDiv && showSell) ? "flex" : "none";
+
+  const w = 380, h = 150, padL = 4, padR = 4, padTop = 10, padBottom = 20;
+  const zeroY = padTop + (h - padTop - padBottom) / 2;
+  const maxAbs = Math.max(1, ...divMonthly.map(Math.abs), ...sellMonthly.map(Math.abs)) * 1.15;
+  const scale = (h/2 - padTop) / maxAbs;
+  const groupW = (w - padL - padR) / 12;
+  const barW = (showDiv && showSell) ? groupW * 0.32 : groupW * 0.5;
+
+  let svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<line x1="${padL}" y1="${zeroY}" x2="${w-padR}" y2="${zeroY}" stroke="var(--border)" stroke-width="1"/>`;
+
+  for(let i=0;i<12;i++){
+    const cx = padL + groupW * i + groupW/2;
+    const offset = (showDiv && showSell) ? barW * 0.6 : 0;
+    if(showDiv){
+      const val = divMonthly[i];
+      const bh = Math.max(Math.abs(val) * scale, val ? 1.5 : 0);
+      const y = val >= 0 ? zeroY - bh : zeroY;
+      const x = (showDiv && showSell) ? cx - offset - barW/2 : cx - barW/2;
+      svg += `<rect class="eg-bar" x="${x}" y="${y}" width="${barW}" height="${bh}" rx="2" fill="var(--green)" data-tip="${EG_MONTHS[i]} ${_egChartYear} · Dividenden: ${fmtEgAmount(val)}"/>`;
+    }
+    if(showSell){
+      const val = sellMonthly[i];
+      const bh = Math.max(Math.abs(val) * scale, val ? 1.5 : 0);
+      const y = val >= 0 ? zeroY - bh : zeroY;
+      const x = (showDiv && showSell) ? cx + offset - barW/2 : cx - barW/2;
+      const color = val < 0 ? "var(--red)" : "var(--accent)";
+      svg += `<rect class="eg-bar" x="${x}" y="${y}" width="${barW}" height="${bh}" rx="2" fill="${color}" data-tip="${EG_MONTHS[i]} ${_egChartYear} · Realisierte G/V: ${fmtEgAmount(val)}"/>`;
+    }
+    svg += `<text x="${cx}" y="${h-6}" text-anchor="middle" font-size="9" fill="var(--muted)">${EG_MONTHS[i]}</text>`;
+  }
+  svg += `</svg>`;
+
+  const wrap = document.getElementById("egChartWrap");
+  wrap.innerHTML = svg;
+  hideEgChartTip(); // altes Tooltip aus vorigem Render entfernen (SVG wurde ersetzt)
+  _egActiveBar = null;
+
+  // Diskrete Balken statt Linie: Tap schaltet den Tooltip um (bleibt stehen bis ein
+  // anderer Balken oder wo anders getippt wird) statt "zeigen solange gedrückt" wie
+  // beim Crosshair im Verlaufschart — auf Touch-Geräten (iPad) verschwand der Tooltip
+  // sonst sofort beim Loslassen des Fingers, bevor der Wert lesbar war.
+  wrap.querySelectorAll(".eg-bar").forEach(bar => {
+    bar.addEventListener("click", e => {
+      e.stopPropagation();
+      if(_egActiveBar === bar){ hideEgChartTip(); _egActiveBar = null; }
+      else { _egActiveBar = bar; showEgChartTip(e, bar.dataset.tip); }
+    });
+  });
+}
+
+let _egTipEl = null, _egActiveBar = null;
+function showEgChartTip(e, text){
+  hideEgChartTip();
+  _egTipEl = document.createElement("div");
+  _egTipEl.className = "eg-chart-tooltip";
+  _egTipEl.textContent = text;
+  document.body.appendChild(_egTipEl);
+  const r = e.target.getBoundingClientRect();
+  _egTipEl.style.left = (r.left + r.width/2) + "px";
+  _egTipEl.style.top = r.top + "px";
+}
+function hideEgChartTip(){ if(_egTipEl){ _egTipEl.remove(); _egTipEl = null; } }
+// Tap irgendwo außerhalb eines Balkens (auch innerhalb des Modals) schließt den
+// Tooltip wieder. Capture-Phase, weil das Modal-Markup selbst per Inline-onclick
+// event.stopPropagation() aufruft — das verhindert nur die Bubbling-Phase, die
+// Capture-Phase auf einem Vorfahren wie #earningsModal läuft trotzdem zuerst durch.
+document.getElementById("earningsModal")?.addEventListener("click", e => {
+  if(!e.target.closest(".eg-bar")){ hideEgChartTip(); _egActiveBar = null; }
+}, true);
 
 function renderEgList(){
   const q = document.getElementById("egSearch").value.trim().toLowerCase();
@@ -6016,6 +6180,8 @@ function renderEgList(){
   valSell.textContent = fmtEgAmount(sumSell); valSell.style.color = sumSell >= 0 ? "var(--green)" : "var(--red)";
   document.getElementById("egCardDiv").classList.toggle("filtered", !!q);
   document.getElementById("egCardSell").classList.toggle("filtered", !!q);
+
+  renderEgChart();
 }
 
 function setEgTypeFilter(t){
@@ -7409,7 +7575,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.57 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.59 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
