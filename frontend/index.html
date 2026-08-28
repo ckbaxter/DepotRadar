@@ -663,6 +663,9 @@ select</style>
         <span style="font-weight:600;font-size:15px" id="viewTitle">—</span>
         <span class="last-update" id="lastUpdate"></span>
         <span class="last-update" id="parqetSyncInfo" style="display:none"></span>
+        <span id="parqetPendingBadge" style="display:none;cursor:pointer;color:var(--red);
+              font-weight:600;font-size:12px" onclick="showParqetPendingModal()"
+              title="Ausstehende Parqet-Bestätigungen — antippen zum Öffnen"></span>
         <span class="next-refresh" id="nextRefresh"></span>
         <span class="next-refresh" id="depotBudgetInfo" style="color:var(--green)"></span>
         <div style="flex:1"></div>
@@ -1030,6 +1033,35 @@ select</style>
           <select class="form-input" id="parqetPortfolioSelect"></select>
           <button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%"
                   onclick="confirmParqetPortfolio()">Portfolio verbinden</button>
+        </div>
+
+        <!-- Automatischer Sync -->
+        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <label class="toggle-switch">
+              <input type="checkbox" id="parqetAutoSyncToggle"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">Automatischer Sync</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-size:11px">Intervall (Std.)</label>
+              <input type="number" class="form-input" id="parqetAutoSyncInterval" min="1" max="23" value="4" style="font-size:13px"/>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-size:11px">Von (Std.)</label>
+              <input type="number" class="form-input" id="parqetAutoSyncStart" min="0" max="23" value="6" style="font-size:13px"/>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-size:11px">Bis (Std.)</label>
+              <input type="number" class="form-input" id="parqetAutoSyncEnd" min="0" max="23" value="22" style="font-size:13px"/>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">
+            Läuft Mo–Fr zur vollen Stunde im gewählten Zeitraum. Bei komplett entfernten
+            Positionen erscheint automatisch ein Bestätigungs-Hinweis in der App.
+          </div>
         </div>
       </div>
     </div>
@@ -3617,6 +3649,11 @@ function openDepotSettings(depot){
   document.getElementById("depotNotifsEnabled").checked = depot.notifications_enabled !== false;
   document.getElementById("depotDigestToggle").checked  = !!depot.weekly_digest;
   document.getElementById("depotDailyAthDigestToggle").checked = !!depot.daily_ath_digest;
+  const pqAuto = depot.parqet || {};
+  document.getElementById("parqetAutoSyncToggle").checked = !!pqAuto.auto_sync_enabled;
+  document.getElementById("parqetAutoSyncInterval").value = pqAuto.auto_sync_interval_hours || 4;
+  document.getElementById("parqetAutoSyncStart").value    = pqAuto.auto_sync_start_hour ?? 6;
+  document.getElementById("parqetAutoSyncEnd").value      = pqAuto.auto_sync_end_hour ?? 22;
   openModal("depotSettingsModal");
   setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
@@ -3646,11 +3683,19 @@ async function saveDepotSettings(){
   const name       = document.getElementById("editDepotName").value.trim(); if(!name) return;
   const budgetVal  = document.getElementById("depotBuyBudget").value;
   const buy_budget = budgetVal ? parseFloat(budgetVal) : null;
+  // parseInt(...)||default würde eine gültige 0-Stunde fälschlich auf den Default umbiegen,
+  // parseInt(...)??default lässt NaN (leeres/ungültiges Feld) unverändert durch — daher hier
+  // explizit auf NaN prüfen statt einem der beiden Operatoren zu vertrauen.
+  const _int = (id, def) => { const v = parseInt(document.getElementById(id)?.value); return Number.isNaN(v) ? def : v; };
   const r=await fetch(`${API}/depots/${editingDepot.id}`,{method:"PUT",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({name, buy_budget,
       notifications_enabled:document.getElementById("depotNotifsEnabled")?.checked!==false,
       weekly_digest:document.getElementById("depotDigestToggle")?.checked||false,
-      daily_ath_digest:document.getElementById("depotDailyAthDigestToggle")?.checked||false})});
+      daily_ath_digest:document.getElementById("depotDailyAthDigestToggle")?.checked||false,
+      auto_sync_enabled:document.getElementById("parqetAutoSyncToggle")?.checked||false,
+      auto_sync_interval_hours:_int("parqetAutoSyncInterval",4),
+      auto_sync_start_hour:_int("parqetAutoSyncStart",6),
+      auto_sync_end_hour:_int("parqetAutoSyncEnd",22)})});
   if(!r.ok){toast("Fehler",false);return;}
   closeModal("depotSettingsModal"); toast("Depot gespeichert");
   if(activeDepot&&activeDepot.id===editingDepot.id){
@@ -4921,6 +4966,13 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.63",
+    changes: [
+      "Automatischer Parqet-Sync (pro Depot konfigurierbar, Depot-Einstellungen → Parqet-Sektion): Toggle + Intervall (Std.) + Zeitraum von/bis. Läuft Mo–Fr zur vollen Stunde (Backend-Scheduler-Job). Werden dabei komplett verkaufte Positionen erkannt, bleiben sie als Bestätigungs-Hinweis erhalten (Badge in der Kopfzeile neben „Parqet: zuletzt …\", klickbar) und öffnen das bestehende Bestätigungs-Modal automatisch beim nächsten Besuch — geht also nicht verloren, auch wenn niemand beim Sync selbst zugesehen hat."
+    ]
+  },
   {
     label: "August 2026",
     versions: "Frontend v2.13.62",
@@ -6473,7 +6525,10 @@ async function loadParqetStatus(depotId){
   if(activeDepot?.id === depotId){
     activeDepot.parqet = {...(activeDepot.parqet||{}), connected: s.connected,
       last_sync: s.last_sync, needs_reconnect: s.needs_reconnect,
-      portfolio_id: s.portfolio_id, portfolio_name: s.portfolio_name};
+      portfolio_id: s.portfolio_id, portfolio_name: s.portfolio_name,
+      auto_sync_enabled: s.auto_sync_enabled, auto_sync_interval_hours: s.auto_sync_interval_hours,
+      auto_sync_start_hour: s.auto_sync_start_hour, auto_sync_end_hour: s.auto_sync_end_hour,
+      pending_removed: s.pending_removed, pending_mismatches: s.pending_mismatches};
     updateParqetSyncUI();
   }
   const box     = document.getElementById("parqetStatusBox");
@@ -6626,20 +6681,47 @@ async function parqetUndoSync(depotId){
 // Modal gekoppelt und schreibt bei 401 direkt in dessen #parqetActions-DOM). Hier läuft der
 // Sync direkt über activeDepot.id, unabhängig davon, ob das Modal je geöffnet war — daher
 // eigene, schlankere Fehlerbehandlung ohne Zugriff auf modal-only Elemente.
+// Depot-IDs, für die das Pending-Modal in dieser Seiten-Session schon automatisch geöffnet
+// wurde — verhindert, dass es bei jedem updateParqetSyncUI()-Aufruf (Depot-Wechsel, nach
+// Sync, …) erneut aufspringt. Der Badge bleibt davon unberührt und ist jederzeit antippbar.
+let _parqetPendingAutoShown = new Set();
+
 function updateParqetSyncUI(){
-  const btn  = document.getElementById("parqetSyncMainBtn");
-  const info = document.getElementById("parqetSyncInfo");
-  const pq   = activeDepot?.parqet;
+  const btn   = document.getElementById("parqetSyncMainBtn");
+  const info  = document.getElementById("parqetSyncInfo");
+  const badge = document.getElementById("parqetPendingBadge");
+  const pq    = activeDepot?.parqet;
   // activeDepot bleibt beim Wechsel zu einer Watchlist unverändert bestehen (switchWatchlist()
   // ändert nur activeView, nicht activeDepot) — daher zusätzlich prüfen, dass wirklich eine
   // Depot-Ansicht aktiv ist, sonst würde der Parqet-Kram fälschlich in Watchlisten auftauchen.
   if(activeView.type !== "depot" || !activeDepot || !pq?.connected){
     btn.style.display = "none"; info.style.display = "none";
+    if(badge) badge.style.display = "none";
     return;
   }
   btn.style.display  = "";
   info.style.display = pq.last_sync ? "" : "none";
   if(pq.last_sync) info.textContent = `Parqet: zuletzt ${pq.last_sync}`;
+
+  const pendingCount = (pq.pending_removed?.length||0) + (pq.pending_mismatches?.length||0);
+  if(badge){
+    badge.style.display = pendingCount > 0 ? "inline" : "none";
+    badge.textContent   = `⚠ ${pendingCount} zu bestätigen`;
+  }
+  if(pendingCount > 0 && !_parqetPendingAutoShown.has(activeDepot.id)){
+    _parqetPendingAutoShown.add(activeDepot.id);
+    showParqetPendingModal();
+  }
+}
+
+// Öffnet die Bestätigungs-Modals für ausstehende Pending-Fälle (persistiert vom automatischen
+// Sync) — sowohl beim Auto-Open (erster Besuch mit offenen Fällen) als auch per Badge-Klick.
+// Reihenfolge wie beim bisherigen manuellen Sync (mismatch vor removed).
+function showParqetPendingModal(){
+  const pq = activeDepot?.parqet;
+  if(!pq) return;
+  if(pq.pending_mismatches?.length) openMismatchModal(pq.pending_mismatches);
+  if(pq.pending_removed?.length) openRemovedModal(pq.pending_removed);
 }
 
 async function doParqetSyncMain(){
@@ -7073,6 +7155,12 @@ async function applyMismatch(idx, m){
     // Visuell als erledigt markieren
     const boxes = document.getElementById("mismatchList").children;
     if(boxes[idx]) boxes[idx].style.opacity = "0.4";
+    // Lokal aus der Pending-Liste (falls vom Auto-Sync gemeldet) entfernen, damit der Badge
+    // sofort mitzieht, ohne auf den nächsten vollen Depot-Reload warten zu müssen.
+    if(activeDepot?.parqet?.pending_mismatches){
+      activeDepot.parqet.pending_mismatches = activeDepot.parqet.pending_mismatches.filter(x => x.isin !== m.isin);
+      updateParqetSyncUI();
+    }
     loadCurrentStocks();
   } catch(e){ toast("Fehler: "+e.message, false); }
 }
@@ -7128,6 +7216,11 @@ async function applyRemoval(idx){
     const box = document.getElementById(`removedItem${idx}`);
     if(box){ box.style.opacity = "0.4"; box.style.pointerEvents = "none"; }
     _updateRemoveAllBtn();
+    // Lokal aus der Pending-Liste entfernen, damit der Badge sofort mitzieht.
+    if(activeDepot?.parqet?.pending_removed){
+      activeDepot.parqet.pending_removed = activeDepot.parqet.pending_removed.filter(x => x.isin !== r.isin);
+      updateParqetSyncUI();
+    }
     loadCurrentStocks();
     return true;
   } catch(e){ toast("Fehler: "+e.message, false); return false; }
@@ -7610,7 +7703,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.62 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.63 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">

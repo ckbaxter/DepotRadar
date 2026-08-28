@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.30"
+VERSION           = "2.8.31"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1909,10 +1909,45 @@ def schedule_all_user_digest_jobs():
         schedule_user_digest_jobs(u)
 
 
+def auto_parqet_sync_check():
+    """Prüft jede Minute (gleiches Muster wie trading_window_check — läuft unabhängig von der
+    System-Zeitzone exakt zur konfigurierten App-Zeitzone), ob für ein Depot ein automatischer
+    Parqet-Sync fällig ist. Pro Depot konfigurierbar (Depot-Einstellungen → Parqet-Sektion):
+    auto_sync_enabled, auto_sync_interval_hours, auto_sync_start_hour/_end_hour. Läuft nur
+    Mo–Fr, immer zur vollen Stunde innerhalb des konfigurierten Zeitraums, im gewählten
+    Intervall-Raster ab der Start-Stunde (z.B. Start=6, Intervall=4 → 6/10/14/18/22 Uhr)."""
+    try:
+        s   = load_settings()
+        tz  = pytz.timezone(s.get("timezone", "Europe/Berlin"))
+        now = datetime.now(tz)
+        if now.minute != 0 or now.weekday() > 4:
+            return
+        hour = now.hour
+        for d in load_depots():
+            pq = d.get("parqet", {})
+            if not pq.get("connected") or not pq.get("auto_sync_enabled"):
+                continue
+            start_h  = pq.get("auto_sync_start_hour", 6)
+            end_h    = pq.get("auto_sync_end_hour", 22)
+            interval = pq.get("auto_sync_interval_hours", 4)
+            if interval <= 0 or not (start_h <= hour <= end_h):
+                continue
+            if (hour - start_h) % interval != 0:
+                continue
+            try:
+                _parqet_sync_core(d["id"], auto=True)
+            except Exception as e:
+                log.error(f"Automatischer Parqet-Sync fehlgeschlagen ({d['id']}): {e}")
+    except Exception as e:
+        log.warning(f"auto_parqet_sync_check fehlgeschlagen: {e}")
+
+
 def start_scheduler():
     _restore_health_stats()
     _restore_last_refresh()
     scheduler.add_job(trading_window_check, "cron", minute="*", id="trading_check",
+                      replace_existing=True, misfire_grace_time=None)
+    scheduler.add_job(auto_parqet_sync_check, "cron", minute="*", id="auto_parqet_sync_check",
                       replace_existing=True, misfire_grace_time=None)
     schedule_all_user_digest_jobs()
     if not scheduler.running: scheduler.start()
@@ -2181,7 +2216,17 @@ def parqet_disconnect(depot_id):
 def parqet_reconnect(depot_id):
     depots = load_depots()
     for d in depots:
-        if d["id"] == depot_id and "parqet" in d: d["parqet"] = {"connected": False}; break
+        if d["id"] == depot_id and "parqet" in d:
+            old = d["parqet"]
+            # Auto-Sync-Konfiguration bewusst über den Reconnect hinweg erhalten — sonst würde
+            # ein Token-Reconnect (unabhängiges Problem) den erst hier eingeführten Toggle
+            # stillschweigend wieder deaktivieren.
+            d["parqet"] = {"connected": False,
+                           "auto_sync_enabled": old.get("auto_sync_enabled", False),
+                           "auto_sync_interval_hours": old.get("auto_sync_interval_hours", 4),
+                           "auto_sync_start_hour": old.get("auto_sync_start_hour", 6),
+                           "auto_sync_end_hour": old.get("auto_sync_end_hour", 22)}
+            break
     save_depots(depots); return jsonify({"ok": True})
 
 @app.route("/api/depots/<depot_id>/parqet/status", methods=["GET"])
@@ -2194,6 +2239,12 @@ def parqet_status(depot_id):
                     "last_sync": pq.get("last_sync"),
                     "has_client_id": bool(get_client_id(depot)),
                     "needs_reconnect": pq.get("needs_reconnect", False),
+                    "auto_sync_enabled": pq.get("auto_sync_enabled", False),
+                    "auto_sync_interval_hours": pq.get("auto_sync_interval_hours", 4),
+                    "auto_sync_start_hour": pq.get("auto_sync_start_hour", 6),
+                    "auto_sync_end_hour": pq.get("auto_sync_end_hour", 22),
+                    "pending_removed": pq.get("pending_removed", []),
+                    "pending_mismatches": pq.get("pending_mismatches", []),
                     "has_backup": os.path.exists(depot_backup_file(depot_id)),
                     "backup_time": (
                         datetime.fromtimestamp(os.path.getmtime(depot_backup_file(depot_id)))
@@ -2395,20 +2446,29 @@ def _sync_earnings(depot_id, activities, stocks):
     return new_div, new_rg
 
 
-@app.route("/api/depots/<depot_id>/parqet/sync", methods=["POST"])
-def parqet_sync(depot_id):
+def _parqet_sync_core(depot_id, auto=False):
+    """Kernlogik des Parqet-Syncs, unabhängig vom HTTP-Kontext aufrufbar (Route-Wrapper
+    parqet_sync() für den manuellen Sync, auto_parqet_sync_check() für den Scheduler-Job).
+    Gibt (response_dict, status_code) zurück statt einer Flask-Response — jsonify() braucht
+    keinen Request-Kontext, ist aber unnötig, solange wir aus dem Scheduler-Thread aufrufen.
+    auto=True aktiviert zwei Dinge, die nur beim Hintergrund-Sync greifen: (1) removed[]/
+    mismatches[] werden zusätzlich nach ISIN gemerged in depot["parqet"]["pending_removed"/
+    "pending_mismatches"] persistiert, damit sie beim nächsten Besuch nicht verloren gehen
+    (beim manuellen Sync zeigt stattdessen sofort das Modal in der laufenden Session), und
+    (2) bei komplett entfernten Positionen geht zusätzlich eine Apprise-Push raus — obligatorisch,
+    unabhängig von weiteren Schaltern, da dies sonst unbemerkt bleiben könnte."""
     depots = load_depots()
     depot = next((d for d in depots if d["id"] == depot_id), None)
     if not depot or not depot.get("parqet", {}).get("connected"):
-        return jsonify({"error": "Nicht verbunden"}), 400
+        return {"error": "Nicht verbunden"}, 400
     pq = depot["parqet"]; pid = pq.get("portfolio_id")
-    if not pid: return jsonify({"error": "Kein Portfolio ausgewählt"}), 400
+    if not pid: return {"error": "Kein Portfolio ausgewählt"}, 400
 
     def handle_401(e):
         d2 = load_depots()
         for d in d2:
             if d["id"] == depot_id and "parqet" in d: d["parqet"]["needs_reconnect"] = True; break
-        save_depots(d2); return jsonify({"error": str(e), "needs_reconnect": True}), 401
+        save_depots(d2); return {"error": str(e), "needs_reconnect": True}, 401
 
     # 1) Holdings → ISIN-Map aufbauen
     try:
@@ -2417,7 +2477,7 @@ def parqet_sync(depot_id):
     except Exception as e:
         err = str(e)
         if "401" in err or "Unauthorized" in err: return handle_401(e)
-        return jsonify({"error": f"Holdings-Fehler: {e}"}), 502
+        return {"error": f"Holdings-Fehler: {e}"}, 502
 
     isin_map = {ph.get("asset", {}).get("isin"): ph.get("asset", {}).get("name", "")
                 for ph in pq_holdings if ph.get("asset", {}).get("isin")}
@@ -2443,7 +2503,7 @@ def parqet_sync(depot_id):
         except Exception as e:
             err = str(e)
             if "401" in err or "Unauthorized" in err: return handle_401(e)
-            return jsonify({"error": f"Parqet API Fehler: {e}"}), 502
+            return {"error": f"Parqet API Fehler: {e}"}, 502
 
         log.info(f"Parqet Sync {depot['name']}: {len(all_activities)} Aktivitäten")
 
@@ -2522,6 +2582,17 @@ def parqet_sync(depot_id):
             if d["id"] == depot_id:
                 d["parqet"]["last_sync"] = datetime.now().strftime("%d.%m.%Y %H:%M")
                 d["parqet"].pop("needs_reconnect", None)
+                if auto:
+                    # Nur beim automatischen Sync: removed/mismatches zusätzlich nach ISIN
+                    # gemerged persistieren (nicht überschreiben — mehrere Auto-Läufe können
+                    # zwischen zwei App-Besuchen liegen, bereits gemeldete Fälle bleiben also
+                    # bestehen, werden aber nicht dupliziert).
+                    pend_rem = {r["isin"]: r for r in d["parqet"].get("pending_removed", [])}
+                    for r in removed: pend_rem[r["isin"]] = r
+                    d["parqet"]["pending_removed"] = list(pend_rem.values())
+                    pend_mis = {m["isin"]: m for m in d["parqet"].get("pending_mismatches", [])}
+                    for m in mismatches: pend_mis[m["isin"]] = m
+                    d["parqet"]["pending_mismatches"] = list(pend_mis.values())
                 break
         save_depots(depots_final)
 
@@ -2534,9 +2605,33 @@ def parqet_sync(depot_id):
             log_body += f" | Neue Dividenden: {new_div} | Neue realisierte G/V: {new_rg}"
         if updated_details:
             log_body += "\n\nAktualisiert:\n" + "\n".join(updated_details)
-        add_log("manual_refresh", f"Parqet Sync: {depot['name']}", log_body,
-                True, depot_id=depot_id)
-        return jsonify({"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches, "removed": removed})
+        # "system" statt "manual_refresh" beim automatischen Sync — analog zum früheren
+        # Token-Refresh-Job (v2.8.20), damit im Verlauf klar zwischen Klick und Hintergrund-
+        # Lauf unterschieden werden kann, ohne einen neuen Typ/Label/Class-Fall zu brauchen.
+        etype = "system" if auto else "manual_refresh"
+        title = f"🔗⏱ Automatischer Parqet-Sync: {depot['name']}" if auto else f"Parqet Sync: {depot['name']}"
+        add_log(etype, title, log_body, True, depot_id=depot_id)
+
+        # Obligatorische Sofort-Benachrichtigung bei komplett entfernten Positionen — nur beim
+        # automatischen Sync, da der manuelle Sync das Modal ohnehin sofort in der laufenden
+        # Session zeigt. Unabhängig von notifications_enabled/weitere Schalter (bewusst nicht
+        # unterdrückbar), send_apprise() selbst ist ein No-Op ohne konfigurierte Apprise-URLs —
+        # der persistierte pending_removed-Eintrag oben bleibt so oder so der garantierte Kanal.
+        if auto and removed:
+            urls, mention, _ = resolve_notification_settings(depot_id)
+            names = ", ".join(r["name"] for r in removed)
+            send_apprise(
+                f"🔴 Parqet: {len(removed)} Position(en) entfernt — {depot['name']}",
+                f"Bei Parqet komplett verkauft, noch im ATH-Tracker: {names}. Bitte in der App bestätigen.",
+                urls, mention=mention, depot_id=depot_id)
+
+        return {"ok": True, "updated": updated, "new_stocks": new_stocks, "mismatches": mismatches, "removed": removed}, 200
+
+
+@app.route("/api/depots/<depot_id>/parqet/sync", methods=["POST"])
+def parqet_sync(depot_id):
+    result, status = _parqet_sync_core(depot_id, auto=False)
+    return jsonify(result), status
 
 @app.route("/api/depots/<depot_id>/parqet/apply-removal", methods=["POST"])
 def parqet_apply_removal(depot_id):
@@ -2549,6 +2644,14 @@ def parqet_apply_removal(depot_id):
         match  = next((s for s in stocks if s.get("isin") == isin), None)
         if not match: return jsonify({"error": "Nicht gefunden"}), 404
         stocks.remove(match); save_stocks(depot_id, stocks)
+    # Aus der Pending-Liste des automatischen Syncs entfernen, falls dort vorgemerkt —
+    # sonst würde der Badge/das Auto-Open-Modal beim nächsten Besuch erneut auftauchen.
+    depots = load_depots()
+    for d in depots:
+        if d["id"] == depot_id and "parqet" in d:
+            d["parqet"]["pending_removed"] = [r for r in d["parqet"].get("pending_removed", []) if r.get("isin") != isin]
+            break
+    save_depots(depots)
     add_log("manual_refresh", "Parqet: Position entfernt", f"{match['name']} (verkauft, per Sync bestätigt)",
             True, depot_id=depot_id)
     return jsonify({"ok": True})
@@ -2566,6 +2669,13 @@ def parqet_apply_mismatch(depot_id):
         match["buy_price_eur"] = buy_price; match["shares"] = round(shares, 6)
         match["parqet_synced"] = True  # Werte kommen von Parqet (siehe v2.8.15)
         save_stocks(depot_id, stocks)
+    # Analog zu apply-removal: aus der Pending-Liste des automatischen Syncs entfernen.
+    depots = load_depots()
+    for d in depots:
+        if d["id"] == depot_id and "parqet" in d:
+            d["parqet"]["pending_mismatches"] = [m for m in d["parqet"].get("pending_mismatches", []) if m.get("isin") != isin]
+            break
+    save_depots(depots)
     return jsonify({"ok": True})
 
 @app.route("/api/depots/<depot_id>/parqet/import-bulk", methods=["POST"])
@@ -3064,6 +3174,21 @@ def update_depot(depot_id):
                 d["weekly_digest"] = bool(body["weekly_digest"])
             if "daily_ath_digest" in body:
                 d["daily_ath_digest"] = bool(body["daily_ath_digest"])
+            # Automatischer Parqet-Sync — liegt unter d["parqet"], da rein Parqet-spezifisch;
+            # setdefault statt vorausgesetztem "parqet"-Key, da die Einstellungen theoretisch
+            # schon vor dem ersten Connect gespeichert werden könnten (bleiben dann bis zum
+            # Connect wirkungslos, da auto_parqet_sync_check() zusätzlich "connected" prüft).
+            if any(k in body for k in ("auto_sync_enabled", "auto_sync_interval_hours",
+                                        "auto_sync_start_hour", "auto_sync_end_hour")):
+                pq = d.setdefault("parqet", {})
+                if "auto_sync_enabled" in body:
+                    pq["auto_sync_enabled"] = bool(body["auto_sync_enabled"])
+                if "auto_sync_interval_hours" in body:
+                    pq["auto_sync_interval_hours"] = max(1, min(23, int(body["auto_sync_interval_hours"] or 4)))
+                if "auto_sync_start_hour" in body:
+                    pq["auto_sync_start_hour"] = max(0, min(23, int(body["auto_sync_start_hour"])))
+                if "auto_sync_end_hour" in body:
+                    pq["auto_sync_end_hour"] = max(0, min(23, int(body["auto_sync_end_hour"])))
             notif_toggled = False
             if "notifications_enabled" in body:
                 old_enabled = d.get("notifications_enabled", True)
