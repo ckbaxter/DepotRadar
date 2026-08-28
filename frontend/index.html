@@ -367,7 +367,7 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
   display:flex;align-items:center;gap:10px;-webkit-tap-highlight-color:transparent}
 .usr-section summary::-webkit-details-marker{display:none}
 .usr-arrow{font-size:10px;color:var(--muted);transition:transform .15s;flex-shrink:0}
-.usr-section[open] .usr-arrow{transform:rotate(90deg)}
+details[open] .usr-arrow{transform:rotate(90deg)}
 .usr-title{font-size:13px;font-weight:600;flex-shrink:0}
 .usr-state{font-size:11.5px;color:var(--muted);margin-left:auto;text-align:right;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -922,7 +922,7 @@ select</style>
           </div>
           <details style="margin-top:8px">
             <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
-              <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
+              <span class="usr-arrow" style="color:var(--accent)">▶</span> ℹ️ Was bedeutet das?
             </summary>
             <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
               Sendet einmal pro Woche eine Zusammenfassung dieses Depots per Apprise —
@@ -943,7 +943,7 @@ select</style>
           </div>
           <details style="margin-top:8px">
             <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
-              <span style="font-size:10px">▶</span> ℹ️ Was bedeutet das?
+              <span class="usr-arrow" style="color:var(--accent)">▶</span> ℹ️ Was bedeutet das?
             </summary>
             <div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg3);border-radius:6px;padding:10px 12px">
               Fasst täglich per Apprise zusammen, welche Discount- und
@@ -1024,6 +1024,62 @@ select</style>
 
         <!-- Status + Aktionen -->
         <div id="parqetStatusBox" style="font-size:13px;color:var(--muted);margin-bottom:10px"></div>
+
+        <!-- Wann muss ich den Sync ausführen? (statisch statt JS-generiert, damit sich die
+             Reihenfolge zum darunterliegenden Automatischer-Sync-Block fest einhalten lässt;
+             Sichtbarkeit weiterhin per JS gesteuert wie bisher) -->
+        <details id="parqetSyncInfoDetails" style="display:none;margin-bottom:8px">
+          <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
+            <span class="usr-arrow" style="color:var(--accent)">▶</span> ℹ️ Wann muss ich den Sync ausführen?
+          </summary>
+          <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.8;
+                      background:var(--bg3);border-radius:6px;padding:10px 12px">
+            Ein Sync gleicht deinen Bestand mit Parqet ab — z.B. nach einem Kauf, Verkauf
+            oder Split. Läuft automatisch, wenn unten aktiviert; zusätzlich jederzeit manuell
+            möglich, etwa um eine frische Änderung sofort zu übernehmen.<br><br>
+            <span onclick="closeModal(document.querySelector('.overlay[style*=flex]')?.id);openHelpModal();setTimeout(()=>{document.querySelectorAll('#helpModal details').forEach((d,i)=>d.open=i===16)},100)"
+                  style="color:var(--accent);cursor:pointer;text-decoration:underline">
+              Weitere Infos in der Hilfe →
+            </span>
+          </div>
+        </details>
+
+        <!-- Automatischer Sync — ausklappbar wie der Block darüber, Sichtbarkeit ebenfalls
+             per JS gesteuert. Statisch (nicht Teil von loadParqetStatus()' innerHTML-Aufbau),
+             damit ein Zwischenspeichern hier nicht durch jeden Status-Reload überschrieben wird. -->
+        <details id="parqetAutoSyncDetails" style="display:none;margin-bottom:8px">
+          <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
+            <span class="usr-arrow" style="color:var(--accent)">▶</span> &#9881;&#65039; Automatischer Sync
+          </summary>
+          <div style="margin-top:8px;background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <label class="toggle-switch">
+                <input type="checkbox" id="parqetAutoSyncToggle"/>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+              <span style="font-size:13px">Aktiviert</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <div class="form-group" style="margin:0">
+                <label class="form-label" style="font-size:11px">Intervall (Std.)</label>
+                <input type="number" class="form-input" id="parqetAutoSyncInterval" min="1" max="23" value="4" style="font-size:13px"/>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label" style="font-size:11px">Von (Std.)</label>
+                <input type="number" class="form-input" id="parqetAutoSyncStart" min="0" max="23" value="6" style="font-size:13px"/>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label" style="font-size:11px">Bis (Std.)</label>
+                <input type="number" class="form-input" id="parqetAutoSyncEnd" min="0" max="23" value="22" style="font-size:13px"/>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">
+              Läuft Mo–Fr zur vollen Stunde im gewählten Zeitraum. Bei komplett entfernten
+              Positionen erscheint automatisch ein Bestätigungs-Hinweis in der App.
+            </div>
+          </div>
+        </details>
+
         <div id="parqetActions" style="display:flex;gap:8px;flex-wrap:wrap"></div>
 
         <!-- Portfolio Picker (nach Connect) -->
@@ -1033,35 +1089,6 @@ select</style>
           <select class="form-input" id="parqetPortfolioSelect"></select>
           <button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%"
                   onclick="confirmParqetPortfolio()">Portfolio verbinden</button>
-        </div>
-
-        <!-- Automatischer Sync -->
-        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <label class="toggle-switch">
-              <input type="checkbox" id="parqetAutoSyncToggle"/>
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </label>
-            <span style="font-size:13px">Automatischer Sync</span>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-            <div class="form-group" style="margin:0">
-              <label class="form-label" style="font-size:11px">Intervall (Std.)</label>
-              <input type="number" class="form-input" id="parqetAutoSyncInterval" min="1" max="23" value="4" style="font-size:13px"/>
-            </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label" style="font-size:11px">Von (Std.)</label>
-              <input type="number" class="form-input" id="parqetAutoSyncStart" min="0" max="23" value="6" style="font-size:13px"/>
-            </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label" style="font-size:11px">Bis (Std.)</label>
-              <input type="number" class="form-input" id="parqetAutoSyncEnd" min="0" max="23" value="22" style="font-size:13px"/>
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">
-            Läuft Mo–Fr zur vollen Stunde im gewählten Zeitraum. Bei komplett entfernten
-            Positionen erscheint automatisch ein Bestätigungs-Hinweis in der App.
-          </div>
         </div>
       </div>
     </div>
@@ -4968,7 +4995,14 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "August 2026",
-    versions: "Frontend v2.13.63",
+    versions: "Frontend v2.13.65–67",
+    changes: [
+      "Bugfix: aufgeklappte Details-Elemente (z.B. „Automatischer Sync\", Digest-Infoboxen) blieben beim erneuten Öffnen eines Modals ausgeklappt, der ▶-Pfeil drehte sich beim Aufklappen nicht mit und hatte teils eine falsche Farbe. Alle drei behoben."
+    ]
+  },
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.63 · Backend v2.8.31",
     changes: [
       "Automatischer Parqet-Sync (pro Depot konfigurierbar, Depot-Einstellungen → Parqet-Sektion): Toggle + Intervall (Std.) + Zeitraum von/bis. Läuft Mo–Fr zur vollen Stunde (Backend-Scheduler-Job). Werden dabei komplett verkaufte Positionen erkannt, bleiben sie als Bestätigungs-Hinweis erhalten (Badge in der Kopfzeile neben „Parqet: zuletzt …\", klickbar) und öffnen das bestehende Bestätigungs-Modal automatisch beim nächsten Besuch — geht also nicht verloren, auch wenn niemand beim Sync selbst zugesehen hat."
     ]
@@ -5933,7 +5967,14 @@ function _showTreemapDetail(s, disc, val, pct){
 }
 
 function openModal(id){
-  document.getElementById(id).style.display = "flex";
+  const modal = document.getElementById(id);
+  modal.style.display = "flex";
+  // Ausgeklappte <details> (z.B. "Wann muss ich den Sync ausführen?", "Automatischer Sync",
+  // "Was bedeutet das?" bei den Digest-Togglen) sollen beim erneuten Öffnen eines Modals
+  // wieder eingeklappt starten, statt den vom letzten Öffnen offen gebliebenen Zustand zu
+  // übernehmen — das <open>-Attribut überlebt sonst, da die DOM-Knoten beim Schließen nicht
+  // neu erzeugt, sondern nur per display:none versteckt werden.
+  modal.querySelectorAll("details[open]").forEach(d => d.open = false);
   // Verhindert Layout-Shift durch Scrollbar beim Öffnen
   if(document.querySelectorAll(".overlay[style*='flex']").length === 1){
     _scrollY = window.scrollY;
@@ -6531,13 +6572,16 @@ async function loadParqetStatus(depotId){
       pending_removed: s.pending_removed, pending_mismatches: s.pending_mismatches};
     updateParqetSyncUI();
   }
-  const box     = document.getElementById("parqetStatusBox");
-  const actions = document.getElementById("parqetActions");
-  const picker  = document.getElementById("parqetPortfolioPicker");
+  const box       = document.getElementById("parqetStatusBox");
+  const actions   = document.getElementById("parqetActions");
+  const picker    = document.getElementById("parqetPortfolioPicker");
+  const syncInfo  = document.getElementById("parqetSyncInfoDetails");
+  const autoSync  = document.getElementById("parqetAutoSyncDetails");
   picker.style.display = "none";
   if(!s.has_client_id){
     box.innerHTML = '<span style="color:var(--muted)">Bitte zuerst eine Client ID eintragen.</span>';
     actions.innerHTML = "";
+    syncInfo.style.display = "none"; autoSync.style.display = "none";
     return;
   }
   if(s.connected){
@@ -6550,25 +6594,11 @@ async function loadParqetStatus(depotId){
       actions.innerHTML = `
         <button class="btn btn-primary btn-sm" onclick="doParqetReconnect()">Neu verbinden</button>
         <button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
+      syncInfo.style.display = "none"; autoSync.style.display = "none";
     } else {
       box.innerHTML = `<span style="color:var(--green)">&#10003; Verbunden</span> &nbsp; <span style="color:var(--muted)">${lastSync}${portInfo}</span>`;
-      let btns = `<details style="margin-bottom:8px;flex-basis:100%">
-        <summary style="font-size:12px;color:var(--accent);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:4px">
-          <span style="font-size:10px">▶</span> ℹ️ Wann muss ich den Sync ausführen?
-        </summary>
-        <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.8;
-                    background:var(--bg3);border-radius:6px;padding:10px 12px">
-          Der Sync läuft <b style="color:var(--text)">nicht automatisch</b>.
-          Nach dem ersten Verbinden einmalig ausführen um alle Positionen zu importieren.
-          Danach nach jeder Änderung in deinem Parqet-Portfolio — z.B. nach einem Kauf,
-          Verkauf oder Split.<br><br>
-          <span onclick="closeModal(document.querySelector('.overlay[style*=flex]')?.id);openHelpModal();setTimeout(()=>{document.querySelectorAll('#helpModal details').forEach((d,i)=>d.open=i===16)},100)"
-                style="color:var(--accent);cursor:pointer;text-decoration:underline">
-            Weitere Infos in der Hilfe →
-          </span>
-        </div>
-      </details>
-      <button class="btn btn-ghost btn-sm btn-sync-pulse" onclick="doParqetSync()">&#8635; Sync starten</button>
+      syncInfo.style.display = ""; autoSync.style.display = "";
+      let btns = `<button class="btn btn-ghost btn-sm btn-sync-pulse" onclick="doParqetSync()">&#8635; Sync starten</button>
       <button class="btn btn-ghost btn-sm" onclick="${s.portfolio_id ? 'switchParqetPortfolio()' : 'loadParqetPortfolios()'}">${s.portfolio_id ? 'Portfolio wechseln' : 'Portfolio wählen'}</button>`;
       if(s.has_backup){
         const btime = s.backup_time ? `<br><span style="font-size:10px;font-weight:400;opacity:.6">vom ${s.backup_time}</span>` : "";
@@ -6581,6 +6611,7 @@ async function loadParqetStatus(depotId){
   } else {
     box.innerHTML = `<span style="color:var(--muted)">Nicht verbunden</span>`;
     actions.innerHTML = `<button class="btn btn-primary btn-sm" onclick="doParqetConnect()">Mit Parqet verbinden</button>`;
+    syncInfo.style.display = "none"; autoSync.style.display = "none";
   }
 }
 
@@ -7703,7 +7734,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.63 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.67 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
