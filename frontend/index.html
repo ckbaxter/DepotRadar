@@ -241,6 +241,15 @@ tr:hover td{background:var(--zebra-hover)!important}
 .snapshot-period{display:flex;gap:4px;flex-wrap:wrap}
 .snapshot-period button{padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:11px;cursor:pointer;transition:all .15s}
 .snapshot-period button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.compare-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:0 16px 10px 28px}
+.compare-label{font-size:11px;color:var(--muted)}
+.compare-chip{padding:4px 10px;border-radius:999px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:11px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.compare-chip .compare-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.compare-chip.active{color:#fff;border-color:transparent}
+.compare-chip.active .compare-dot{background:#fff}
+.compare-chip[data-etf="world"].active{background:var(--accent)}
+.compare-chip[data-etf="sp500"].active{background:var(--orange)}
+.compare-chip[data-etf="dax"].active{background:var(--purple)}
 .snapshot-body{padding:0 16px 14px}
 .weight-bg{flex:1;height:3px;background:rgba(100,116,139,.2);border-radius:2px;overflow:hidden}
 .weight-fill{height:3px;background:var(--accent);border-radius:2px;transition:width .3s}
@@ -648,8 +657,15 @@ select</style>
         <button onclick="setSnapshotPeriod('all')" id="sp-all" class="active">Alles</button>
       </div>
     </div>
+    <div id="compareRow" class="compare-row" onclick="event.stopPropagation()" style="display:none">
+      <span class="compare-label">Vergleichen:</span>
+      <div class="compare-chip" data-etf="world" onclick="toggleCompareEtf('world')"><span class="compare-dot"></span>MSCI World</div>
+      <div class="compare-chip" data-etf="sp500" onclick="toggleCompareEtf('sp500')"><span class="compare-dot"></span>S&amp;P 500</div>
+      <div class="compare-chip" data-etf="dax" onclick="toggleCompareEtf('dax')"><span class="compare-dot"></span>DAX</div>
+    </div>
     <div id="snapshotBody" style="display:none">
       <div class="snapshot-body">
+        <div id="snapshotModeHint" style="font-size:10px;color:var(--muted);padding:0 0 6px;display:none"></div>
         <svg id="snapshotChart" width="100%" height="160" style="display:block"></svg>
       </div>
     </div>
@@ -3895,6 +3911,17 @@ function toggleBlur(id){
 let _snapshots = [];
 let _snapshotPeriod = "all";
 
+// ── ETF-Vergleichslinien im Portfolio-Verlauf-Chart (seit v2.13.68) ──────────
+// Feste Schnellauswahl (Ticker EUR-notiert an der XETRA, kein Auth/Umrechnung nötig).
+const COMPARE_ETFS = {
+  world: { ticker: "EUNL.DE", label: "MSCI World", color: "#4e7cf6" },
+  sp500: { ticker: "SXR8.DE", label: "S&P 500",    color: "#f97316" },
+  dax:   { ticker: "EXS1.DE", label: "DAX",        color: "#a855f7" },
+};
+let _compareActive = [];
+try { _compareActive = JSON.parse(localStorage.getItem("compareEtfs") || "[]"); } catch(e){ _compareActive = []; }
+let _etfDataCache = {}; // ticker -> [{date,close}] | null(fehlgeschlagen) | undefined(noch nicht geladen)
+
 async function loadSnapshots(){
   try {
     const r = await fetch(`${API}/snapshots`);
@@ -3960,11 +3987,55 @@ function downsampleSnapshots(filtered, maxPoints){
   return out;
 }
 
+function renderCompareChips(){
+  document.querySelectorAll(".compare-chip").forEach(el => {
+    el.classList.toggle("active", _compareActive.includes(el.dataset.etf));
+  });
+}
+
+function toggleCompareEtf(key){
+  const idx = _compareActive.indexOf(key);
+  if(idx >= 0) _compareActive.splice(idx, 1); else _compareActive.push(key);
+  localStorage.setItem("compareEtfs", JSON.stringify(_compareActive));
+  renderCompareChips();
+  if(!activeDepot) return;
+  const did = activeDepot.id;
+  const data = _snapshots.filter(s => s.depots && s.depots[did]);
+  renderSnapshotChart(data, did);
+}
+
+async function ensureEtfData(ticker){
+  if(_etfDataCache[ticker] !== undefined) return _etfDataCache[ticker];
+  try {
+    const r = await fetch(`${API}/etf-history?ticker=${encodeURIComponent(ticker)}`);
+    const j = await r.json();
+    _etfDataCache[ticker] = (j && j.data) ? j.data : null;
+  } catch(e){ _etfDataCache[ticker] = null; }
+  return _etfDataCache[ticker];
+}
+
+// Letzter bekannter Schlusskurs am oder vor targetDate; fällt auf den ersten
+// verfügbaren Kurs zurück, falls targetDate vor dem Beginn der ETF-Historie liegt
+// (5 Jahre Tagesdaten decken jeden realistischen Portfolio-Verlauf ab).
+function nearestClose(etfData, targetDate){
+  if(!etfData || !etfData.length) return null;
+  let result = etfData[0].close;
+  for(const pt of etfData){
+    if(pt.date <= targetDate) result = pt.close; else break;
+  }
+  return result;
+}
+
+const _periodLabels = {"1W":"1 Woche","1M":"1 Monat","3M":"3 Monate","6M":"6 Monate","1J":"1 Jahr","all":"gesamten Zeitraum"};
+
 function renderSnapshotChart(data, did){
+  renderCompareChips();
+  const hintEl = document.getElementById("snapshotModeHint");
   const rawFiltered = getSnapshotRange(data);
   if(rawFiltered.length < 2){
     document.getElementById("snapshotPerf").textContent = rawFiltered.length < 2 ? "— noch zu wenig Daten" : "";
     document.getElementById("snapshotChart").innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--muted)" font-size="12">Noch zu wenig Daten für diesen Zeitraum</text>`;
+    if(hintEl) hintEl.style.display = "none";
     return;
   }
   // Performance immer auf Basis ALLER echten Punkte berechnen (nicht downgesampelt)
@@ -3987,16 +4058,71 @@ function renderSnapshotChart(data, did){
   // Downsampling für die Darstellung — max. ~90 Punkte, damit lange Zeiträume
   // (1J, Alles) nicht zu dicht/unübersichtlich werden
   const filtered = downsampleSnapshots(rawFiltered, 90);
-  const values = filtered.map(s => s.depots[did].value);
-  const costs  = filtered.map(s => s.depots[did].cost ?? null);
+  const values = filtered.map(s => s.depots[did].value);   // Euro, immer
+  const costs  = filtered.map(s => s.depots[did].cost ?? null); // Euro, immer
   const dates  = filtered.map(s => s.date);
+  const n  = values.length;
 
-  // Y-Skala über beide Datenreihen (damit cost-Linie korrekt in den Chart passt)
-  // Y-Skala ausschließlich nach Portfolio-Werten berechnen — cost-Linie wird im
-  // selben Koordinatensystem gezeichnet, aber die Skala wird nicht durch einen
-  // ggf. deutlich niedrigeren EK-Wert zusammengestaucht.
-  const minV   = Math.min(...values);
-  const maxV   = Math.max(...values);
+  // ── ETF-Vergleich: %-Modus sobald mindestens ein Chip aktiv ist ──────────
+  // Portfolio-Wert enthält Ein-/Auszahlungen (Parqet-Sync) — der %-Vergleich ist damit
+  // kein exakt zeitgewichteter Performance-Vergleich, für eine grobe Markt-Einordnung
+  // aber ausreichend (siehe Design-Absprache). Alle Linien werden auf den ersten
+  // dargestellten (downgesampelten) Punkt rebased (=0%).
+  const pctMode = _compareActive.length > 0;
+  const base    = values[0];
+  const displayValues = pctMode ? values.map(v => (v - base) / base * 100) : values;
+  const costBase = hasCost ? costs.find(c => c !== null) : null;
+  const displayCosts = pctMode
+    ? costs.map(c => (c !== null && costBase) ? (c - costBase) / costBase * 100 : null)
+    : costs;
+
+  // ETF-Serien: nur bereits geladene (nicht mehr undefined) und erfolgreich geladene
+  // (nicht null) Ticker werden gezeichnet. Noch ladende Ticker stoßen den Fetch an und
+  // rendern den Chart bei Erfolg/Misserfolg einmalig neu — kein Polling, kein Loop.
+  const etfSeriesList = [];
+  let etfLoading = false, etfFailed = false;
+  if(pctMode){
+    _compareActive.forEach(key => {
+      const cfg = COMPARE_ETFS[key];
+      if(!cfg) return;
+      const etfData = _etfDataCache[cfg.ticker];
+      if(etfData === undefined){
+        etfLoading = true;
+        ensureEtfData(cfg.ticker).then(() => {
+          if(activeDepot && activeDepot.id === did) renderSnapshotChart(data, did);
+        });
+        return;
+      }
+      if(etfData === null){ etfFailed = true; return; }
+      const etfBase = nearestClose(etfData, dates[0]);
+      const etfValues = dates.map(d => (nearestClose(etfData, d) - etfBase) / etfBase * 100);
+      etfSeriesList.push({ key, cfg, values: etfValues });
+    });
+  }
+
+  if(hintEl){
+    hintEl.style.display = "block";
+    if(pctMode){
+      let txt = `Ansicht: %-Vergleich seit Beginn · ${_periodLabels[_snapshotPeriod] || _snapshotPeriod}`;
+      if(etfLoading) txt += " · lädt…";
+      else if(etfFailed) txt += " · einzelne ETF-Daten nicht verfügbar";
+      hintEl.textContent = txt;
+    } else {
+      hintEl.textContent = "Ansicht: absoluter Wert (€)";
+    }
+  }
+
+  // Y-Skala: im €-Modus wie bisher ausschließlich nach Portfolio-Werten (die EK-Linie
+  // soll die Skala nicht zusammenstauchen). Im %-Modus sind alle Linien dieselbe Einheit
+  // (% Veränderung) — die Skala berücksichtigt daher Portfolio, EK und alle geladenen
+  // ETF-Serien gemeinsam, damit nichts abgeschnitten wird.
+  let scaleValues = displayValues;
+  if(pctMode){
+    scaleValues = scaleValues.concat(displayCosts.filter(c => c !== null));
+    etfSeriesList.forEach(s => { scaleValues = scaleValues.concat(s.values); });
+  }
+  const minV   = Math.min(...scaleValues);
+  const maxV   = Math.max(...scaleValues);
   const range  = maxV - minV || 1;
   const lineColor = perf >= 0 ? "#22c55e" : "#ef4444";
 
@@ -4010,26 +4136,32 @@ function renderSnapshotChart(data, did){
                  || 340;
   const W = Math.max(Math.round(measuredW), 200); const H = 160; const pad = {t:10,r:10,b:24,l:68};
   const iW = W - pad.l - pad.r; const iH = H - pad.t - pad.b;
-  const n  = values.length;
 
   const px = i => n > 1 ? pad.l + (i / (n-1)) * iW : pad.l + iW/2;
   const py = v => pad.t + iH - ((v - minV) / range) * iH;
   // Geklemmte Y-Koordinate für die EK-Linie: bleibt innerhalb des Chart-Bereichs,
-  // auch wenn der EK-Wert außerhalb der Y-Skala (= unterhalb minV) liegt.
+  // auch wenn der EK-Wert außerhalb der Y-Skala (= unterhalb minV) liegt. Im %-Modus
+  // fließt EK bereits in die Skala ein und wird praktisch nie geklemmt.
   const pyClamp = v => Math.max(pad.t + 1, Math.min(pad.t + iH - 1, py(v)));
 
-  // Portfolio-Wert-Pfad
-  const pts     = values.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
+  // Portfolio-Wert-Pfad. Flächenfüllung nur im €-Modus (wie bisher) — im %-Vergleich
+  // würde sie mehrere sich kreuzende Linien optisch verdecken; stattdessen eine
+  // gestrichelte Nulllinie als Referenz (0% = Startpunkt des Zeitraums).
+  const pts     = displayValues.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
   const fillPts = `${px(0)},${py(minV)} L ${pts} L ${px(n-1)},${py(minV)} Z`;
+  const areaHtml = pctMode ? "" : `<path d="${fillPts}" fill="url(#sg)"/>`;
+  const zeroLineHtml = pctMode
+    ? `<line x1="${pad.l}" y1="${py(0)}" x2="${pad.l+iW}" y2="${py(0)}" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>`
+    : "";
 
   // Invested-Capital-Pfad: nur Segmente wo cost-Wert vorhanden ist.
   // Koordinaten werden auf den Chart-Bereich geklemmt (pyClamp), damit die Linie
   // auch dann sichtbar bleibt wenn EK unterhalb der Wertelinie-Skala liegt.
   let costPath = "";
-  const costBelowScale = hasCost && costs.some(c => c !== null && c < minV);
+  const costBelowScale = !pctMode && hasCost && costs.some(c => c !== null && c < minV);
   if(hasCost){
     let seg = ""; let inSeg = false;
-    costs.forEach((c, i) => {
+    displayCosts.forEach((c, i) => {
       if(c !== null){
         seg += inSeg ? ` L ${px(i)},${pyClamp(c)}` : `M ${px(i)},${pyClamp(c)}`;
         inSeg = true;
@@ -4039,6 +4171,13 @@ function renderSnapshotChart(data, did){
       ? `<path d="${seg}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5,3" stroke-linejoin="round" opacity="0.7"/>`
       : "";
   }
+
+  // ETF-Vergleichslinien — Farben aus COMPARE_ETFS, keine Fläche, keine Legende im SVG
+  // (die Chips oberhalb des Charts übernehmen die Farb-Zuordnung als Legende).
+  const etfPathsHtml = etfSeriesList.map(s => {
+    const d = s.values.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
+    return `<path d="M ${d}" fill="none" stroke="${s.cfg.color}" stroke-width="2" stroke-linejoin="round"/>`;
+  }).join("");
 
   // Legende (nur wenn cost-Daten vorhanden)
   // Wenn EK unterhalb der Werte-Skala liegt, wird ein "↓"-Hinweis angezeigt
@@ -4054,14 +4193,16 @@ function renderSnapshotChart(data, did){
 
   // X-Achsen-Labels (max 5)
   const step  = Math.max(1, Math.floor(n/5));
-  const xLabels = values.map((v,i) => {
+  const xLabels = displayValues.map((v,i) => {
     if(i % step !== 0 && i !== n-1) return "";
     const d = new Date(dates[i]+"T00:00:00");
     return `<text x="${px(i)}" y="${H-4}" text-anchor="middle" font-size="10" fill="var(--muted)">${d.getDate()}.${d.getMonth()+1}.</text>`;
   }).join("");
 
-  // Y-Achsen-Labels: gerundet, ohne Nachkommastellen (Platzersparnis)
-  const fmtYAxis = v => new Intl.NumberFormat("de-DE",{maximumFractionDigits:0}).format(Math.round(v)) + " €";
+  // Y-Achsen-Labels: gerundet, ohne Nachkommastellen (Platzersparnis), Einheit je nach Modus
+  const fmtYAxis = v => pctMode
+    ? (v >= 0 ? "+" : "") + Math.round(v) + "%"
+    : new Intl.NumberFormat("de-DE",{maximumFractionDigits:0}).format(Math.round(v)) + " €";
   const yLabels = [minV, (minV+maxV)/2, maxV].map(v =>
     `<text x="${pad.l-4}" y="${py(v)+4}" text-anchor="end" font-size="12" fill="var(--muted)">${fmtYAxis(v)}</text>`
   ).join("");
@@ -4073,9 +4214,11 @@ function renderSnapshotChart(data, did){
         <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.2"/>
         <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
       </linearGradient></defs>
-      <path d="${fillPts}" fill="url(#sg)"/>
+      ${zeroLineHtml}
+      ${areaHtml}
       <path d="M ${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
       ${costPath}
+      ${etfPathsHtml}
       ${legendHtml}
       ${xLabels}${yLabels}
       <g id="snapCrosshair" style="display:none;pointer-events:none">
@@ -4086,6 +4229,7 @@ function renderSnapshotChart(data, did){
           <text id="snapTooltipDate" font-size="10" fill="var(--muted)"></text>
           <text id="snapTooltipVal" font-size="12" font-weight="700" fill="var(--text)"></text>
           <text id="snapTooltipCost" font-size="10" fill="var(--muted)"></text>
+          <g id="snapTooltipEtfLines"></g>
         </g>
       </g>
       <rect id="snapOverlay" x="${pad.l}" y="0" width="${iW}" height="${H}" fill="transparent"/>
@@ -4102,6 +4246,7 @@ function renderSnapshotChart(data, did){
   const ttDate    = document.getElementById("snapTooltipDate");
   const ttVal     = document.getElementById("snapTooltipVal");
   const ttCost    = document.getElementById("snapTooltipCost");
+  const ttEtf     = document.getElementById("snapTooltipEtfLines");
 
   function nearestIndex(svgX){
     if(n <= 1) return 0;
@@ -4109,30 +4254,44 @@ function renderSnapshotChart(data, did){
     return Math.max(0, Math.min(n - 1, idx));
   }
 
+  const fmtPct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+
   function showCrosshair(clientX){
     const rect = svgEl.getBoundingClientRect();
     // viewBox-Breite == gemessene Render-Breite → Skalierung 1:1, daher direkte Umrechnung
     const svgX = clientX - rect.left;
     const idx  = nearestIndex(svgX);
-    const x = px(idx), y = py(values[idx]);
+    const x = px(idx), y = py(displayValues[idx]);
 
     crossLine.setAttribute("x1", x); crossLine.setAttribute("x2", x);
     crossDot.setAttribute("cx", x);  crossDot.setAttribute("cy", y);
 
     const d = new Date(dates[idx]+"T00:00:00");
     const dateStr = `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
-    const valStr  = fmtEUR(values[idx]);
-    const costVal = costs[idx];
-    const costStr = costVal != null ? `EK: ${fmtEUR(costVal)}` : "";
+    const valStr  = pctMode ? `Wert: ${fmtPct(displayValues[idx])}` : fmtEUR(displayValues[idx]);
+    const costVal = displayCosts[idx];
+    const costStr = costVal != null ? `EK: ${pctMode ? fmtPct(costVal) : fmtEUR(costVal)}` : "";
     ttDate.textContent = dateStr;
     ttVal.textContent  = valStr;
     if(ttCost) ttCost.textContent = costStr;
 
-    // Tooltip-Box vermessen: bei cost-Zeile etwas höher
+    // ETF-Zeilen dynamisch (Anzahl variiert je nach Auswahl)
+    let etfLinesHtml = "";
+    let maxEtfTextLen = 0;
+    if(ttEtf){
+      etfLinesHtml = etfSeriesList.map((s, i) => {
+        const txt = `${s.cfg.label}: ${fmtPct(s.values[idx])}`;
+        maxEtfTextLen = Math.max(maxEtfTextLen, txt.length);
+        return `<text font-size="10" fill="${s.cfg.color}" data-row="${i}">${txt}</text>`;
+      }).join("");
+    }
+
+    // Tooltip-Box vermessen: pro zusätzlicher Zeile (EK + je ETF) etwas höher
     const extraRow = costStr ? 14 : 0;
-    const textW = Math.max(dateStr.length * 5.5, valStr.length * 7, costStr.length * 5.5) + 16;
+    const etfRows   = etfSeriesList.length;
+    const textW = Math.max(dateStr.length * 5.5, valStr.length * 7, costStr.length * 5.5, maxEtfTextLen * 5.5) + 16;
     const boxW  = Math.max(70, textW);
-    const boxH  = 34 + extraRow;
+    const boxH  = 34 + extraRow + etfRows * 13;
     let boxX = x - boxW / 2;
     boxX = Math.max(pad.l, Math.min(W - pad.r - boxW, boxX));
     const boxY = pad.t - 2;
@@ -4146,6 +4305,14 @@ function renderSnapshotChart(data, did){
     if(ttCost){
       ttCost.setAttribute("x", boxX + boxW/2); ttCost.setAttribute("y", boxY + 27 + extraRow);
       ttCost.setAttribute("text-anchor", "middle");
+    }
+    if(ttEtf){
+      ttEtf.innerHTML = etfLinesHtml;
+      ttEtf.querySelectorAll("text").forEach((el, i) => {
+        el.setAttribute("x", boxX + boxW/2);
+        el.setAttribute("y", boxY + 27 + extraRow + (i+1)*13);
+        el.setAttribute("text-anchor", "middle");
+      });
     }
 
     crossG.style.display = "block";
@@ -4166,11 +4333,13 @@ function toggleSnapshotSection(){
   const icon = document.getElementById("snapshotToggleIcon");
   const perf = document.getElementById("snapshotPerf");
   const periodBar = document.getElementById("snapshotPeriodBar");
+  const compareRow = document.getElementById("compareRow");
   const open = body.style.display !== "none";
   body.style.display = open ? "none" : "block";
   icon.textContent  = open ? "▶" : "▼";
   if(perf) perf.style.display = open ? "none" : "";
   if(periodBar) periodBar.style.display = open ? "none" : "flex";
+  if(compareRow) compareRow.style.display = open ? "none" : "flex";
   localStorage.setItem("snapshotCollapsed", open ? "1" : "0");
   // Beim Aufklappen neu rendern — garantiert korrekte gemessene Breite
   if(!open && activeDepot && _snapshots.length) renderSnapshotSection();
@@ -4993,6 +5162,13 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "August 2026",
+    versions: "Frontend v2.13.68 · Backend v2.8.32",
+    changes: [
+      "Portfolio-Verlauf: ETF-Vergleichslinien (MSCI World, S&P 500, DAX) über Chips unter der Zeitraum-Leiste ein-/ausblendbar. Sobald mindestens eine ETF-Linie aktiv ist, wechselt der Chart automatisch von absolutem €-Wert auf %-Veränderung seit Periodenbeginn (Portfolio-, EK- und ETF-Linien alle rebased auf 0% am ersten dargestellten Punkt) — im €-Modus bleibt alles wie gewohnt. Neuer Backend-Endpoint `GET /api/etf-history` liefert dafür Tagesschlusskurse über den bereits genutzten auth-freien Yahoo-chart-Endpoint, 24h In-Memory-Cache pro Ticker."
+    ]
+  },
   {
     label: "August 2026",
     versions: "Frontend v2.13.65–67",
@@ -7709,6 +7885,7 @@ if(localStorage.getItem("snapshotCollapsed") !== "0"){
   const b=document.getElementById("snapshotBody"); if(b) b.style.display="block";
   const i=document.getElementById("snapshotToggleIcon"); if(i) i.textContent="▼";
   const pb=document.getElementById("snapshotPeriodBar"); if(pb) pb.style.display="flex";
+  const cr=document.getElementById("compareRow"); if(cr) cr.style.display="flex";
 }
 checkParqetCallback();
 fetch(`${API}/health`).then(r=>r.json()).then(d=>{
@@ -7734,7 +7911,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.67 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.68 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
