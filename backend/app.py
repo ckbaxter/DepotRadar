@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.31"
+VERSION           = "2.8.32"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -719,6 +719,40 @@ _STATIC_EUR_FALLBACK = {"USD":0.92,"GBP":1.17,"CHF":1.05,"JPY":0.0062,
 # Wikipedia-REST-API: kein Auth nötig, stabiler, liefert auf Deutsch (Fallback Englisch).
 _company_info_cache = {}   # {name: (summary_or_None, timestamp)} — Cache-Key ist der Firmenname
 COMPANY_INFO_TTL     = 24 * 3600  # 24h — Kurzbeschreibungen ändern sich praktisch nie
+
+# ── ETF-Vergleichshistorie (Portfolio-Verlauf-Chart, seit v2.8.32) ─
+# Tagesschlusskurse für Vergleichs-ETFs (MSCI World/S&P 500/DAX etc.) über denselben
+# auth-freien chart-Endpoint wie fetch_performance. In-Memory-Cache pro Ticker, TTL 24h —
+# historische Schlusskurse ändern sich außer dem aktuellsten Handelstag nicht mehr.
+_etf_history_cache = {}   # {ticker: (data_or_None, timestamp)} — data = [{"date":..,"close":..}, ...]
+ETF_HISTORY_TTL     = 24 * 3600
+
+def fetch_etf_history(ticker):
+    """Tagesschlusskurse für einen ETF-Ticker (5 Jahre, wie fetch_performance) — reine
+    Rohkurse in der jeweiligen Handelswährung, KEINE EUR-Umrechnung hier (die Vergleichslinien
+    im Frontend werden ohnehin auf % seit Periodenbeginn normiert, ein Wechselkursoffset würde
+    sich dabei herauskürzen; die empfohlenen Default-ETFs sind zudem EUR-notiert an der XETRA)."""
+    cached = _etf_history_cache.get(ticker)
+    if cached and (time_mod.time() - cached[1]) < ETF_HISTORY_TTL:
+        return cached[0]
+    data = None
+    try:
+        enc = urlquote(ticker)
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false"
+        r   = requests.get(url, headers=YH, timeout=10); r.raise_for_status()
+        res = r.json()["chart"]["result"][0]
+        tss    = res.get("timestamp", [])
+        closes = res["indicators"]["quote"][0].get("close", [])
+        tz     = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+        data = []
+        for ts, c in zip(tss, closes):
+            if c is None: continue
+            d = datetime.fromtimestamp(int(ts), tz=tz).strftime("%Y-%m-%d")
+            data.append({"date": d, "close": round(float(c), 4)})
+    except Exception as e:
+        log.warning(f"ETF-Historie '{ticker}': {e}")
+    _etf_history_cache[ticker] = (data, time_mod.time())
+    return data
 
 def fetch_company_info(name):
     """Kurze Unternehmensbeschreibung von Wikipedia (zuerst DE, dann EN als Fallback), on-demand
@@ -3875,6 +3909,17 @@ def api_verify_pin(user_id):
 @app.route("/api/snapshots", methods=["GET"])
 def api_snapshots():
     return jsonify(load_snapshots())
+
+@app.route("/api/etf-history", methods=["GET"])
+def api_etf_history():
+    """Tagesschlusskurse für eine Vergleichs-ETF-Linie im Portfolio-Verlauf-Chart.
+    ?ticker=EUNL.DE — Rohkurse, In-Memory gecacht (siehe fetch_etf_history)."""
+    ticker = request.args.get("ticker", "").strip()
+    if not ticker: return jsonify({"error": "ticker fehlt"}), 400
+    data = fetch_etf_history(ticker)
+    if data is None:
+        return jsonify({"ticker": ticker, "data": None, "error": "nicht abrufbar"}), 502
+    return jsonify({"ticker": ticker, "data": data})
 
 @app.route("/api/health", methods=["GET"])
 def health():
