@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.32"
+VERSION           = "2.8.33"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1475,6 +1475,27 @@ def get_next_run_info():
                 return tz.localize(datetime(check.year, check.month, check.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
     return "unbekannt"
 
+def _weekly_portfolio_perf(depot_id, current_total):
+    """Vergleicht den aktuellen Portfolio-Gesamtwert mit dem nächstälteren Snapshot,
+    der mindestens 7 Tage zurückliegt (Fallback bei Lücken/Handelstage-Konfiguration,
+    analog zu nearestClose() im Frontend-ETF-Vergleich — siehe PROJECT_CONTEXT).
+    None wenn kein ausreichend alter Snapshot für dieses Depot existiert oder
+    current_total 0 ist (z.B. neues Depot ohne Positionen)."""
+    if not current_total:
+        return None
+    target     = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    candidates = [s for s in load_snapshots()
+                  if s["date"] <= target and depot_id in s.get("depots", {})]
+    if not candidates:
+        return None
+    ref     = max(candidates, key=lambda s: s["date"])
+    ref_val = ref["depots"][depot_id].get("value")
+    if not ref_val:
+        return None
+    delta_eur = current_total - ref_val
+    delta_pct = delta_eur / ref_val * 100
+    return {"delta_eur": delta_eur, "delta_pct": delta_pct, "ref_date": ref["date"]}
+
 def _build_digest_data(depot, stocks):
     """Berechnet alle für den Wochenbericht benötigten Daten einmalig.
     Wird von build_digest_body und build_digest_html gemeinsam genutzt,
@@ -1483,6 +1504,13 @@ def _build_digest_data(depot, stocks):
     kw    = datetime.now().isocalendar()[1]
     name  = depot.get("name", "Depot")
     total = len(stocks)
+
+    # Portfolio-Wochenperformance (Gesamtwert vs. Snapshot vor ~7 Tagen)
+    current_total = 0.0
+    for s in stocks:
+        if s.get("current_eur") and s.get("shares"):
+            current_total += s["current_eur"] * s["shares"]
+    port_perf = _weekly_portfolio_perf(depot.get("id"), current_total)
 
     # ATH-Verteilung
     buckets = {"<20": 0, "20-39": 0, "40-59": 0, ">60": 0}
@@ -1536,7 +1564,7 @@ def _build_digest_data(depot, stocks):
 
     return {"kw": kw, "name": name, "total": total, "buckets": buckets,
             "nk_items": nk_items, "perf_best": perf_best, "perf_worst": perf_worst,
-            "near_items": near_items, "sector_counts": sector_counts}
+            "near_items": near_items, "sector_counts": sector_counts, "port_perf": port_perf}
 
 
 def build_digest_body(depot, stocks):
@@ -1564,8 +1592,9 @@ def build_digest_body(depot, stocks):
     perf_section = ""
     if d["perf_best"] and d["perf_worst"]:
         best = d["perf_best"]; worst = d["perf_worst"]
-        perf_section = (f"\n\n📈 Beste Woche:    {best[0]['name']} {best[1]:+.1f}%"
-                        f"\n📉 Schlechteste:  {worst[0]['name']} {worst[1]:+.1f}%")
+        perf_section = ("\n\n🏆 Bester/Schlechtester Performer (Woche):"
+                        f"\n  📈 Beste:        {best[0]['name']} {best[1]:+.1f}%"
+                        f"\n  📉 Schlechteste: {worst[0]['name']} {worst[1]:+.1f}%")
 
     near_section = ""
     if d["near_items"]:
@@ -1578,8 +1607,15 @@ def build_digest_body(depot, stocks):
         parts = " · ".join(f"{k} {v}" for k, v in sorted(d["sector_counts"].items(), key=lambda x: -x[1]))
         sector_section = f"\n\n📂 Sektoren: {parts}"
 
+    port_section = ""
+    if d["port_perf"]:
+        pp   = d["port_perf"]
+        icon = "📈" if pp["delta_pct"] >= 0 else "📉"
+        port_section = f"{icon} Portfolio: {pp['delta_pct']:+.1f}% ({pp['delta_eur']:+.0f} €) ggü. Vorwoche\n\n"
+
     link = f"\n\n{APP_URL}" if APP_URL else ""
     body = (f"Depot: {d['name']} ({d['total']} Aktien)\n\n"
+            f"{port_section}"
             f"📊 Verteilung:\n{dist}"
             f"{nk_lines}{perf_section}{near_section}{sector_section}{link}")
     return title, body
@@ -1616,11 +1652,20 @@ def build_digest_html(depot, stocks):
     perf_html = ""
     if d["perf_best"] and d["perf_worst"]:
         best = d["perf_best"]; worst = d["perf_worst"]
-        perf_html = f"""<h3 style="margin:20px 0 8px">📈 Wochenperformance</h3>
+        perf_html = f"""<h3 style="margin:20px 0 8px">🏆 Bester/Schlechtester Performer (Woche)</h3>
         <table style="width:100%;border-collapse:collapse">
           <tr><td style="padding:4px 8px">📈 Beste</td><td style="padding:4px 8px;font-weight:600">{best[0]['name']}</td><td style="padding:4px 8px;color:#22c55e">{best[1]:+.1f}%</td></tr>
           <tr style="background:#f9fafb"><td style="padding:4px 8px">📉 Schlechteste</td><td style="padding:4px 8px;font-weight:600">{worst[0]['name']}</td><td style="padding:4px 8px;color:#ef4444">{worst[1]:+.1f}%</td></tr>
         </table>"""
+
+    port_html = ""
+    if d["port_perf"]:
+        pp    = d["port_perf"]
+        up    = pp["delta_pct"] >= 0
+        icon  = "📈" if up else "📉"
+        color = "#4ade80" if up else "#f87171"
+        port_html = (f'<div style="font-weight:600;font-size:15px;margin-top:6px;color:{color}">'
+                     f'{icon} Portfolio: {pp["delta_pct"]:+.1f}% ({pp["delta_eur"]:+.0f} €) ggü. Vorwoche</div>')
 
     near_html = ""
     if d["near_items"]:
@@ -1643,6 +1688,7 @@ def build_digest_html(depot, stocks):
     <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
       <h2 style="margin:0;font-size:18px">📊 DepotRadar Wochenbericht — KW {d['kw']}</h2>
       <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {d['name']} · {d['total']} Aktien</div>
+      {port_html}
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
       <h3 style="margin:0 0 8px">📊 ATH-Verteilung</h3>
