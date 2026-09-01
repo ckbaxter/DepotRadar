@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.34"
+VERSION           = "2.8.35"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2106,24 +2106,29 @@ def pkce_verifier():   return secrets.token_urlsafe(64)
 def pkce_challenge(v): return base64.urlsafe_b64encode(hashlib.sha256(v.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
 
 def _try_refresh_token(depot_id, pq):
-    if not pq.get("refresh_token"): return None
+    """Gibt (new_pq, reason) zurück: new_pq ist bei Erfolg das aktualisierte Parqet-Objekt,
+    sonst None. reason ist bei Erfolg None, sonst ein menschenlesbarer Grund für den
+    Fehlschlag (z.B. der konkrete HTTP-Fehler von Parqet oder ein Timeout) — wird bis in
+    den Verlauf-Eintrag/Push in handle_401() durchgereicht, damit die tatsächliche Ursache
+    ohne Docker-Log-Zugriff sichtbar ist, statt nur generisch \"Token abgelaufen\"."""
+    if not pq.get("refresh_token"): return None, "Kein Refresh Token vorhanden"
     with parqet_token_lock(depot_id):
         # Innerhalb des Locks IMMER den aktuellsten Stand neu laden, nicht das übergebene
         # (möglicherweise veraltete) pq verwenden — ein paralleler Aufruf könnte den
         # refresh_token zwischenzeitlich schon rotiert haben, während wir auf den Lock warteten.
         depots2 = load_depots()
         depot2  = next((d for d in depots2 if d["id"] == depot_id), None)
-        if not depot2: return None
+        if not depot2: return None, "Depot nicht gefunden"
         current_pq = depot2.get("parqet", {})
         # Falls ein paralleler Aufruf (z.B. Tages-Job vs. zeitgleicher manueller Sync) den
         # Token bereits erneuert hat, während wir gewartet haben: dessen Ergebnis übernehmen,
         # statt denselben (jetzt ungültigen) refresh_token ein zweites Mal zu verwenden.
         if current_pq.get("expires_at", 0) > int(time_mod.time()) + 30:
-            return current_pq
+            return current_pq, None
         rt = current_pq.get("refresh_token")
-        if not rt: return None
+        if not rt: return None, "Kein Refresh Token vorhanden"
         client_id = get_client_id(depot2)
-        if not client_id: return None
+        if not client_id: return None, "Keine Client ID hinterlegt"
         try:
             r = requests.post(PARQET_TOKEN_URL,
                               data={"grant_type":"refresh_token","refresh_token":rt,"client_id":client_id},
@@ -2136,9 +2141,9 @@ def _try_refresh_token(depot_id, pq):
             depots = load_depots()
             for d in depots:
                 if d["id"] == depot_id: d["parqet"] = new_pq; break
-            save_depots(depots); log.info(f"Parqet Token erneuert: {depot_id}"); return new_pq
+            save_depots(depots); log.info(f"Parqet Token erneuert: {depot_id}"); return new_pq, None
         except Exception as e:
-            log.error(f"Token Refresh fehlgeschlagen: {e}"); return None
+            log.error(f"Token Refresh fehlgeschlagen: {e}"); return None, str(e)
 
 def parqet_api_get(depot, path, depot_id=None):
     pq    = depot.get("parqet", {}); token = pq.get("access_token", "")
@@ -2148,11 +2153,16 @@ def parqet_api_get(depot, path, depot_id=None):
                      timeout=15)
     if r.status_code == 401 and depot_id:
         log.warning(f"Parqet 401 — Token-Refresh für {depot_id}")
-        new_pq = _try_refresh_token(depot_id, pq)
+        new_pq, reason = _try_refresh_token(depot_id, pq)
         if new_pq:
             r = requests.get(f"{PARQET_API_BASE}{path}",
                              headers={"Authorization": f"Bearer {new_pq['access_token']}", "Accept": "application/json"},
                              timeout=15)
+        else:
+            # Grund am Fehler anhängen (statt nur generisch "401") — wird über die bestehende
+            # Exception-Kette bis zu handle_401() in _parqet_sync_core() durchgereicht.
+            detail = f" — {reason}" if reason else ""
+            raise ValueError(f"401 Unauthorized: Token-Refresh fehlgeschlagen{detail}")
     r.raise_for_status(); return r.json()
 
 # ── Parqet Split-Berechnung ───────────────────────────────────────
@@ -2561,14 +2571,15 @@ def _parqet_sync_core(depot_id, auto=False):
         # Positionen: unabhängig von notifications_enabled, da sonst unbemerkt bleiben
         # könnte, dass der automatische Sync seit dem Token-Ablauf gar nichts mehr tut.
         if auto and not was_already_flagged:
+            reason = str(e)
             add_log("system", f"🔒 Parqet-Verbindung getrennt: {depot_name}",
-                    "Token-Erneuerung fehlgeschlagen — bitte in den Depot-Einstellungen neu verbinden.",
+                    f"Token-Erneuerung fehlgeschlagen: {reason}\n\nBitte in den Depot-Einstellungen neu verbinden.",
                     False, depot_id=depot_id)
             urls, mention, _ = resolve_notification_settings(depot_id)
             send_apprise(
                 f"🔒 Parqet-Verbindung getrennt — {depot_name}",
-                "Der automatische Sync konnte den Token nicht erneuern. Bitte in den "
-                "Depot-Einstellungen neu verbinden — bis dahin synchronisiert dieses Depot nicht mehr.",
+                f"Der automatische Sync konnte den Token nicht erneuern: {reason}\n\n"
+                "Bitte in den Depot-Einstellungen neu verbinden — bis dahin synchronisiert dieses Depot nicht mehr.",
                 urls, mention=mention, depot_id=depot_id)
         return {"error": str(e), "needs_reconnect": True}, 401
 
