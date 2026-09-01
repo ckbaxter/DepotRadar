@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.33-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.68-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.35-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.69-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -394,6 +394,8 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.35 | Der Verlauf-Eintrag/Push bei getrennter Parqet-Verbindung (siehe 2.8.34) nennt jetzt zusätzlich den konkreten Fehlergrund (z.B. abgelehnter Refresh Token vs. Timeout/Netzwerkfehler) statt nur der generischen Reconnect-Meldung — vorher nur im Docker-Log sichtbar |
+| 2.8.34 / 2.13.69 | Bugfix: eine abgelaufene Parqet-Verbindung (Token-Erneuerung fehlgeschlagen) blieb bei aktiviertem automatischem Sync oft wochenlang unbemerkt — sichtbar war der Status bisher nur im Depot-Einstellungen-Modal. Beim Übergang in diesen Zustand gibt es jetzt zusätzlich einen Verlauf-Eintrag, eine obligatorische Push-Benachrichtigung (unabhängig von den Benachrichtigungs-Einstellungen) sowie einen roten „🔒 Parqet: neu verbinden"-Hinweis direkt in der Hauptansicht |
 | 2.8.33 | Wochenbericht: neue Zeile zeigt die Portfolio-Wochenperformance (Gesamtwert-Veränderung ggü. Vorwoche in % und €), berechnet aus den bereits vorhandenen Snapshots — kein neues Datenfeld. Bestehende Sektion zur besten/schlechtesten Einzelaktie von „📈 Wochenperformance" in „🏆 Bester/Schlechtester Performer (Woche)" umbenannt, um Verwechslung mit der neuen Portfolio-Zeile zu vermeiden |
 | 2.8.32 / 2.13.68 | Portfolio-Verlauf: ETF-Vergleichslinien (MSCI World, S&P 500, DAX) über Chips unter der Zeitraum-Leiste ein-/ausblendbar. Sobald mindestens eine aktiv ist, wechselt der Chart automatisch von absolutem €-Wert auf %-Veränderung seit Periodenbeginn (Portfolio, EK-Linie und ETFs alle auf 0% am ersten dargestellten Punkt rebased); Flächenfüllung weicht dabei einer gestrichelten Nulllinie. Crosshair-Tooltip zeigt im %-Modus alle aktiven Linien einzeln. Neuer Backend-Endpoint `GET /api/etf-history` (Yahoo-`chart`-Endpoint, 24h-Cache) |
 | 2.8.31 / 2.13.63 | Automatischer Parqet-Sync (pro Depot konfigurierbar, Depot-Einstellungen → Parqet-Sektion): Toggle + Intervall (Std.) + Zeitraum von/bis. Läuft Mo–Fr zur vollen Stunde über neuen Scheduler-Job `auto_parqet_sync_check` (Kernlogik aus `parqet_sync()` in `_parqet_sync_core()` extrahiert, damit Scheduler und manuelle Route dieselbe Funktion nutzen). Komplett entfernte Positionen werden bei automatischem Sync zusätzlich persistiert (`pending_removed`, ISIN-dedupliziert) statt nur transient in der HTTP-Antwort zu existieren — Badge in der Kopfzeile + automatisches Öffnen des Bestätigungs-Modals beim nächsten Besuch, plus obligatorische Apprise-Push. `parqet_reconnect` erhält die Auto-Sync-Konfiguration jetzt über den Reset hinweg. Nebenbei entdeckt: `mismatches[]` wird im Backend seit längerem nirgends mehr befüllt (totes Feld, siehe Technische Schulden in CURRENT_STATE) |
