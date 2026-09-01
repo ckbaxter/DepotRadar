@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.33"
+VERSION           = "2.8.34"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2546,9 +2546,31 @@ def _parqet_sync_core(depot_id, auto=False):
 
     def handle_401(e):
         d2 = load_depots()
+        was_already_flagged = True
         for d in d2:
-            if d["id"] == depot_id and "parqet" in d: d["parqet"]["needs_reconnect"] = True; break
-        save_depots(d2); return {"error": str(e), "needs_reconnect": True}, 401
+            if d["id"] == depot_id and "parqet" in d:
+                was_already_flagged = d["parqet"].get("needs_reconnect", False)
+                d["parqet"]["needs_reconnect"] = True
+                depot_name = d.get("name", depot_id)
+                break
+        save_depots(d2)
+        # Obligatorische Meldung nur beim Übergang False→True (nicht bei jedem erneuten
+        # 401, sonst Spam bei stündlichen Auto-Sync-Versuchen, solange ungelöst) und nur
+        # beim automatischen Sync — der manuelle zeigt den Modal-Status ohnehin sofort in
+        # der laufenden Session. Analog zum obligatorischen Push bei komplett entfernten
+        # Positionen: unabhängig von notifications_enabled, da sonst unbemerkt bleiben
+        # könnte, dass der automatische Sync seit dem Token-Ablauf gar nichts mehr tut.
+        if auto and not was_already_flagged:
+            add_log("system", f"🔒 Parqet-Verbindung getrennt: {depot_name}",
+                    "Token-Erneuerung fehlgeschlagen — bitte in den Depot-Einstellungen neu verbinden.",
+                    False, depot_id=depot_id)
+            urls, mention, _ = resolve_notification_settings(depot_id)
+            send_apprise(
+                f"🔒 Parqet-Verbindung getrennt — {depot_name}",
+                "Der automatische Sync konnte den Token nicht erneuern. Bitte in den "
+                "Depot-Einstellungen neu verbinden — bis dahin synchronisiert dieses Depot nicht mehr.",
+                urls, mention=mention, depot_id=depot_id)
+        return {"error": str(e), "needs_reconnect": True}, 401
 
     # 1) Holdings → ISIN-Map aufbauen
     try:
