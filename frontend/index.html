@@ -679,6 +679,9 @@ select</style>
         <span style="font-weight:600;font-size:15px" id="viewTitle">—</span>
         <span class="last-update" id="lastUpdate"></span>
         <span class="last-update" id="parqetSyncInfo" style="display:none"></span>
+        <span id="parqetReconnectBadge" style="display:none;cursor:pointer;color:var(--red);
+              font-weight:600;font-size:12px" onclick="openDepotSettings(activeDepot)"
+              title="Parqet-Verbindung getrennt — antippen zum Neuverbinden">&#128274; Parqet: neu verbinden</span>
         <span id="parqetPendingBadge" style="display:none;cursor:pointer;color:var(--red);
               font-weight:600;font-size:12px" onclick="showParqetPendingModal()"
               title="Ausstehende Parqet-Bestätigungen — antippen zum Öffnen"></span>
@@ -5163,6 +5166,13 @@ let _scrollY = 0;
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
   {
+    label: "September 2026",
+    versions: "Frontend v2.13.69 · Backend v2.8.34",
+    changes: [
+      "Bugfix: eine abgelaufene Parqet-Verbindung (Token-Erneuerung fehlgeschlagen) blieb bei aktiviertem automatischen Sync oft wochenlang unbemerkt — sichtbar war der Status bisher nur im Depot-Einstellungen-Modal. Jetzt gibt es beim Übergang in diesen Zustand zusätzlich eine obligatorische Push-Benachrichtigung, einen Verlauf-Eintrag sowie einen roten „🔒 Parqet: neu verbinden\"-Hinweis direkt in der Hauptansicht."
+    ]
+  },
+  {
     label: "August 2026",
     versions: "Frontend v2.13.68 · Backend v2.8.32",
     changes: [
@@ -6894,9 +6904,10 @@ async function parqetUndoSync(depotId){
 let _parqetPendingAutoShown = new Set();
 
 function updateParqetSyncUI(){
-  const btn   = document.getElementById("parqetSyncMainBtn");
-  const info  = document.getElementById("parqetSyncInfo");
-  const badge = document.getElementById("parqetPendingBadge");
+  const btn      = document.getElementById("parqetSyncMainBtn");
+  const info     = document.getElementById("parqetSyncInfo");
+  const badge    = document.getElementById("parqetPendingBadge");
+  const reconnBadge = document.getElementById("parqetReconnectBadge");
   const pq    = activeDepot?.parqet;
   // activeDepot bleibt beim Wechsel zu einer Watchlist unverändert bestehen (switchWatchlist()
   // ändert nur activeView, nicht activeDepot) — daher zusätzlich prüfen, dass wirklich eine
@@ -6904,8 +6915,20 @@ function updateParqetSyncUI(){
   if(activeView.type !== "depot" || !activeDepot || !pq?.connected){
     btn.style.display = "none"; info.style.display = "none";
     if(badge) badge.style.display = "none";
+    if(reconnBadge) reconnBadge.style.display = "none";
     return;
   }
+  // Bei getrennter Verbindung (Token-Erneuerung fehlgeschlagen): Sync-Button und normale
+  // "zuletzt ..."-Info ausblenden, stattdessen deutlicher Reconnect-Hinweis direkt in der
+  // Hauptansicht — vorher war das nur im Depot-Einstellungen-Modal sichtbar, wodurch ein
+  // automatischer Sync über Wochen unbemerkt ins Leere laufen konnte.
+  if(pq.needs_reconnect){
+    btn.style.display = "none"; info.style.display = "none";
+    if(badge) badge.style.display = "none";
+    if(reconnBadge) reconnBadge.style.display = "inline";
+    return;
+  }
+  if(reconnBadge) reconnBadge.style.display = "none";
   btn.style.display  = "";
   info.style.display = pq.last_sync ? "" : "none";
   if(pq.last_sync) info.textContent = `Parqet: zuletzt ${pq.last_sync}`;
@@ -7911,7 +7934,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.68 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.69 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
