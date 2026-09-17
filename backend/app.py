@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.35"
+VERSION           = "2.8.38"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -38,13 +38,72 @@ ADMIN_USER_NAMES  = {n.strip().lower() for n in os.environ.get("ADMIN_USERS", ""
 APP_START_TIME = time_mod.time()
 _health_stats  = {
     "total_refreshes":         0,
-    "total_yahoo_calls":       0,
-    "failed_yahoo_calls":      0,
-    "recent_errors":           [],    # Ring-Buffer, max. 20 Einträge
+    "recent_errors":           [],    # Ring-Buffer, max. 20 Einträge, jetzt mit "source"-Feld
     "cache_hits_total":        0,     # Kumulierte Cache-Hits über alle Zyklen
     "last_refresh_stats":      {"fresh": 0, "cached": 0},  # Letzter Zyklus
     "last_refresh_had_errors": False, # Wird pro Zyklus zurückgesetzt — steuert den Statusdot
+    # Pro-Datenquellen-Zähler fürs System-Status-Dashboard (Diagnose-Erweiterung, Sept. 2026).
+    # calls/failed sind kumulativ und werden wie die bisherigen total_yahoo_calls/
+    # failed_yahoo_calls in health.json persistiert; avg_latency_ms (exponentiell geglättet,
+    # alpha=0.2) sowie last_call/last_error sind bewusst In-Memory — ein Live-Bild seit dem
+    # letzten Start, analog zu recent_errors/last_refresh_stats.
+    "sources": {
+        src: {"calls": 0, "failed": 0, "avg_latency_ms": 0.0, "last_call": None, "last_error": None}
+        for src in ("yahoo", "frankfurter", "parqet", "openfigi")
+    },
 }
+# Job-Laufzeiten fürs System-Status-Dashboard — rein In-Memory (kein Neustart-Überstehen,
+# analog zu recent_errors). Key = Job-Bezeichnung, Value = {last_run, duration_ms, success, detail}.
+_job_stats = {}
+# Zählt, wie oft file_lock() eine Datei bereits belegt vorfand und warten musste (fürs
+# System-Status-Dashboard) — reiner In-Memory-Zähler, kein Neustart-Überstehen nötig.
+_lock_contentions = {"count": 0}
+
+def _track_source_call(source, latency_ms, error=None):
+    """Zählt einen Aufruf einer externen Datenquelle (yahoo/frankfurter/parqet/openfigi)
+    fürs System-Status-Dashboard. Nutzt dieselbe Ring-Buffer-Fehlerliste wie die bisherige
+    Yahoo-spezifische Fehlerbehandlung in _fetch_prices (die weiterhin eigenständig bleibt,
+    da sie zusätzlich last_refresh_had_errors für den Footer-Statusdot steuert und den
+    betroffenen Ticker mitführt)."""
+    st = _health_stats["sources"].setdefault(
+        source, {"calls": 0, "failed": 0, "avg_latency_ms": 0.0, "last_call": None, "last_error": None})
+    st["calls"] += 1
+    st["last_call"] = datetime.now().isoformat(timespec="seconds")
+    st["avg_latency_ms"] = round(latency_ms, 0) if st["calls"] == 1 \
+        else round(st["avg_latency_ms"] * 0.8 + latency_ms * 0.2, 0)
+    if error:
+        st["failed"] += 1
+        st["last_error"] = str(error)[:160]
+        _health_stats["recent_errors"].append({
+            "time":   datetime.now().isoformat(timespec="seconds"),
+            "source": source,
+            "ticker": "",
+            "reason": str(error)[:120],
+        })
+        if len(_health_stats["recent_errors"]) > 20:
+            _health_stats["recent_errors"] = _health_stats["recent_errors"][-20:]
+
+def _storage_stats():
+    """Größen aller JSON-Datendateien im DATA_DIR fürs System-Status-Dashboard — reiner
+    Read von os.path.getsize, kein Locking nötig (Momentaufnahme, kein load-modify-save)."""
+    try:
+        files = []
+        for fn in os.listdir(DATA_DIR):
+            if not fn.endswith(".json"): continue
+            fp = os.path.join(DATA_DIR, fn)
+            try: files.append({"name": fn, "bytes": os.path.getsize(fp)})
+            except OSError: continue
+        files.sort(key=lambda f: f["bytes"], reverse=True)
+        return {
+            "files":            files[:12],  # größte 12 — mehr wäre nur Rauschen im Dashboard
+            "total_bytes":      sum(f["bytes"] for f in files),
+            "file_count":       len(files),
+            "lock_contentions": _lock_contentions["count"],
+        }
+    except Exception as e:
+        log.warning(f"Storage-Stats fehlgeschlagen: {e}")
+        return {"files": [], "total_bytes": 0, "file_count": 0, "lock_contentions": _lock_contentions["count"]}
+
 # ── Fortschritt des manuellen Kurs-Refreshs (In-Memory, Key = Depot-ID) ──────────
 # Wird nur vom manuellen "Kurse aktualisieren"-Button befüllt: api_refresh_all reicht
 # die Depot-ID als progress_key an _refresh_depot/_fetch_prices durch, der Scheduler
@@ -125,8 +184,13 @@ def _lock_for(path):
 def file_lock(path):
     """Kontextmanager: with file_lock(depot_file(did)): ... umschließt den
     kompletten load-modify-save-Zyklus für genau diese Datei mit einem Lock,
-    der pro Dateipfad separat vergeben wird (z.B. pro Depot, nicht global)."""
+    der pro Dateipfad separat vergeben wird (z.B. pro Depot, nicht global).
+    Zählt für das System-Status-Dashboard mit, wie oft der Lock bereits belegt
+    war (war schon belegt = ein anderer Thread musste warten) — rein informativ,
+    ändert nichts am Locking-Verhalten selbst."""
     lock = _lock_for(path)
+    if lock.locked():
+        _lock_contentions["count"] += 1
     with lock:
         yield
 
@@ -794,13 +858,16 @@ def get_eur_rate(currency):
     Bei API-Ausfall: zuerst gecachter Kurs aus eur_rates.json, dann statischer Fallback."""
     if currency == "EUR": return 1.0
     if currency == "GBp": currency = "GBP"
+    _t0 = time_mod.monotonic()
     try:
         r    = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
         rate = float(r.json()["rates"]["EUR"])
+        _track_source_call("frankfurter", (time_mod.monotonic() - _t0) * 1000)
         cache = load_eur_rates(); cache[currency] = rate
         save_eur_rates(cache)
         return rate
-    except:
+    except Exception as e:
+        _track_source_call("frankfurter", (time_mod.monotonic() - _t0) * 1000, error=e)
         cache = load_eur_rates()
         if currency in cache:
             log.warning(f"Frankfurter API nicht erreichbar — gecachter Kurs für {currency}: {cache[currency]}")
@@ -1107,17 +1174,25 @@ def _fetch_prices(stocks, price_cache=None, progress_key=None):
             _health_stats["last_refresh_stats"]["cached"] += 1
         else:
             # Cache-Miss — Yahoo abfragen
-            _health_stats["total_yahoo_calls"] += 1
+            yh = _health_stats["sources"]["yahoo"]
+            yh["calls"] += 1
             _health_stats["last_refresh_stats"]["fresh"] += 1
+            _t0 = time_mod.monotonic()
             try:
                 data = fetch_stock_data(ticker)
             except Exception as e:
+                latency_ms = (time_mod.monotonic() - _t0) * 1000
                 log.error(f"{s['name']}: {e}")
                 err_list.append(f"{s['name']}: {e}")
-                _health_stats["failed_yahoo_calls"] += 1
+                yh["failed"] += 1
+                yh["avg_latency_ms"] = round(latency_ms, 0) if yh["calls"] == 1 \
+                    else round(yh["avg_latency_ms"] * 0.8 + latency_ms * 0.2, 0)
+                yh["last_call"]  = datetime.now().isoformat(timespec="seconds")
+                yh["last_error"] = str(e)[:160]
                 _health_stats["last_refresh_had_errors"] = True
                 _health_stats["recent_errors"].append({
                     "time":   datetime.now().isoformat(timespec="seconds"),
+                    "source": "yahoo",
                     "ticker": ticker,
                     "reason": str(e)[:120],
                 })
@@ -1127,6 +1202,10 @@ def _fetch_prices(stocks, price_cache=None, progress_key=None):
                 if price_cache is not None:
                     price_cache[ticker] = {"_error": str(e)}
                 continue
+            latency_ms = (time_mod.monotonic() - _t0) * 1000
+            yh["avg_latency_ms"] = round(latency_ms, 0) if yh["calls"] == 1 \
+                else round(yh["avg_latency_ms"] * 0.8 + latency_ms * 0.2, 0)
+            yh["last_call"] = datetime.now().isoformat(timespec="seconds")
             if price_cache is not None:
                 price_cache[ticker] = data
 
@@ -1304,6 +1383,7 @@ def take_snapshot():
         log.info(f"Portfolio-Snapshot erstellt: {today}")
 
 def refresh_all_depots(trigger="auto"):
+    _t0        = time_mod.monotonic()
     depots     = load_depots()
     watchlists = load_watchlists()
     total_ok, total_err = [], []
@@ -1324,6 +1404,15 @@ def refresh_all_depots(trigger="auto"):
     if trigger == "auto":
         take_snapshot()
     _persist_health_stats()
+    # Job-Statistik fürs System-Status-Dashboard — nur für den automatischen (Scheduler-)Lauf,
+    # ein manueller "Kurse aktualisieren"-Klick soll die Job-Zeile nicht verfälschen.
+    if trigger == "auto":
+        _job_stats["kurs_refresh"] = {
+            "last_run":    datetime.now().isoformat(timespec="seconds"),
+            "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
+            "success":     len(total_err) == 0,
+            "detail":      f"{len(total_ok)} OK, {len(total_err)} Fehler",
+        }
 
 # ── Scheduler ─────────────────────────────────────────────────────
 scheduler = BackgroundScheduler(daemon=True)
@@ -1331,22 +1420,32 @@ _last_refresh = None; _start_of_day_done = None
 
 def _restore_health_stats():
     """Lädt persistierte Zähler aus health.json beim Start — damit kumulative Statistiken
-    Container-Neustarts überleben. Nur die stabilen Zähler werden geladen; recent_errors
-    und last_refresh_stats bleiben absichtlich In-Memory."""
+    Container-Neustarts überleben. Nur calls/failed pro Datenquelle werden geladen;
+    avg_latency_ms/last_call/last_error, recent_errors und last_refresh_stats bleiben
+    absichtlich In-Memory. Migration: ein health.json aus der Zeit vor dem sources-Dict
+    (nur total_yahoo_calls/failed_yahoo_calls flach) wird automatisch übernommen."""
     persisted = load_health()
-    _health_stats["total_refreshes"]    = persisted.get("total_refreshes",    0)
-    _health_stats["total_yahoo_calls"]  = persisted.get("total_yahoo_calls",  0)
-    _health_stats["failed_yahoo_calls"] = persisted.get("failed_yahoo_calls", 0)
-    _health_stats["cache_hits_total"]   = persisted.get("cache_hits_total",   0)
+    _health_stats["total_refreshes"]  = persisted.get("total_refreshes",  0)
+    _health_stats["cache_hits_total"] = persisted.get("cache_hits_total", 0)
+    src_persisted = persisted.get("sources", {})
+    if not src_persisted and ("total_yahoo_calls" in persisted or "failed_yahoo_calls" in persisted):
+        src_persisted = {"yahoo": {"calls":  persisted.get("total_yahoo_calls",  0),
+                                    "failed": persisted.get("failed_yahoo_calls", 0)}}
+    for src, st in _health_stats["sources"].items():
+        p = src_persisted.get(src, {})
+        st["calls"]  = p.get("calls",  0)
+        st["failed"] = p.get("failed", 0)
 
 def _persist_health_stats():
     """Schreibt kumulative Zähler atomar in health.json. Wird am Ende jedes
-    refresh_all_depots-Aufrufs ausgeführt — einmal pro Zyklus statt pro Yahoo-Call."""
+    refresh_all_depots-Aufrufs ausgeführt — einmal pro Zyklus statt pro Aufruf; Frankfurter/
+    Parqet/OpenFIGI-Zähler werden dadurch nur bis zum nächsten Kurs-Refresh-Zyklus verzögert
+    persistiert, sind aber im laufenden Betrieb (Dashboard) sofort aktuell."""
     save_health({
-        "total_refreshes":    _health_stats["total_refreshes"],
-        "total_yahoo_calls":  _health_stats["total_yahoo_calls"],
-        "failed_yahoo_calls": _health_stats["failed_yahoo_calls"],
-        "cache_hits_total":   _health_stats["cache_hits_total"],
+        "total_refreshes":  _health_stats["total_refreshes"],
+        "cache_hits_total": _health_stats["cache_hits_total"],
+        "sources": {src: {"calls": st["calls"], "failed": st["failed"]}
+                    for src, st in _health_stats["sources"].items()},
     })
 
 def _restore_last_refresh():
@@ -1440,7 +1539,13 @@ def trading_window_check():
         s["next_refresh_ts"] = (_last_refresh + timedelta(seconds=interval)).timestamp(); save_settings(s)
         refresh_all_depots("auto")
 
-def get_next_run_info():
+def _next_refresh_dt():
+    """Kernlogik von get_next_run_info() — berechnet den Zeitpunkt des nächsten automatischen
+    Kurs-Refreshs als zeitzonenbewusstes datetime-Objekt statt als fertig formatierten String.
+    get_next_run_info() formatiert das Ergebnis nur noch; das System-Status-Dashboard braucht
+    zusätzlich das rohe datetime (als ISO-Zeitstempel für jobs.kurs_refresh.next_run, damit es
+    dieselbe fmtDT()-Formatierung im Frontend durchläuft wie die übrigen Jobs). None nur im
+    praktisch unerreichbaren Fall, dass `days` leer ist (kein Handelstag konfiguriert)."""
     s                              = load_settings()
     tz, now, days, sh, sm, eh, em = _parse_trading_config(s)
     interval   = s["refresh_interval"]
@@ -1453,10 +1558,10 @@ def get_next_run_info():
             for _ in range(1, 8):
                 d += timedelta(days=1)
                 if d.weekday() in days:
-                    return tz.localize(datetime(d.year, d.month, d.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
+                    return tz.localize(datetime(d.year, d.month, d.day, sh, sm))
         if c_mins < start_mins:
             c = tz.localize(datetime(c.year, c.month, c.day, sh, sm))
-        return c.strftime("%d.%m.%Y %H:%M") + " Uhr"
+        return c
     # Kein letzter Refresh bekannt — falls wir gerade in der Handelszeit sind,
     # now als Referenz nehmen damit das Intervall korrekt berechnet wird
     ref = now
@@ -1467,13 +1572,54 @@ def get_next_run_info():
         if check.weekday() in days:
             if i == 0 and start_mins <= now_mins <= end_mins:
                 # Mitten in der Handelszeit: Intervall ab jetzt
-                c = ref + timedelta(seconds=interval)
-                return c.strftime("%d.%m.%Y %H:%M") + " Uhr"
+                return ref + timedelta(seconds=interval)
             if i == 0 and now_mins < start_mins:
-                return tz.localize(datetime(check.year, check.month, check.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
+                return tz.localize(datetime(check.year, check.month, check.day, sh, sm))
             elif i > 0:
-                return tz.localize(datetime(check.year, check.month, check.day, sh, sm)).strftime("%d.%m.%Y %H:%M") + " Uhr"
-    return "unbekannt"
+                return tz.localize(datetime(check.year, check.month, check.day, sh, sm))
+    return None
+
+def get_next_run_info():
+    dt = _next_refresh_dt()
+    return dt.strftime("%d.%m.%Y %H:%M") + " Uhr" if dt else "unbekannt"
+
+def _next_depot_parqet_run(pq, tz, now):
+    """Nächster automatischer Sync-Zeitpunkt für EIN Depot (pq = depot['parqet']), als
+    zeitzonenbewusstes datetime. None wenn kein gültiges Intervall konfiguriert ist. Schaut
+    bis zu 8 Tage voraus (deckt auch ein Wochenende ab) — gleiche Fälligkeits-Logik wie
+    auto_parqet_sync_check (Mo–Fr, volle Stunde im Intervall-Raster ab der Start-Stunde)."""
+    start_h  = pq.get("auto_sync_start_hour", 6)
+    end_h    = pq.get("auto_sync_end_hour", 22)
+    interval = pq.get("auto_sync_interval_hours", 4)
+    if interval <= 0 or end_h < start_h:
+        return None
+    for day_offset in range(0, 8):
+        day = (now + timedelta(days=day_offset)).date()
+        if day.weekday() > 4:
+            continue
+        for hour in range(start_h, end_h + 1):
+            if (hour - start_h) % interval != 0:
+                continue
+            candidate = tz.localize(datetime(day.year, day.month, day.day, hour, 0))
+            if candidate > now:
+                return candidate
+    return None
+
+def _next_parqet_sync_dt():
+    """Frühester nächster automatischer Parqet-Sync über ALLE Depots mit aktiviertem
+    Auto-Sync — anders als bei den Digest-Jobs ist die Auto-Sync-Konfiguration pro DEPOT
+    hinterlegt (depot['parqet'].auto_sync_*), nicht pro User, und Depots können
+    unterschiedliche Zeitfenster/Intervalle haben. None, wenn kein verbundenes Depot
+    Auto-Sync aktiviert hat."""
+    depots = [d for d in load_depots()
+              if d.get("parqet", {}).get("connected") and d.get("parqet", {}).get("auto_sync_enabled")]
+    if not depots:
+        return None
+    s   = load_settings()
+    tz  = pytz.timezone(s.get("timezone", "Europe/Berlin"))
+    now = datetime.now(tz)
+    candidates = [dt for dt in (_next_depot_parqet_run(d["parqet"], tz, now) for d in depots) if dt]
+    return min(candidates) if candidates else None
 
 def _weekly_portfolio_perf(depot_id, current_total):
     """Vergleicht den aktuellen Portfolio-Gesamtwert mit dem nächstälteren Snapshot,
@@ -1887,6 +2033,7 @@ def send_daily_ath_digests(user_id):
     die Depots des jeweiligen Users beschränkt statt global über alle Depots zu iterieren.
     Sendet seit v2.8.2 zusätzlich eine gebündelte Watchlist-Zusammenfassung (ein Schalter
     pro User statt pro Watchlist, da Watchlists selbst keine Digest-Teilnahme haben)."""
+    _t0   = time_mod.monotonic()
     users = load_users()
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return
@@ -1920,11 +2067,21 @@ def send_daily_ath_digests(user_id):
                     success=True, user_id=user["id"], user_name=user.get("name", ""))
             send_apprise(title, body, urls, mention=mention, html_body=html_body)
 
+    # Job-Statistik fürs System-Status-Dashboard. Läuft pro User (siehe Docstring), die
+    # Job-Zeile zeigt daher den zuletzt ausgeführten User-Lauf, nicht "alle User gesammelt".
+    _job_stats["tages_digest"] = {
+        "last_run":    datetime.now().isoformat(timespec="seconds"),
+        "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
+        "success":     True,
+        "detail":      f"User „{user.get('name','?')}\"",
+    }
+
 
 def send_weekly_digests(user_id):
     """Sendet den Wochenbericht für alle Depots eines einzelnen Users, die ihn aktiviert
     haben. Seit v2.7.21 ein Job pro User (Wochentag/Uhrzeit sind userbezogen konfigurierbar),
     daher hier auf die Depots des jeweiligen Users beschränkt."""
+    _t0   = time_mod.monotonic()
     users = load_users()
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return
@@ -1943,6 +2100,14 @@ def send_weekly_digests(user_id):
             add_log("digest", f"📊 Wochenbericht [{dc['name']}]",
                     f"Gesendet an {len(urls)} URL(s).", success=True, depot_id=dc['id'])
             send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id'])
+
+    # Job-Statistik fürs System-Status-Dashboard — analog zu send_daily_ath_digests oben.
+    _job_stats["wochen_digest"] = {
+        "last_run":    datetime.now().isoformat(timespec="seconds"),
+        "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
+        "success":     True,
+        "detail":      f"User „{user.get('name','?')}\"",
+    }
 
 
 # APScheduler day_of_week: 0=Mon … 6=Sun (gleiche Reihenfolge wie unser digest_day 0=Mo…6=So)
@@ -2002,7 +2167,11 @@ def auto_parqet_sync_check():
         now = datetime.now(tz)
         if now.minute != 0 or now.weekday() > 4:
             return
+        # Ab hier läuft die eigentliche stündliche Prüfung (nicht bei jedem Minuten-Tick) —
+        # das ist der Zeitpunkt, der fürs System-Status-Dashboard als "Job-Lauf" gilt.
+        _t0 = time_mod.monotonic()
         hour = now.hour
+        synced, failed = 0, 0
         for d in load_depots():
             pq = d.get("parqet", {})
             if not pq.get("connected") or not pq.get("auto_sync_enabled"):
@@ -2016,8 +2185,16 @@ def auto_parqet_sync_check():
                 continue
             try:
                 _parqet_sync_core(d["id"], auto=True)
+                synced += 1
             except Exception as e:
+                failed += 1
                 log.error(f"Automatischer Parqet-Sync fehlgeschlagen ({d['id']}): {e}")
+        _job_stats["parqet_sync"] = {
+            "last_run":    datetime.now(tz).isoformat(timespec="seconds"),
+            "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
+            "success":     failed == 0,
+            "detail":      f"{synced} synchronisiert, {failed} Fehler" if (synced or failed) else "kein Depot fällig",
+        }
     except Exception as e:
         log.warning(f"auto_parqet_sync_check fehlgeschlagen: {e}")
 
@@ -2148,22 +2325,30 @@ def _try_refresh_token(depot_id, pq):
 def parqet_api_get(depot, path, depot_id=None):
     pq    = depot.get("parqet", {}); token = pq.get("access_token", "")
     if not token: raise ValueError("Nicht mit Parqet verbunden")
-    r = requests.get(f"{PARQET_API_BASE}{path}",
-                     headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-                     timeout=15)
-    if r.status_code == 401 and depot_id:
-        log.warning(f"Parqet 401 — Token-Refresh für {depot_id}")
-        new_pq, reason = _try_refresh_token(depot_id, pq)
-        if new_pq:
-            r = requests.get(f"{PARQET_API_BASE}{path}",
-                             headers={"Authorization": f"Bearer {new_pq['access_token']}", "Accept": "application/json"},
-                             timeout=15)
-        else:
-            # Grund am Fehler anhängen (statt nur generisch "401") — wird über die bestehende
-            # Exception-Kette bis zu handle_401() in _parqet_sync_core() durchgereicht.
-            detail = f" — {reason}" if reason else ""
-            raise ValueError(f"401 Unauthorized: Token-Refresh fehlgeschlagen{detail}")
-    r.raise_for_status(); return r.json()
+    _t0 = time_mod.monotonic()
+    try:
+        r = requests.get(f"{PARQET_API_BASE}{path}",
+                         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                         timeout=15)
+        if r.status_code == 401 and depot_id:
+            log.warning(f"Parqet 401 — Token-Refresh für {depot_id}")
+            new_pq, reason = _try_refresh_token(depot_id, pq)
+            if new_pq:
+                r = requests.get(f"{PARQET_API_BASE}{path}",
+                                 headers={"Authorization": f"Bearer {new_pq['access_token']}", "Accept": "application/json"},
+                                 timeout=15)
+            else:
+                # Grund am Fehler anhängen (statt nur generisch "401") — wird über die bestehende
+                # Exception-Kette bis zu handle_401() in _parqet_sync_core() durchgereicht.
+                detail = f" — {reason}" if reason else ""
+                raise ValueError(f"401 Unauthorized: Token-Refresh fehlgeschlagen{detail}")
+        r.raise_for_status()
+        result = r.json()
+    except Exception as e:
+        _track_source_call("parqet", (time_mod.monotonic() - _t0) * 1000, error=e)
+        raise
+    _track_source_call("parqet", (time_mod.monotonic() - _t0) * 1000)
+    return result
 
 # ── Parqet Split-Berechnung ───────────────────────────────────────
 def _split_adj(isin, buy_dt_str, raw_shares):
@@ -3677,10 +3862,16 @@ def _xetra_lookup(name, ticker):
     api_key = os.environ.get("OPENFIGI_API_KEY", "")
     if api_key:
         headers["X-OPENFIGI-APIKEY"] = api_key
-    r = requests.post("https://api.openfigi.com/v3/search",
-                      json={"query": clean, "exchCode": "GY"},
-                      headers=headers, timeout=5)
-    data = r.json().get("data", [])
+    _t0 = time_mod.monotonic()
+    try:
+        r = requests.post("https://api.openfigi.com/v3/search",
+                          json={"query": clean, "exchCode": "GY"},
+                          headers=headers, timeout=5)
+        data = r.json().get("data", [])
+    except Exception as e:
+        _track_source_call("openfigi", (time_mod.monotonic() - _t0) * 1000, error=e)
+        raise
+    _track_source_call("openfigi", (time_mod.monotonic() - _t0) * 1000)
     if not data:
         log.info(f"OpenFIGI: kein Treffer für '{clean}'")
         return None
@@ -4000,6 +4191,34 @@ def api_etf_history():
         return jsonify({"ticker": ticker, "data": None, "error": "nicht abrufbar"}), 502
     return jsonify({"ticker": ticker, "data": data})
 
+def _source_view(name):
+    """Baut die Anzeige-Sicht einer einzelnen Datenquelle für /api/health (Erfolgsquote
+    aus calls/failed abgeleitet, nicht separat gespeichert)."""
+    st = _health_stats["sources"].get(name, {})
+    c, f = st.get("calls", 0), st.get("failed", 0)
+    return {
+        "calls":          c,
+        "failed":         f,
+        "success_rate":   round((c - f) / c * 100, 1) if c else 100.0,
+        "avg_latency_ms": st.get("avg_latency_ms", 0),
+        "last_call":      st.get("last_call"),
+        "last_error":     st.get("last_error"),
+    }
+
+def _job_view(key, next_run=None):
+    """Baut die Anzeige-Sicht eines einzelnen Scheduler-Jobs für /api/health. Kein
+    last_run bisher (z.B. Job noch nie gelaufen seit App-Start) → alles None/—."""
+    j = _job_stats.get(key)
+    base = j if j else {"last_run": None, "duration_ms": None, "success": None, "detail": None}
+    return {**base, "next_run": next_run}
+
+def _next_job_run(id_prefix):
+    """Frühester next_run_time über alle Scheduler-Jobs mit diesem ID-Präfix (für die
+    userbezogenen Digest-Jobs, die pro User einen eigenen Job-Namen haben)."""
+    times = [j.next_run_time for j in scheduler.get_jobs()
+             if j.id.startswith(id_prefix) and j.next_run_time]
+    return min(times).isoformat() if times else None
+
 @app.route("/api/health", methods=["GET"])
 def health():
     """Liefert Basis-Statusinfos plus Laufzeit-Statistiken für das Gesundheits-Dashboard."""
@@ -4011,8 +4230,9 @@ def health():
         tracked += len(load_wl_stocks(wl["id"]))
     uptime = int(time_mod.time() - APP_START_TIME)
     stats  = _health_stats
-    total  = stats["total_yahoo_calls"]
-    failed = stats["failed_yahoo_calls"]
+    yh     = stats["sources"]["yahoo"]
+    total  = yh["calls"]
+    failed = yh["failed"]
     lrs = stats["last_refresh_stats"]
     return jsonify({
         "status":               "ok",
@@ -4033,6 +4253,27 @@ def health():
         "cache_hits_total":      stats["cache_hits_total"],
         "last_refresh_fresh":   lrs["fresh"],
         "last_refresh_cached":  lrs["cached"],
+        # ── Diagnose-Erweiterung (Sept. 2026): Datenquellen einzeln, Scheduler-Jobs, Speicher ──
+        "sources": {
+            "yahoo":       _source_view("yahoo"),
+            "frankfurter": _source_view("frankfurter"),
+            "parqet":      _source_view("parqet"),
+            "openfigi":    _source_view("openfigi"),
+        },
+        "jobs": {
+            # kurs_refresh: Kurs-Refresh läuft global (nicht pro Depot) nach den Handelszeiten-
+            # Einstellungen — _next_refresh_dt() liefert dasselbe Datum wie die "Nächster Refresh"-
+            # Kachel oben, jetzt als ISO-Zeitstempel statt fertig formatiertem String.
+            # parqet_sync: Auto-Sync ist pro DEPOT konfiguriert (depot["parqet"]), nicht pro
+            # User — _next_parqet_sync_dt() sucht über alle Depots mit aktiviertem Auto-Sync den
+            # frühesten Termin. Kein Depot mit Auto-Sync aktiv → None (kein Fehler, nur "nichts
+            # geplant").
+            "kurs_refresh":  _job_view("kurs_refresh",  next_run=(lambda dt: dt.isoformat() if dt else None)(_next_refresh_dt())),
+            "parqet_sync":   _job_view("parqet_sync",   next_run=(lambda dt: dt.isoformat() if dt else None)(_next_parqet_sync_dt())),
+            "tages_digest":  _job_view("tages_digest",  next_run=_next_job_run("daily_ath_digest_")),
+            "wochen_digest": _job_view("wochen_digest", next_run=_next_job_run("weekly_digest_")),
+        },
+        "storage": _storage_stats(),
     })
 
 @app.route("/api/health/clear-errors", methods=["POST"])
