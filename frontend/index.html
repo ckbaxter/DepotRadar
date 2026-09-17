@@ -1611,14 +1611,20 @@ http://depotradar.example.lan</div>
           über den laufenden Betrieb:<br><br>
           <ul style="margin:0 0 0 16px;padding:0;line-height:1.9">
             <li>Scheduler-Status (aktiv / gestoppt) und Handelszeit-Indikator</li>
-            <li>Laufzeit seit dem letzten Container-Start</li>
+            <li>Laufzeit seit dem letzten Container-Start, Ladezeit dieser Sitzung</li>
             <li>Letzter und nächster automatischer Refresh</li>
             <li>Anzahl überwachter Ticker und Gesamt-Refreshes</li>
-            <li>Yahoo Finance-Erfolgsquote und Fehler-Log der letzten 20 Abfrage-Fehler</li>
+            <li>Datenquellen einzeln (Yahoo Finance, Frankfurter API, Parqet, OpenFIGI) mit
+                Ø-Antwortzeit und Erfolgsquote, plus Fehler-Log der letzten 20 Abfrage-Fehler</li>
+            <li>Scheduler-Jobs (Kurs-Refresh, Parqet-Sync, Tages-/Wochen-Digest) mit letztem
+                Lauf, Dauer und nächstem Termin</li>
+            <li>Speicher: JSON-Dateigrößen und File-Locking-Konflikte seit Start</li>
             <li>Yahoo-Cache: gecachte Treffer und Einsparung beim letzten Refresh-Zyklus</li>
           </ul><br>
-          Die Statistiken laufen im Arbeitsspeicher und werden beim Container-Neustart zurückgesetzt.
-          Ob die App gerade in der Handelszeit läuft, zeigt auch der farbige Statusdot im Footer
+          Die kumulativen Zähler (Refreshes, Aufrufe je Datenquelle) werden in <code>health.json</code>
+          persistiert und überstehen einen Neustart; Fehler-Log, Scheduler-Job-Angaben und die
+          Ladezeit-Kachel sind reine Live-Werte seit dem letzten Start. Ob die App gerade in der
+          Handelszeit läuft, zeigt auch der farbige Statusdot im Footer
           (grün = Handelszeit, grau = außerhalb, rot = Handelszeit mit Yahoo-Fehlern).
         </div>
       </details>
@@ -5167,6 +5173,13 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "September 2026",
+    versions: "Frontend v2.13.70 · Backend v2.8.35–38",
+    changes: [
+      "System-Status-Dashboard erweitert: neue Abschnitte „Datenquellen\" (Yahoo Finance, Frankfurter API, Parqet, OpenFIGI einzeln mit Ø-Antwortzeit und Erfolgsquote statt nur Yahoo gesamt), „Scheduler-Jobs\" (Kurs-Refresh, Parqet-Sync, Tages-/Wochen-Digest mit letztem Lauf, Dauer und nächstem Termin) sowie „Speicher\" (JSON-Dateigrößen, File-Locking-Konflikte seit Start). Dazu eine neue Kachel „Ladezeit (diese Sitzung)\" — rein clientseitig über die Performance API gemessen, keine Historie."
+    ]
+  },
+  {
+    label: "September 2026",
     versions: "Frontend v2.13.69 · Backend v2.8.34",
     changes: [
       "Bugfix: eine abgelaufene Parqet-Verbindung (Token-Erneuerung fehlgeschlagen) blieb bei aktiviertem automatischen Sync oft wochenlang unbemerkt — sichtbar war der Status bisher nur im Depot-Einstellungen-Modal. Jetzt gibt es beim Übergang in diesen Zustand zusätzlich eine obligatorische Push-Benachrichtigung, einen Verlauf-Eintrag sowie einen roten „🔒 Parqet: neu verbinden\"-Hinweis direkt in der Hauptansicht."
@@ -5843,11 +5856,51 @@ async function openHealthModal(){
       : (d.recent_errors||[]).map(e =>
           `<div style="padding:10px 12px;border-top:1px solid var(--border)">
             <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:3px">
-              <span style="font-size:12px;font-weight:700;font-family:monospace;color:var(--text)">${esc(e.ticker)}</span>
+              <span style="font-size:12px;font-weight:700;font-family:monospace;color:var(--text)">${e.source ? esc(e.source)+" · " : ""}${esc(e.ticker||"")}</span>
               <span style="font-size:10px;color:var(--muted);white-space:nowrap">${fmtDT(e.time)}</span>
             </div>
             <div style="font-size:12px;color:var(--orange);word-break:break-word">${esc(e.reason)}</div>
            </div>`).join("");
+
+    // ── Diagnose-Erweiterung (Sept. 2026): Datenquellen einzeln, Scheduler-Jobs, Speicher ──
+    const fmtMs = ms => ms==null ? "—" : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms/1000).toFixed(1)} s`;
+    const fmtBytes = b => b==null ? "—" : b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
+
+    const SOURCE_LABELS = {yahoo:"Yahoo Finance", frankfurter:"Frankfurter API", parqet:"Parqet", openfigi:"OpenFIGI"};
+    const sourceRows = Object.entries(d.sources||{}).map(([key, s]) => {
+      const hasCalls = (s.calls||0) > 0;
+      const dotColor = !hasCalls ? "var(--muted)" : s.success_rate >= 98 ? "var(--green)" : s.success_rate >= 90 ? "var(--orange)" : "var(--red)";
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--border);font-size:12px;flex-wrap:wrap">
+        <span style="display:inline-block;width:7px;height:7px;min-width:7px;border-radius:50%;background:${dotColor}"></span>
+        <span style="font-weight:600;min-width:118px">${SOURCE_LABELS[key]||key}</span>
+        <span style="color:var(--muted)">${hasCalls ? fmtMs(s.avg_latency_ms) : "keine Aufrufe seit Start"}</span>
+        ${hasCalls ? `<span style="color:var(--muted)">· ${s.success_rate.toFixed(1)} % Erfolg (${s.calls})</span>` : ""}
+        ${s.last_error ? `<span style="margin-left:auto;color:var(--orange);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.last_error)}">${esc(s.last_error)}</span>` : ""}
+      </div>`;
+    }).join("");
+
+    const JOB_LABELS = {kurs_refresh:"Kurs-Refresh", parqet_sync:"Parqet-Sync", tages_digest:"Tages-Digest", wochen_digest:"Wochen-Digest"};
+    const jobRows = Object.entries(d.jobs||{}).map(([key, j]) => {
+      const dotColor = !j.last_run ? "var(--muted)" : j.success ? "var(--green)" : "var(--red)";
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--border);font-size:12px;flex-wrap:wrap">
+        <span style="display:inline-block;width:7px;height:7px;min-width:7px;border-radius:50%;background:${dotColor}"></span>
+        <span style="font-weight:600;min-width:118px">${JOB_LABELS[key]||key}</span>
+        <span style="color:var(--muted)">${j.last_run ? fmtDT(j.last_run) : "noch nicht gelaufen seit Start"}</span>
+        ${j.duration_ms!=null ? `<span style="color:var(--muted)">· ${fmtMs(j.duration_ms)}</span>` : ""}
+        ${j.next_run ? `<span style="margin-left:auto;color:var(--muted);font-size:11px">nächster: ${fmtDT(j.next_run)}</span>` : ""}
+      </div>`;
+    }).join("");
+
+    const storage    = d.storage || {};
+    const maxBytes    = Math.max(1, ...(storage.files||[]).map(f => f.bytes));
+    const storageRows = (storage.files||[]).slice(0, 6).map(f => {
+      const pct = Math.round(f.bytes / maxBytes * 100);
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px">
+        <span style="font-family:monospace;width:150px;min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.name)}">${esc(f.name)}</span>
+        <div style="flex-grow:1;height:6px;background:var(--border);border-radius:99px"><div style="width:${pct}%;height:100%;background:var(--accent);border-radius:99px"></div></div>
+        <span style="color:var(--muted);width:56px;text-align:right">${fmtBytes(f.bytes)}</span>
+      </div>`;
+    }).join("");
 
     body.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px">
@@ -5863,12 +5916,33 @@ async function openHealthModal(){
         ${statCard("Ticker überwacht", d.tracked_tickers??0)}
         ${statCard("Refreshes gesamt", (d.total_refreshes||0).toLocaleString("de-DE"))}
         ${statCard("Erfolgsquote", (d.success_rate??100).toFixed(1)+" %", errColor)}
+        ${statCard("Ladezeit (diese Sitzung)", _pageLoadMs!=null ? fmtMs(_pageLoadMs) : "—")}
       </div>
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         <span style="color:var(--muted)">♻️ Yahoo-Cache (letzter Refresh):</span>
         <span>${cacheStr}</span>
         ${d.cache_hits_total > 0 ? `<span style="margin-left:auto;font-size:11px;color:var(--muted)">${(d.cache_hits_total||0).toLocaleString("de-DE")} kumuliert</span>` : ""}
       </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">Datenquellen</div>
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px">
+        ${sourceRows}
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">Scheduler-Jobs</div>
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px">
+        ${jobRows}
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--muted)">Speicher</span>
+        <span style="font-size:11px;color:var(--muted)">${storage.file_count||0} Dateien · ${fmtBytes(storage.total_bytes)} gesamt</span>
+      </div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+        ${storageRows || `<div style="text-align:center;color:var(--muted);font-size:12px">Keine Datendateien gefunden</div>`}
+        ${(storage.lock_contentions||0) > 0 ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)">File-Locking-Konflikte seit Start: ${storage.lock_contentions}</div>` : ""}
+      </div>
+
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px">
         <span style="font-size:12px;font-weight:600;color:var(--muted)">Letzte Fehler</span>
         <div style="display:flex;align-items:center;gap:10px">
@@ -7580,6 +7654,19 @@ function applyXetraSuggestion(){
   ctUpdateSaveState();
 }
 
+// ── Ladezeit dieser Sitzung fürs System-Status-Dashboard ────────────
+// Rein clientseitig, keine Historie/Persistenz — zeigt nur, wie lange DIESES
+// Laden der Seite bis "interaktiv" gebraucht hat (Performance API). Wird erst
+// nach dem load-Event final gemessen, da domInteractive vorher noch nicht feststeht.
+let _pageLoadMs = null;
+window.addEventListener("load", () => {
+  try {
+    const nav = performance.getEntriesByType("navigation")[0];
+    if(nav) _pageLoadMs = Math.round(nav.domInteractive - nav.startTime);
+    else if(performance.timing) _pageLoadMs = performance.timing.domInteractive - performance.timing.navigationStart;
+  } catch(e) { /* Performance API nicht verfügbar — Anzeige bleibt schlicht leer */ }
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("ctSearchInput").addEventListener("input", function(){
     clearTimeout(_ctSearchTimer);
@@ -7934,7 +8021,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.69 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.70 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
