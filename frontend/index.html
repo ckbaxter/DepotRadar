@@ -1620,6 +1620,10 @@ http://depotradar.example.lan</div>
                 Lauf, Dauer und nächstem Termin</li>
             <li>Speicher: JSON-Dateigrößen und File-Locking-Konflikte seit Start</li>
             <li>Yahoo-Cache: gecachte Treffer und Einsparung beim letzten Refresh-Zyklus</li>
+            <li>Ausfall-Erkennung: fällt eine Datenquelle in mehreren Refresh-Zyklen in Folge aus,
+                zeigt die Zeile „gestört seit …“ (vorher „n von 3 Zyklen gestört“) und die Admins
+                bekommen einmalig einen Push, bei Wiederkehr eine Entwarnung mit Ausfalldauer.
+                Steht der Kurs-Refresh in der Handelszeit still, erscheint oben ein rotes Banner.</li>
           </ul><br>
           Die kumulativen Zähler (Refreshes, Aufrufe je Datenquelle) werden in <code>health.json</code>
           persistiert und überstehen einen Neustart; Fehler-Log, Scheduler-Job-Angaben und die
@@ -5173,8 +5177,9 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "September 2026",
-    versions: "Frontend v2.13.70 · Backend v2.8.35–38",
+    versions: "Frontend v2.13.71 · Backend v2.8.35–39",
     changes: [
+      "Benachrichtigung bei anhaltendem Ausfall einer Datenquelle: Ist Yahoo Finance oder Parqet in 3 automatischen Refresh-Zyklen in Folge überwiegend fehlgeschlagen (Frankfurter API und OpenFIGI, die Fallbacks haben, erst nach 6), erhalten die Admins (ADMIN_USERS) einen einzelnen Push — nicht bei jedem Fehlversuch. Wenn die Quelle wieder antwortet, folgt eine Entwarnung mit der Dauer des Ausfalls. Ein einzelner nicht erreichbarer Ticker gilt nicht als Ausfall, abgelaufene Parqet-Tokens werden weiter separat gemeldet. Zusätzlich meldet ein Wächter, wenn in der Handelszeit länger als das Doppelte des Refresh-Intervalls kein automatischer Refresh mehr durchgelaufen ist (z.B. hängender Scheduler). Im System-Status zeigt der Abschnitt „Datenquellen\" jetzt „gestört seit …\" bzw. den Zyklen-Zähler, bei Stillstand erscheint oben ein Banner. Schwellen sind fest im Code, der Zustand liegt nur im Speicher.",
       "System-Status-Dashboard erweitert: neue Abschnitte „Datenquellen\" (Yahoo Finance, Frankfurter API, Parqet, OpenFIGI einzeln mit Ø-Antwortzeit und Erfolgsquote statt nur Yahoo gesamt), „Scheduler-Jobs\" (Kurs-Refresh, Parqet-Sync, Tages-/Wochen-Digest mit letztem Lauf, Dauer und nächstem Termin) sowie „Speicher\" (JSON-Dateigrößen, File-Locking-Konflikte seit Start). Dazu eine neue Kachel „Ladezeit (diese Sitzung)\" — rein clientseitig über die Performance API gemessen, keine Historie."
     ]
   },
@@ -5869,12 +5874,20 @@ async function openHealthModal(){
     const SOURCE_LABELS = {yahoo:"Yahoo Finance", frankfurter:"Frankfurter API", parqet:"Parqet", openfigi:"OpenFIGI"};
     const sourceRows = Object.entries(d.sources||{}).map(([key, s]) => {
       const hasCalls = (s.calls||0) > 0;
-      const dotColor = !hasCalls ? "var(--muted)" : s.success_rate >= 98 ? "var(--green)" : s.success_rate >= 90 ? "var(--orange)" : "var(--red)";
+      const oa = s.outage || {};   // Ausfall-Erkennung (Backend v2.8.39): streak/threshold/since/alerted
+      const dotColor = oa.alerted ? "var(--red)"
+                     : !hasCalls ? "var(--muted)" : s.success_rate >= 98 ? "var(--green)" : s.success_rate >= 90 ? "var(--orange)" : "var(--red)";
+      const outageBadge = oa.alerted
+        ? `<span style="color:var(--red);font-weight:600;font-size:11px" title="Admin-Meldung wurde gesendet">⚠️ gestört seit ${fmtDT(oa.since)}</span>`
+        : (oa.streak > 0
+            ? `<span style="color:var(--orange);font-size:11px" title="Meldung an die Admins ab ${oa.threshold} Zyklen in Folge">${oa.streak} von ${oa.threshold} Zyklen gestört</span>`
+            : "");
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--border);font-size:12px;flex-wrap:wrap">
         <span style="display:inline-block;width:7px;height:7px;min-width:7px;border-radius:50%;background:${dotColor}"></span>
         <span style="font-weight:600;min-width:118px">${SOURCE_LABELS[key]||key}</span>
         <span style="color:var(--muted)">${hasCalls ? fmtMs(s.avg_latency_ms) : "keine Aufrufe seit Start"}</span>
         ${hasCalls ? `<span style="color:var(--muted)">· ${s.success_rate.toFixed(1)} % Erfolg (${s.calls})</span>` : ""}
+        ${outageBadge}
         ${s.last_error ? `<span style="margin-left:auto;color:var(--orange);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.last_error)}">${esc(s.last_error)}</span>` : ""}
       </div>`;
     }).join("");
@@ -5902,7 +5915,15 @@ async function openHealthModal(){
       </div>`;
     }).join("");
 
+    // Stillstand-Wächter (Backend v2.8.39): Banner, solange ein Refresh-Stillstand gemeldet und nicht beendet ist
+    const stallBanner = d.watchdog?.stalled
+      ? `<div style="padding:8px 12px;background:var(--bg3);border:1px solid var(--red);border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--red);font-weight:600">
+           🚨 Kurs-Refresh steht still${d.watchdog.since ? ` — seit ${fmtDT(d.watchdog.since)} kein Lauf` : ""}
+         </div>`
+      : "";
+
     body.innerHTML = `
+      ${stallBanner}
       <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px">
         ${statusDot(d.scheduler_running)}<span style="font-weight:600">${d.scheduler_running ? "Scheduler aktiv" : "Scheduler gestoppt"}</span>
         <span style="color:var(--border)">·</span>
@@ -8021,7 +8042,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.70 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.71 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
