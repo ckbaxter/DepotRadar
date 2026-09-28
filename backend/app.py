@@ -27,7 +27,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.38"
+VERSION           = "2.8.39"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -59,12 +59,44 @@ _job_stats = {}
 # System-Status-Dashboard) — reiner In-Memory-Zähler, kein Neustart-Überstehen nötig.
 _lock_contentions = {"count": 0}
 
-def _track_source_call(source, latency_ms, error=None):
+# ── Ausfall-Erkennung für Datenquellen (seit v2.8.39) ────────────────────────────
+# Nach jedem automatischen Kurs-Refresh-Zyklus wird pro Quelle bewertet, ob sie seit der
+# letzten Bewertung überwiegend ausgefallen ist (_evaluate_outages). Erreicht die Zahl der
+# aufeinanderfolgenden gestörten Zyklen die Schwelle, geht EINE Push-Meldung an die Admins
+# (ADMIN_USERS), beim Ende des Ausfalls eine Entwarnung mit Dauer. Dazu kommt ein Wächter
+# gegen Scheduler-Stillstand (stall_watchdog_check). Bewusst Konstanten im Code, nicht über
+# die UI einstellbar. Der Zustand liegt nur im Speicher: nach einem Neustart zählt jede
+# Quelle bei 0 — im ungünstigsten Fall folgt eine wiederholte Störungsmeldung.
+#   threshold — gestörte Zyklen in Folge bis zur Meldung (bei 1 h Refresh-Intervall = Stunden)
+#   Info-Quellen (Frankfurter/OpenFIGI) haben Fallbacks (gecachter Kurs / Map), daher später.
+_OUTAGE_FAIL_RATIO = 0.5   # Anteil fehlgeschlagener Aufrufe, ab dem ein Zyklus als gestört gilt
+_OUTAGE_SOURCES = {
+    "yahoo":       {"label": "Yahoo Finance",              "threshold": 3, "icon": "🚨",
+                    "impact": "Es werden keine Kurse aktualisiert und keine Alarme ausgelöst."},
+    "parqet":      {"label": "Parqet",                     "threshold": 3, "icon": "⚠️",
+                    "impact": "Der Depot-Sync schlägt fehl (ohne Token-Ablauf, der wird separat gemeldet)."},
+    "frankfurter": {"label": "Frankfurter API (EUR-Kurse)", "threshold": 6, "icon": "ℹ️",
+                    "impact": "Die EUR-Umrechnung nutzt den zuletzt gespeicherten bzw. einen statischen Kurs."},
+    "openfigi":    {"label": "OpenFIGI",                   "threshold": 6, "icon": "ℹ️",
+                    "impact": "XETRA-Vorschläge für unbekannte Aktien fehlen."},
+}
+# Stillstand-Wächter: Alarm, wenn in der Handelszeit länger als das Doppelte des Refresh-
+# Intervalls (mindestens aber _STALL_MIN_SECONDS) kein automatischer Refresh durchgelaufen ist.
+_STALL_FACTOR      = 2
+_STALL_MIN_SECONDS = 900
+_outage_state = {src: {"streak": 0, "since": None, "alerted": False,
+                       "base_calls": 0, "base_failed": 0, "base_auth": 0}
+                 for src in _OUTAGE_SOURCES}
+_stall_state  = {"alerted": False, "since_ts": None, "alert_ts": None}
+
+def _track_source_call(source, latency_ms, error=None, auth_error=False):
     """Zählt einen Aufruf einer externen Datenquelle (yahoo/frankfurter/parqet/openfigi)
     fürs System-Status-Dashboard. Nutzt dieselbe Ring-Buffer-Fehlerliste wie die bisherige
     Yahoo-spezifische Fehlerbehandlung in _fetch_prices (die weiterhin eigenständig bleibt,
     da sie zusätzlich last_refresh_had_errors für den Footer-Statusdot steuert und den
-    betroffenen Ticker mitführt)."""
+    betroffenen Ticker mitführt). auth_error=True markiert einen Token-/401-Fehler: er zählt
+    weiter als fehlgeschlagen (Dashboard), wird von der Ausfall-Erkennung aber ignoriert —
+    ein abgelaufenes Token ist kein Ausfall der Quelle und hat seine eigene Meldung."""
     st = _health_stats["sources"].setdefault(
         source, {"calls": 0, "failed": 0, "avg_latency_ms": 0.0, "last_call": None, "last_error": None})
     st["calls"] += 1
@@ -73,6 +105,8 @@ def _track_source_call(source, latency_ms, error=None):
         else round(st["avg_latency_ms"] * 0.8 + latency_ms * 0.2, 0)
     if error:
         st["failed"] += 1
+        if auth_error:
+            st["auth_failed"] = st.get("auth_failed", 0) + 1
         st["last_error"] = str(error)[:160]
         _health_stats["recent_errors"].append({
             "time":   datetime.now().isoformat(timespec="seconds"),
@@ -1404,6 +1438,10 @@ def refresh_all_depots(trigger="auto"):
     if trigger == "auto":
         take_snapshot()
     _persist_health_stats()
+    if trigger == "auto":
+        # Ausfall-Erkennung nur nach automatischen Zyklen; darf den Refresh nie stören.
+        try: _evaluate_outages()
+        except Exception as e: log.warning(f"Ausfall-Erkennung fehlgeschlagen: {e}")
     # Job-Statistik fürs System-Status-Dashboard — nur für den automatischen (Scheduler-)Lauf,
     # ein manueller "Kurse aktualisieren"-Klick soll die Job-Zeile nicht verfälschen.
     if trigger == "auto":
@@ -1435,6 +1473,148 @@ def _restore_health_stats():
         p = src_persisted.get(src, {})
         st["calls"]  = p.get("calls",  0)
         st["failed"] = p.get("failed", 0)
+    # Ausfall-Erkennung: die eben geladenen kumulativen Zähler sind die Basislinie — sonst
+    # würde die erste Bewertung nach dem Start die gesamte Historie als "neue" Aufrufe werten.
+    _reset_outage_baselines()
+
+def _reset_outage_baselines():
+    """Setzt Zähler-Basislinie und Streak der Ausfall-Erkennung auf den aktuellen Stand."""
+    for src in _OUTAGE_SOURCES:
+        st = _health_stats["sources"].get(src, {})
+        _outage_state[src] = {"streak": 0, "since": None, "alerted": False,
+                              "base_calls": st.get("calls", 0), "base_failed": st.get("failed", 0),
+                              "base_auth": st.get("auth_failed", 0)}
+
+# ── Ausfall-Erkennung & Admin-Push (seit v2.8.39) ─────────────────
+def _fmt_duration(seconds):
+    """Menschenlesbare Dauer für Meldungen: '3 h 5 min', '25 min', '1 d 2 h'."""
+    total_min = int(seconds // 60)
+    if total_min < 1:
+        return "weniger als 1 min"
+    hours, mins = divmod(total_min, 60)
+    days, hours = divmod(hours, 24)
+    parts = []
+    if days:  parts.append(f"{days} d")
+    if hours: parts.append(f"{hours} h")
+    if mins and not days: parts.append(f"{mins} min")
+    return " ".join(parts)
+
+def _fmt_clock(ts):
+    """Uhrzeit (bei anderem Kalendertag mit Datum) eines Epoch-Zeitstempels in der App-Zeitzone."""
+    try:
+        tz  = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+        dt  = datetime.fromtimestamp(ts, tz)
+        return dt.strftime("%H:%M") if dt.date() == datetime.now(tz).date() else dt.strftime("%d.%m. %H:%M")
+    except Exception:
+        return "?"
+
+def _send_admin_alert(title, body):
+    """Schickt eine System-Meldung ausschließlich an die Admins (ADMIN_USERS) über deren
+    Apprise-URLs — ein einziger Versand über die vereinigten, deduplizierten URLs (gleiche
+    Empfänger würden sonst mehrfach benachrichtigt). Ignoriert notifications_enabled, wie
+    die Reconnect-Meldung. Verlauf-Typ "system" (bestehendes Label, kein neues nötig).
+    Ohne Admin mit URL landet die Meldung nur im Verlauf (success=False, damit sichtbar)."""
+    try:
+        urls, mentions = [], []
+        for u in load_users():
+            if not is_admin_user(u): continue
+            for url in u.get("apprise_urls", []) or []:
+                if url not in urls: urls.append(url)
+            m = (u.get("notification_mention") or "").strip()
+            if m and m not in mentions: mentions.append(m)
+        if urls:
+            send_apprise(title, body, urls, mention=" ".join(mentions), log_type="system")
+        else:
+            add_log("system", title,
+                    body + "\n(Kein Admin mit Benachrichtigungs-URL — Meldung nur im Verlauf)", success=False)
+    except Exception as e:
+        log.error(f"Admin-Meldung fehlgeschlagen: {e}")
+
+def _evaluate_outages():
+    """Bewertet nach einem automatischen Refresh-Zyklus jede Datenquelle anhand der Aufrufe
+    seit der letzten Bewertung (Differenz der kumulativen calls/failed-Zähler — _fetch_prices
+    und die Quellen-Aufrufer bleiben unangetastet). Ein Zyklus gilt als gestört, wenn mindestens
+    _OUTAGE_FAIL_RATIO der Aufrufe fehlschlug (und mindestens 2, bzw. bei nur 1 Aufruf dieser —
+    ein einzelner toter Ticker ist kein Ausfall). Zyklen ohne Aufrufe der Quelle geben kein
+    Urteil ab (Streak bleibt unverändert). Token-/401-Fehler (Parqet) zählen nicht mit.
+    Übergänge: Streak erreicht Schwelle → eine Störungsmeldung; danach ein gesunder Zyklus →
+    eine Entwarnung mit Dauer. Dazwischen bleibt es still."""
+    now = time_mod.time()
+    for src, cfg in _OUTAGE_SOURCES.items():
+        st = _health_stats["sources"].get(src)
+        if not st: continue
+        s          = _outage_state[src]
+        auth_total = st.get("auth_failed", 0)
+        d_calls    = max(0, st["calls"]  - s["base_calls"])
+        d_failed   = max(0, st["failed"] - s["base_failed"])
+        d_auth     = max(0, auth_total   - s["base_auth"])
+        s["base_calls"], s["base_failed"], s["base_auth"] = st["calls"], st["failed"], auth_total
+        calls  = d_calls  - d_auth       # 401-Aufrufe weder als Erfolg noch als Fehlschlag werten
+        failed = d_failed - d_auth
+        if calls <= 0:
+            continue
+        bad = failed >= min(2, calls) and failed / calls >= _OUTAGE_FAIL_RATIO
+        if bad:
+            if s["streak"] == 0:
+                s["since"] = now
+            s["streak"] += 1
+            if s["streak"] >= cfg["threshold"] and not s["alerted"]:
+                s["alerted"] = True
+                err = st.get("last_error") or "unbekannt"
+                _send_admin_alert(
+                    f"{cfg['icon']} {cfg['label']} gestört",
+                    f"{cfg['impact']}\n\n"
+                    f"Seit ca. {_fmt_clock(s['since'])} Uhr in {s['streak']} Refresh-Zyklen in Folge "
+                    f"überwiegend fehlgeschlagen.\nLetzter Fehler: {err}")
+                log.warning(f"Datenquelle {src} gestört seit {_fmt_clock(s['since'])} — Admin-Meldung gesendet")
+        else:
+            if s["alerted"]:
+                _send_admin_alert(
+                    f"✅ {cfg['label']} wieder erreichbar",
+                    f"Ausfall: {_fmt_duration(now - s['since'])} (seit ca. {_fmt_clock(s['since'])} Uhr).")
+                log.info(f"Datenquelle {src} wieder erreichbar")
+            s["streak"], s["since"], s["alerted"] = 0, None, False
+
+def stall_watchdog_check():
+    """Läuft alle 5 Minuten: erkennt einen stillstehenden Kurs-Refresh, den die Zähler-basierte
+    Ausfall-Erkennung nicht sehen kann (sie läuft nur, wenn ein Zyklus überhaupt endet — bei
+    hängendem Scheduler oder blockiertem Lock kommt kein Zyklusende mehr). Referenz ist das
+    Ende des letzten automatischen Refreshs (_job_stats), frühestens der heutige Beginn der
+    Handelszeit bzw. der App-Start — sonst würde der Refresh von gestern Abend morgens als
+    Stillstand gelten. Alarm nur in der Handelszeit; die Entwarnung kommt, sobald wieder ein
+    Zyklus durchgelaufen ist (auch außerhalb der Handelszeit)."""
+    try:
+        now  = time_mod.time()
+        last = (_job_stats.get("kurs_refresh") or {}).get("last_run")
+        last_ts = datetime.fromisoformat(last).timestamp() if last else None
+        if _stall_state["alerted"]:
+            if last_ts and last_ts > _stall_state["alert_ts"]:
+                _send_admin_alert(
+                    "✅ Kurs-Refresh läuft wieder",
+                    f"Stillstand: {_fmt_duration(last_ts - _stall_state['since_ts'])} "
+                    f"(seit ca. {_fmt_clock(_stall_state['since_ts'])} Uhr).")
+                log.info("Kurs-Refresh läuft wieder — Stillstand beendet")
+                _stall_state.update(alerted=False, since_ts=None, alert_ts=None)
+            return
+        s = load_settings()
+        tz, now_dt, _days, sh, sm, _eh, _em = _parse_trading_config(s)
+        if not _is_trading_time():
+            return
+        interval      = s["refresh_interval"]
+        trading_start = tz.localize(datetime(now_dt.year, now_dt.month, now_dt.day, sh, sm)).timestamp()
+        ref           = max(t for t in (last_ts, trading_start, APP_START_TIME) if t)
+        limit         = max(_STALL_FACTOR * interval, _STALL_MIN_SECONDS)
+        if now - ref > limit:
+            _stall_state.update(alerted=True, since_ts=ref, alert_ts=now)
+            last_txt = f"Letzter Lauf: {_fmt_clock(last_ts)} Uhr." if last_ts else "Seit dem App-Start ist noch kein Lauf beendet worden."
+            _send_admin_alert(
+                "🚨 Kurs-Refresh steht still",
+                f"In der Handelszeit ist seit {_fmt_duration(now - ref)} kein automatischer Refresh mehr "
+                f"durchgelaufen (erwartet: alle {_fmt_duration(interval)}).\n{last_txt}\n"
+                f"Möglicherweise hängt der Scheduler oder ein Datei-Lock.")
+            log.warning("Kurs-Refresh-Stillstand erkannt — Admin-Meldung gesendet")
+    except Exception as e:
+        log.warning(f"stall_watchdog_check fehlgeschlagen: {e}")
 
 def _persist_health_stats():
     """Schreibt kumulative Zähler atomar in health.json. Wird am Ende jedes
@@ -2206,6 +2386,8 @@ def start_scheduler():
                       replace_existing=True, misfire_grace_time=None)
     scheduler.add_job(auto_parqet_sync_check, "cron", minute="*", id="auto_parqet_sync_check",
                       replace_existing=True, misfire_grace_time=None)
+    scheduler.add_job(stall_watchdog_check, "cron", minute="*/5", id="stall_watchdog",
+                      replace_existing=True, misfire_grace_time=None)
     schedule_all_user_digest_jobs()
     if not scheduler.running: scheduler.start()
     log.info("Scheduler gestartet")
@@ -2345,7 +2527,11 @@ def parqet_api_get(depot, path, depot_id=None):
         r.raise_for_status()
         result = r.json()
     except Exception as e:
-        _track_source_call("parqet", (time_mod.monotonic() - _t0) * 1000, error=e)
+        # 401 (Token abgelaufen/Refresh fehlgeschlagen) ist kein Quellen-Ausfall — siehe
+        # _track_source_call. Beide Varianten beginnen mit "401": HTTPError ("401 Client
+        # Error: …") und der ValueError oben ("401 Unauthorized: …").
+        _track_source_call("parqet", (time_mod.monotonic() - _t0) * 1000, error=e,
+                           auth_error=str(e).startswith("401"))
         raise
     _track_source_call("parqet", (time_mod.monotonic() - _t0) * 1000)
     return result
@@ -4203,6 +4389,13 @@ def _source_view(name):
         "avg_latency_ms": st.get("avg_latency_ms", 0),
         "last_call":      st.get("last_call"),
         "last_error":     st.get("last_error"),
+        # Ausfall-Erkennung (v2.8.39): gestörte Zyklen in Folge, Beginn, ob Admin-Meldung raus ist
+        "outage": (lambda s, cfg: {
+            "streak":    s["streak"],
+            "threshold": cfg["threshold"],
+            "since":     datetime.fromtimestamp(s["since"]).isoformat(timespec="seconds") if s["since"] else None,
+            "alerted":   s["alerted"],
+        })(_outage_state[name], _OUTAGE_SOURCES[name]) if name in _OUTAGE_SOURCES else None,
     }
 
 def _job_view(key, next_run=None):
@@ -4274,6 +4467,12 @@ def health():
             "wochen_digest": _job_view("wochen_digest", next_run=_next_job_run("weekly_digest_")),
         },
         "storage": _storage_stats(),
+        # Stillstand-Wächter (v2.8.39): True, solange ein Refresh-Stillstand gemeldet und noch nicht beendet ist
+        "watchdog": {
+            "stalled": _stall_state["alerted"],
+            "since":   datetime.fromtimestamp(_stall_state["since_ts"]).isoformat(timespec="seconds")
+                       if _stall_state["since_ts"] else None,
+        },
     })
 
 @app.route("/api/health/clear-errors", methods=["POST"])
