@@ -370,6 +370,16 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .url-item span{flex:1;font-size:12px;word-break:break-all}
 .url-item button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0;min-width:28px;min-height:28px}
 .url-item button:hover{color:var(--red)}
+/* Apprise-URL-Zeilen: Dienst-Chip + maskierte URL (seit v2.13.72) */
+.url-item .url-svc{flex:none;font-size:10.5px;font-weight:600;color:#9db4ff;background:rgba(78,124,246,.16);border-radius:5px;padding:2px 7px;white-space:nowrap}
+:root.light .url-item .url-svc{color:#2a4db5}
+.url-item .url-svc.bad{color:#f87171;background:rgba(239,68,68,.14)}
+.url-item .url-svc.new{color:#fff;background:#2f5bd8}
+.url-item .url-mask{flex:1;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+.url-item.is-new{background:rgba(78,124,246,.08);border-color:var(--accent)}
+.url-item .url-ico{display:flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:32px}
+.url-item .url-ico:hover{color:var(--accent)}
+.usr-err{display:none;font-size:12px;color:#f87171;line-height:1.5;margin-top:6px}
 /* Benutzer-Einstellungen: aufklappbare Themen-Sektionen (seit v2.12.13) */
 .usr-section{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg3);margin-bottom:10px;overflow:hidden}
 .usr-section summary{list-style:none;cursor:pointer;user-select:none;padding:12px 14px;
@@ -1570,7 +1580,9 @@ select</style>
       <details class="help-section">
         <summary class="help-summary">🔔 Apprise Benachrichtigungen</summary>
         <div class="help-body">
-          Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.<br><br>
+          Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.
+          Erlaubt sind Discord (<code>discord://</code>), ntfy (<code>ntfy://</code>, <code>ntfys://</code>) und E-Mail (<code>mailtos://</code>).
+          Gespeicherte URLs enthalten Zugangsdaten und werden deshalb nur maskiert angezeigt — zum Ändern die URL entfernen und neu hinzufügen.<br><br>
           Ob überhaupt Benachrichtigungen für ein Depot verschickt werden, entscheidet zusätzlich
           ein Ein/Aus-Schalter <b>pro Depot</b> (Depot-Einstellungen → ⚙) — nur wenn dieser aktiv
           ist, gehen Alarme, die tägliche und die wöchentliche Zusammenfassung für dieses Depot
@@ -1598,7 +1610,7 @@ http://depotradar.example.lan</div>
             ⚖️ = Sektor im Bestand unterrepräsentiert (nur beim Discount-Block-Alarm, nicht beim Neues-ATH-Alarm)
           </div>
           <br>
-          Weitere Informationen zur Konfiguration mit Beispielen für Discord, Telegram, E-Mail und mehr:<br>
+          Weitere Informationen zur Konfiguration mit Beispielen für Discord, ntfy und E-Mail:<br>
           <a href="https://appriseit.com/services/" target="_blank"
              style="color:var(--accent)">appriseit.com/services</a>
         </div>
@@ -2021,6 +2033,7 @@ let activeView       = {type:"depot", id:null, name:""}; // type: depot | watchl
 let stocksCache   = [];
 let selectedCompany = null;
 let userUrls      = [];
+let _editUserId   = null;   // User, dessen Bearbeiten-Formular gerade offen ist (für den serverseitigen URL-Test)
 let editingDepot  = null;
 let editingWl     = null;
 let sortKey = "discount", sortDir = 1;
@@ -2063,6 +2076,12 @@ function esc(str){
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// Wert als JavaScript-String-Literal für Inline-Handler in HTML-Attributen (onclick="fn(${jsArg(x)})").
+// JSON.stringify quotet/escaped für JS, esc() danach für das HTML-Attribut — nur beides zusammen
+// ist sicher: ein bloßes .replace(/'/g, ...) lässt ", \ und Zeilenumbrüche ungeschützt und erlaubt
+// das Ausbrechen aus Attribut bzw. String. String(v) erhält das alte Verhalten für null/undefined.
+function jsArg(v){ return esc(JSON.stringify(String(v))); }
 
 function isWl(){ return activeView.type==="watchlist"; }
 
@@ -2467,7 +2486,7 @@ function renderCompactList(stocks){
     const perfClass = s.perf_1d > 0 ? "pos" : (s.perf_1d < 0 ? "neg" : "");
     const perfSign  = s.perf_1d > 0 ? "+" : "";
     const perfTxt   = s.perf_1d != null ? `${perfSign}${s.perf_1d.toFixed(1)}%` : "—";
-    return `<div class="compact-row ${c.row}" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">
+    return `<div class="compact-row ${c.row}" onclick="openStockDetail(${jsArg(s.ticker)},${jsArg(did)},${jsArg(wl?wlId:"")})">
       <span class="compact-ticker">${esc(s.ticker)}</span>
       <span class="compact-name">${esc(s.name)}</span>
       <span class="compact-price">${fmtEUR(s.current_eur)}</span>
@@ -3045,7 +3064,7 @@ function updateOverviewFilterHint(){
   }
   if(_activeSectorFilter){
     const sec = _activeSectorFilter.length > 14 ? _activeSectorFilter.slice(0,13)+"…" : _activeSectorFilter;
-    pills.push(`<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:rgba(78,124,246,.12);color:var(--accent);white-space:nowrap">🏷 ${sec}</span>`);
+    pills.push(`<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:rgba(78,124,246,.12);color:var(--accent);white-space:nowrap">🏷 ${esc(sec)}</span>`);
   }
   el.innerHTML = pills.join("");
 }
@@ -3120,14 +3139,14 @@ function levelTd(ath,cur,pct,s,depotId){
   const boughtStyle=bought?"background:rgba(24,95,165,.07);outline:0.5px solid rgba(24,95,165,.3)":"";
   const ticker=s?s.ticker:"";
   return `<td class="${cls}" style="font-size:12px;cursor:pointer;${boughtStyle}"
-              onclick="toggleBoughtLevel('${ticker}','${depotId}',${pct},false)"
+              onclick="toggleBoughtLevel(${jsArg(ticker)},${jsArg(depotId)},${pct},false)"
               title="${bought?"Kaufmarkierung entfernen":"Als gekauft markieren"}">
     ${fmtEUR(p)}${hit?" ✓":""}${boughtMark}
   </td>`;
 }
 
 function moveBtn(ticker){
-  return `<button class="icon-btn move" title="Ins Depot verschieben" onclick="moveToDepot('${ticker}')" style="font-size:11px">&#8594; Depot</button>`;
+  return `<button class="icon-btn move" title="Ins Depot verschieben" onclick="moveToDepot(${jsArg(ticker)})" style="font-size:11px">&#8594; Depot</button>`;
 }
 
 // Zeigt den Leer-Zustand und blendet alle drei Ansichten aus. Bewusst nicht über
@@ -3240,19 +3259,19 @@ function renderTable(stocks){
   document.getElementById("tBody").innerHTML=sorted.map(s=>{
     const d=disc(s),c=dcls(d);
     const nm=s.name;
-    const moveToWlBtn=watchlistsCache.length>0?`<button class="icon-btn move" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="In Watchlist" style="font-size:11px">&#8594;&#128269;</button>`:"";
+    const moveToWlBtn=watchlistsCache.length>0?`<button class="icon-btn move" onclick="openMoveToWlModal(${jsArg(s.ticker)},${jsArg(s.name)})" title="In Watchlist" style="font-size:11px">&#8594;&#128269;</button>`:"";
       const actions=wl
-      ? `<button class="icon-btn" onclick="wlRefreshOne('${s.ticker}',this)" title="Aktualisieren">&#8635;</button>
+      ? `<button class="icon-btn" onclick="wlRefreshOne(${jsArg(s.ticker)},this)" title="Aktualisieren">&#8635;</button>
          ${moveBtn(s.ticker)}
-         <button class="icon-btn" onclick="wlDeleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" title="Entfernen">&#128465;</button>`
-      : `<button class="icon-btn" onclick="refreshOne('${s.ticker}','${did}',this)" title="Aktualisieren">&#8635;</button>
-         <button class="icon-btn" onclick="openEditStockModal('${s.ticker}')" title="Bearbeiten" style="font-size:16px">&#9998;</button>
+         <button class="icon-btn" onclick="wlDeleteStock(${jsArg(s.ticker)},${jsArg(s.name)})" title="Entfernen">&#128465;</button>`
+      : `<button class="icon-btn" onclick="refreshOne(${jsArg(s.ticker)},${jsArg(did)},this)" title="Aktualisieren">&#8635;</button>
+         <button class="icon-btn" onclick="openEditStockModal(${jsArg(s.ticker)})" title="Bearbeiten" style="font-size:16px">&#9998;</button>
          ${moveToWlBtn}
-         <button class="icon-btn" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')" title="Entfernen">&#128465;</button>`;
+         <button class="icon-btn" onclick="deleteStock(${jsArg(s.ticker)},${jsArg(s.name)},${jsArg(did)})" title="Entfernen">&#128465;</button>`;
     return `<tr class="${c.row}">
       <td>
-        <div class="sn stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(nm)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
-        <div class="ss">${s.ticker} · ${s.exchange}${s.isin?` · <span class="isin-tag">${s.isin}</span>`:""}</div>
+        <div class="sn stock-name-link" onclick="openStockDetail(${jsArg(s.ticker)},${jsArg(did)},${jsArg(wl?wlId:"")})">${esc(nm)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+        <div class="ss">${esc(s.ticker)} · ${esc(s.exchange)}${s.isin?` · <span class="isin-tag">${esc(s.isin)}</span>`:""}</div>
         ${sectorBadgeHtml(s, did, wl, wlId)}
         ${weightBarHtml(s)}
         ${pnlRow(s)}
@@ -3265,7 +3284,7 @@ function renderTable(stocks){
         ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
         ${perfWrap(s)}
       </td>
-      <td style="color:var(--accent)">${fmtEUR(s.ath_eur)}<span class="ath-alert-bell ${s.ath_alert_enabled?"active":""}" onclick="event.stopPropagation();toggleAthAlert('${s.ticker}','${did}','${wlId}')" title="${s.ath_alert_enabled?"ATH-Alarm aktiv — tippen zum Deaktivieren":"ATH-Alarm aktivieren"}">${s.ath_alert_enabled?"🔔":"🔕"}</span>${s.ath_date?`<div style="font-size:9px;opacity:.6;color:var(--muted)">${s.ath_date}</div>`:""}</td>
+      <td style="color:var(--accent)">${fmtEUR(s.ath_eur)}<span class="ath-alert-bell ${s.ath_alert_enabled?"active":""}" onclick="event.stopPropagation();toggleAthAlert(${jsArg(s.ticker)},${jsArg(did)},${jsArg(wlId)})" title="${s.ath_alert_enabled?"ATH-Alarm aktiv — tippen zum Deaktivieren":"ATH-Alarm aktivieren"}">${s.ath_alert_enabled?"🔔":"🔕"}</span>${s.ath_date?`<div style="font-size:9px;opacity:.6;color:var(--muted)">${s.ath_date}</div>`:""}</td>
       <td><span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span></td>
       <td style="white-space:nowrap">${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return '<span style="opacity:.3;font-size:12px">—</span>';return `<span style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</span>`+`<br><span style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</span>`;})()}</td>
       ${levelTd(s.ath_eur,s.current_eur,20,s,did)}${levelTd(s.ath_eur,s.current_eur,30,s,did)}
@@ -3284,28 +3303,28 @@ function renderTable(stocks){
       const p=s.ath_eur*(1-l/100),hit=s.current_eur<=p;
       const bought=boughtLvls.includes(l);
       return `<div class="card-level ${hit?"hit":""} ${bought?"bought":""}"
-                   onclick="toggleBoughtLevel('${s.ticker}','${did||wlId}',${l},${!!wlId})"
+                   onclick="toggleBoughtLevel(${jsArg(s.ticker)},${jsArg(did||wlId)},${l},${!!wlId})"
                    title="${bought?"Kaufmarkierung entfernen":"Als gekauft markieren"}">
         <div class="card-level-pct">&#8722;${l}%</div>
         <div class="card-level-price">${fmtEUR(p).replace(" EUR","")}</div>
         ${bought?kBadge:""}
       </div>`;
     }).join("");
-    const moveToWlBtn2=watchlistsCache.length>0?`<button class="icon-btn move btn-sm" onclick="openMoveToWlModal('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')" >&#8594;&#128269;</button>`:"";
+    const moveToWlBtn2=watchlistsCache.length>0?`<button class="icon-btn move btn-sm" onclick="openMoveToWlModal(${jsArg(s.ticker)},${jsArg(s.name)})" >&#8594;&#128269;</button>`:"";
     const cardActions=wl
-      ? `<button class="icon-btn btn-sm" onclick="wlRefreshOne('${s.ticker}',this)">&#8635;</button>
-         <button class="icon-btn move btn-sm" onclick="moveToDepot('${s.ticker}')">&#8594; Depot</button>
-         <button class="icon-btn btn-sm" onclick="wlDeleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}')">&#128465;</button>`
-      : `<button class="icon-btn btn-sm" onclick="refreshOne('${s.ticker}','${did}',this)">&#8635;</button>
-         <button class="icon-btn btn-sm" onclick="openEditStockModal('${s.ticker}')" style="font-size:16px">&#9998;</button>
+      ? `<button class="icon-btn btn-sm" onclick="wlRefreshOne(${jsArg(s.ticker)},this)">&#8635;</button>
+         <button class="icon-btn move btn-sm" onclick="moveToDepot(${jsArg(s.ticker)})">&#8594; Depot</button>
+         <button class="icon-btn btn-sm" onclick="wlDeleteStock(${jsArg(s.ticker)},${jsArg(s.name)})">&#128465;</button>`
+      : `<button class="icon-btn btn-sm" onclick="refreshOne(${jsArg(s.ticker)},${jsArg(did)},this)">&#8635;</button>
+         <button class="icon-btn btn-sm" onclick="openEditStockModal(${jsArg(s.ticker)})" style="font-size:16px">&#9998;</button>
          ${moveToWlBtn2}
-         <button class="icon-btn btn-sm" onclick="deleteStock('${s.ticker}','${s.name.replace(/'/g,String.fromCharCode(92,39))}','${did}')">&#128465;</button>`;
+         <button class="icon-btn btn-sm" onclick="deleteStock(${jsArg(s.ticker)},${jsArg(s.name)},${jsArg(did)})">&#128465;</button>`;
     return `<div class="stock-card ${c.row} ${wl?"wl-card":""}">
       <div class="card-top">
         <span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span>
         <div>
-          <div class="card-name stock-name-link" onclick="openStockDetail('${s.ticker}','${did}','${wl?wlId:""}')">${esc(s.name)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
-          <div class="card-sub">${s.ticker} · ${s.exchange}${s.isin?` · ${s.isin}`:""}</div>
+          <div class="card-name stock-name-link" onclick="openStockDetail(${jsArg(s.ticker)},${jsArg(did)},${jsArg(wl?wlId:"")})">${esc(s.name)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
+          <div class="card-sub">${esc(s.ticker)} · ${esc(s.exchange)}${s.isin?` · ${esc(s.isin)}`:""}</div>
           ${sectorBadgeHtml(s, did, wl, wlId)}
           ${weightBarHtml(s, true)}
           ${pnlRow(s)}
@@ -3320,7 +3339,7 @@ function renderTable(stocks){
           ${s.updated?`<div class="ts">Geprüft: ${s.updated}</div>`:""}
           ${perfWrap(s)}
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px"><div class="card-price-block" style="flex:1;padding:6px 10px"><div class="card-price-label">ATH</div><div class="card-price-val" style="color:var(--accent);font-size:13px">${fmtEUR(s.ath_eur)}<span class="ath-alert-bell ${s.ath_alert_enabled?"active":""}" onclick="event.stopPropagation();toggleAthAlert('${s.ticker}','${did}','${wlId}')" title="${s.ath_alert_enabled?"ATH-Alarm aktiv — tippen zum Deaktivieren":"ATH-Alarm aktivieren"}">${s.ath_alert_enabled?"🔔":"🔕"}</span></div>${s.ath_date?`<div style="font-size:9px;color:var(--muted);margin-top:1px;opacity:.7">${s.ath_date}</div>`:""}</div>${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return "";return `<div style="flex:1;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:6px 10px"><div style="font-size:10px;color:var(--muted);margin-bottom:2px">Kaufempfehlung</div><div style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</div><div style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</div></div>`;})()}</div>
+        <div style="display:flex;flex-direction:column;gap:6px"><div class="card-price-block" style="flex:1;padding:6px 10px"><div class="card-price-label">ATH</div><div class="card-price-val" style="color:var(--accent);font-size:13px">${fmtEUR(s.ath_eur)}<span class="ath-alert-bell ${s.ath_alert_enabled?"active":""}" onclick="event.stopPropagation();toggleAthAlert(${jsArg(s.ticker)},${jsArg(did)},${jsArg(wlId)})" title="${s.ath_alert_enabled?"ATH-Alarm aktiv — tippen zum Deaktivieren":"ATH-Alarm aktivieren"}">${s.ath_alert_enabled?"🔔":"🔕"}</span></div>${s.ath_date?`<div style="font-size:9px;color:var(--muted);margin-top:1px;opacity:.7">${s.ath_date}</div>`:""}</div>${(()=>{const r=calcBuyQty(activeDepot&&activeDepot.buy_budget,d,s.current_eur);if(!r) return "";return `<div style="flex:1;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:6px 10px"><div style="font-size:10px;color:var(--muted);margin-bottom:2px">Kaufempfehlung</div><div style="font-size:13px;font-weight:600;color:var(--green)">${r.qty} Stk. · ~${fmtEUR(r.cost)}</div><div style="font-size:10px;color:var(--green);opacity:.7">(${r.mult}× Budget)</div></div>`;})()}</div>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Discount-Level:</div>
       <div class="card-levels">${lvls}</div>
@@ -3433,7 +3452,7 @@ async function moveToDepot(ticker){
   } else {
     // Mehrere Depots — Auswahl anzeigen (Watchlists sind seit der Entkopplung keinem
     // Depot mehr automatisch zugeordnet, daher hier immer eine echte Auswahl nötig)
-    const choice = await showDepotPicker(`"${esc(stock.name)}" in welches Depot?`);
+    const choice = await showDepotPicker(`"${stock.name}" in welches Depot?`);
     if(choice) await _doMoveToDepot(ticker, choice, stock.name);
   }
 }
@@ -3456,9 +3475,9 @@ function showDepotPicker(title){
     overlay.id = "depotPickerOverlay";
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px";
     overlay.innerHTML = `<div style="background:var(--bg2);border-radius:12px;padding:20px;min-width:240px;max-width:360px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:14px">${title}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">${esc(title)}</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${depotsCache.map(d=>`<button class="btn btn-ghost" style="justify-content:flex-start" onclick="depotPickerResolve('${d.id}')">🏛 ${esc(d.name)}</button>`).join("")}
+        ${depotsCache.map(d=>`<button class="btn btn-ghost" style="justify-content:flex-start" onclick="depotPickerResolve(${jsArg(d.id)})">🏛 ${esc(d.name)}</button>`).join("")}
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="depotPickerResolve(null)">Abbrechen</button>
     </div>`;
@@ -3564,7 +3583,7 @@ async function doSearch(q){
       res.innerHTML=`<div class="search-results"><div class="no-results" style="padding:10px 12px;line-height:1.7">
         Keine Treffer in Yahoo Finance.<br>
         <span style="font-size:11px;color:var(--muted)">ISIN über
-          <a href="${gUrl}" target="_blank" style="color:var(--accent)">Google suchen: "${q} ISIN"</a>
+          <a href="${gUrl}" target="_blank" style="color:var(--accent)">Google suchen: "${esc(q)} ISIN"</a>
           herausfinden und dann direkt als Ticker eingeben.
         </span>
       </div></div>`;
@@ -3577,13 +3596,13 @@ async function doSearch(q){
       if(i===1 && items[0].xetra_suggested)
         html+=`<div style="height:1px;background:var(--border);margin:2px 0 4px"></div>`;
       const isXetra=it.ticker.endsWith(".DE")||!!it.xetra_suggested;
-      html+=`<div class="search-item" onclick="selectCompany(${i},${JSON.stringify(it).replace(/"/g,'&quot;')})">
+      html+=`<div class="search-item" onclick="selectCompany(${i},${esc(JSON.stringify(it))})">
         <span style="font-weight:500;font-size:13px">${esc(it.name)}</span>
         <div class="si-right">
           ${isXetra?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
-          <span class="exch-tag">${it.exchange}</span>
-          ${it.type?`<span class="type-tag">${it.type}</span>`:""}
-          <span class="ticker-tag">${it.ticker}</span>
+          <span class="exch-tag">${esc(it.exchange)}</span>
+          ${it.type?`<span class="type-tag">${esc(it.type)}</span>`:""}
+          <span class="ticker-tag">${esc(it.ticker)}</span>
         </div>
       </div>`;
     });
@@ -3714,16 +3733,52 @@ function openDepotSettings(depot){
   setTimeout(()=>{ document.activeElement?.blur(); initDepotScrollBtn(); }, 100);
   loadParqetStatus(depot.id);
 }
+// Apprise-URLs im Benutzer-Formular (seit v2.13.72): gespeicherte URLs enthalten Zugangsdaten und
+// kommen nur noch maskiert vom Server (apprise_urls_masked). userUrls-Einträge sind entweder
+//   {kind:"stored", idx, service, masked, allowed}  — bereits gespeichert, idx = Position beim Server
+//   {kind:"new", url}                               — neu eingetippt, noch nicht gespeichert
+// Beim Speichern gehen gespeicherte Einträge als {keep: idx} raus (die URL selbst verlässt den Server nie).
+const APPRISE_SCHEMES = ["discord","ntfy","ntfys","mailtos"];
+const APPRISE_HINT    = "Möglich sind discord://, ntfy://, ntfys:// und mailtos://.";
+const _BELL_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>';
 function renderUserUrlList(){
   const el = document.getElementById("userUrlList"); if(!el) return;
   el.innerHTML = userUrls.length===0
     ? '<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
-    : userUrls.map((u,i)=>`<div class="url-item"><span>${u}</span><button onclick="removeUserUrl(${i})">&#215;</button></div>`).join("");
+    : userUrls.map((u,i)=>{
+        const rm = `<button aria-label="URL entfernen" onclick="removeUserUrl(${i})">&#215;</button>`;
+        if(u.kind==="new")
+          return `<div class="url-item is-new"><span class="url-svc new">Neu</span><span class="url-mask">${esc(u.url)}</span>`
+               + `<button class="url-ico" aria-label="Diese URL testen" onclick="testUserNotification(${i})">${_BELL_SVG}</button>${rm}</div>`;
+        const test = u.allowed
+          ? `<button class="url-ico" aria-label="Diese URL testen" onclick="testUserNotification(${i})">${_BELL_SVG}</button>` : "";
+        const chip = u.allowed
+          ? `<span class="url-svc">${esc(u.service)}</span>`
+          : `<span class="url-svc bad" title="Dieser Dienst ist nicht mehr erlaubt — an diese URL wird nichts mehr gesendet. Bitte entfernen.">${esc(u.service)} · nicht erlaubt</span>`;
+        return `<div class="url-item">${chip}<span class="url-mask">${esc(u.masked)}</span>${test}${rm}</div>`;
+      }).join("");
+  const hint = document.getElementById("userUrlHint");
+  if(hint) hint.textContent = userUrls.some(u=>u.kind==="new")
+    ? "Neue URLs sind bis zum Speichern im Klartext sichtbar, danach maskiert."
+    : (userUrls.length ? "Gespeicherte URLs enthalten Zugangsdaten und werden nicht mehr im Klartext angezeigt. Zum Ändern entfernen und neu hinzufügen." : "");
   if(typeof updateUserSectionStates === "function") updateUserSectionStates();
+}
+function _setUserUrlError(msg){
+  const err = document.getElementById("newUserUrlErr"), inp = document.getElementById("newUserUrlInput");
+  if(err){ err.textContent = msg||""; err.style.display = msg ? "block" : "none"; }
+  if(inp){ inp.style.borderColor = msg ? "var(--red)" : ""; if(msg) inp.setAttribute("aria-invalid","true"); else inp.removeAttribute("aria-invalid"); }
 }
 function addUserUrl(){
   const v=document.getElementById("newUserUrlInput").value.trim(); if(!v) return;
-  userUrls.push(v);
+  // Gleiche Regeln wie im Backend (validate_apprise_url) — dort werden sie zusätzlich erzwungen
+  const m = v.match(/^([a-z][a-z0-9+.\-]*):\/\//i);
+  if(!m){ _setUserUrlError("Ungültige URL. "+APPRISE_HINT); return; }
+  if(!APPRISE_SCHEMES.includes(m[1].toLowerCase())){
+    _setUserUrlError(`Dieser Dienst (${m[1].toLowerCase()}://) ist nicht erlaubt. `+APPRISE_HINT); return;
+  }
+  if(userUrls.length >= 10){ _setUserUrlError("Maximal 10 URLs pro Benutzer."); return; }
+  _setUserUrlError("");
+  userUrls.push({kind:"new", url:v});
   document.getElementById("newUserUrlInput").value="";
   const btn=document.getElementById("addUserUrlBtn"); if(btn) btn.style.display="none";
   renderUserUrlList();
@@ -3732,6 +3787,7 @@ function removeUserUrl(i){ userUrls.splice(i,1); renderUserUrlList(); }
 function toggleUserAddUrlBtn(input){
   const btn=document.getElementById("addUserUrlBtn");
   if(btn) btn.style.display=input.value.trim()?"block":"none";
+  _setUserUrlError("");
 }
 
 async function saveDepotSettings(){
@@ -3770,13 +3826,22 @@ async function deleteCurrentDepot(){
   toast("Depot gelöscht"); loadDepots();
 }
 
-async function testUserNotification(){
-  if(!userUrls.length){toast("Keine URLs konfiguriert",false);return;}
+// Testet alle URLs im Formular (ohne Argument) oder nur die Zeile `only`. Gespeicherte URLs
+// werden per Index serverseitig aufgelöst, neue URLs als Text mitgeschickt.
+async function testUserNotification(only){
+  const entries = only===undefined ? userUrls : [userUrls[only]].filter(Boolean);
+  const stored  = entries.filter(e=>e.kind==="stored" && e.allowed).map(e=>e.idx);
+  const urls    = entries.filter(e=>e.kind==="new").map(e=>e.url);
+  if(!stored.length && !urls.length){toast("Keine URLs konfiguriert",false);return;}
   const mention = document.getElementById("editUserMention")?.value.trim()||"";
-  const r = await fetch(`${API}/notifications/test`,{method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({urls:userUrls, mention})});
-  const d = await r.json(); toast(d.ok?"Test gesendet!":"Fehlgeschlagen",d.ok);
+  try{
+    const r = await fetch(`${API}/notifications/test`,{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({user_id:_editUserId, stored, urls, mention})});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){ toast(d.error||"Fehlgeschlagen",false); return; }
+    toast(d.ok?"Test gesendet!":"Fehlgeschlagen",d.ok);
+  }catch(e){ toast("Fehlgeschlagen",false); }
 }
 
 // ── Move Bestand -> Watchlist ─────────────────────────────────────
@@ -3787,7 +3852,7 @@ function openMoveToWlModal(ticker, name){
   const list = document.getElementById("moveToWlList");
   list.innerHTML = watchlistsCache.map(wl =>
     `<button class="btn btn-ghost" style="justify-content:flex-start;gap:8px"
-             onclick="confirmMoveToWl('${wl.id}','${wl.name.replace(/'/g,"\\'")}')">
+             onclick="confirmMoveToWl(${jsArg(wl.id)},${jsArg(wl.name)})">
       📋 ${esc(wl.name)}
     </button>`
   ).join("");
@@ -4382,7 +4447,7 @@ function renderSectorOverview(stocks){
     const isGap    = gapInfo && basisCnt < gapInfo.avg * gapInfo.factor;
     const gapMark  = isGap ? `<span style="margin-left:3px">⚖️</span>` : "";
     const countTxt = isGap ? `${n} <span style="opacity:.75">· Ø ${Math.round(gapInfo.avg)}</span>` : `${n}`;
-    return `<span onclick="setSectorFilter('${sec.replace(/'/g,"\\'")}')"
+    return `<span onclick="setSectorFilter(${jsArg(sec)})"
       style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;
              cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;
              background:${active?'rgba(99,102,241,.2)':'var(--bg3)'};
@@ -4434,14 +4499,14 @@ function weightTd(s){
 }
 
 function sectorBadgeHtml(s, depotId, wl=false, wlId=null){
-  const wlAttr  = wl ? `data-wl="1" data-wlid="${wlId||''}"` : "";
+  const wlAttr  = wl ? `data-wl="1" data-wlid="${esc(wlId||'')}"` : "";
   const gapMark = s._isSectorGap
     ? `<span title="Sektor hier unterrepräsentiert" style="margin-left:4px;font-size:12px">⚖️</span>`
     : "";
   if(s.sector){
-    return `<div style="margin-top:4px"><span class="sector-badge" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>${s.sector}</span>${gapMark}</div>`;
+    return `<div style="margin-top:4px"><span class="sector-badge" onclick="openSectorPopover(event,${jsArg(s.ticker)},${jsArg(depotId)},${wl},${jsArg(wlId||'')})" ${wlAttr}>${esc(s.sector)}</span>${gapMark}</div>`;
   }
-  return `<div style="margin-top:4px"><span class="sector-ph" onclick="openSectorPopover(event,'${s.ticker}','${depotId}',${wl},'${wlId||''}')" ${wlAttr}>+ Sektor</span></div>`;
+  return `<div style="margin-top:4px"><span class="sector-ph" onclick="openSectorPopover(event,${jsArg(s.ticker)},${jsArg(depotId)},${wl},${jsArg(wlId||'')})" ${wlAttr}>+ Sektor</span></div>`;
 }
 
 function openSectorPopover(e, ticker, depotId, wl=false, wlId=null){
@@ -4469,7 +4534,7 @@ function openSectorPopover(e, ticker, depotId, wl=false, wlId=null){
 
 function buildSectorChips(list, active){
   document.getElementById("spGrid").innerHTML = list.map(s=>
-    `<div class="sp-chip${s===active?' active':''}" onclick="setSector('${s.replace(/'/g,"\\'")}')">${s}</div>`
+    `<div class="sp-chip${s===active?' active':''}" onclick="setSector(${jsArg(s)})">${esc(s)}</div>`
   ).join("");
 }
 
@@ -4598,7 +4663,7 @@ async function initUsers(){
 function showLoginScreen(){
   const grid = document.getElementById("loginUserGrid");
   grid.innerHTML = _usersCache.map(u => `
-    <button class="user-btn" onclick="selectLoginUser('${u.id}')">
+    <button class="user-btn" onclick="selectLoginUser(${jsArg(u.id)})">
       <div class="user-avatar">${esc(u.name.charAt(0).toUpperCase())}</div>
       <span>${esc(u.name)}</span>
     </button>`).join("");
@@ -4622,7 +4687,7 @@ function showPinEntry(user){
   renderPinDots();
   const grid = document.getElementById("pinGrid");
   const keys = [1,2,3,4,5,6,7,8,9,"⌫",0,"✓"];
-  grid.innerHTML = keys.map(k => `<button class="pin-key" onclick="pinKey('${k}')">${k}</button>`).join("");
+  grid.innerHTML = keys.map(k => `<button class="pin-key" onclick="pinKey(${jsArg(k)})">${k}</button>`).join("");
 }
 
 function renderPinDots(){
@@ -4724,8 +4789,8 @@ async function openUserModal(isSetup=false){
             <div style="font-size:11px;color:var(--muted)">${u.depots?.length || 0} Depot(s) · ${u.has_pin ? "PIN gesetzt" : "Kein PIN"}</div>
           </div>
           ${u.id===activeUser?.id
-            ? `<button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">✏️ Bearbeiten</button>`
-            : (isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="confirmDeleteUser('${u.id}')" title="Benutzer löschen">🗑</button>` : "")}
+            ? `<button class="btn btn-ghost btn-sm" onclick="editUser(${jsArg(u.id)})">✏️ Bearbeiten</button>`
+            : (isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="confirmDeleteUser(${jsArg(u.id)})" title="Benutzer löschen">🗑</button>` : "")}
         </div>`).join("")}
     </div>
     ${(isAdmin() || named.length === 0)
@@ -4818,7 +4883,7 @@ async function confirmDeleteUser(userId){
       ${delListHtml}
       ${keptHtml}
       <div style="display:flex;gap:8px">
-        <button class="btn btn-danger btn-sm" onclick="deleteUserConfirmed('${user.id}')" style="flex:1">🗑 Endgültig löschen</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteUserConfirmed(${jsArg(user.id)})" style="flex:1">🗑 Endgültig löschen</button>
         <button class="btn btn-ghost btn-sm" onclick="openUserModal()" style="flex:1">Abbrechen</button>
       </div>
     </div>`;
@@ -4840,7 +4905,8 @@ async function deleteUserConfirmed(userId){
 async function editUser(userId){
   const user = _usersCache.find(u=>u.id===userId);
   if(!user) return;
-  userUrls = [...(user.apprise_urls||[])];
+  _editUserId = userId;
+  userUrls = (user.apprise_urls_masked||[]).map((m,i)=>({kind:"stored", idx:i, ...m}));
   const mention      = user.notification_mention || "";
   const confirmChk   = !!user.notification_confirm;
   const digestDay    = user.digest_day ?? 6;
@@ -4875,14 +4941,16 @@ async function editUser(userId){
         </summary>
         <div class="usr-body">
           <div class="usr-label">Apprise-URLs</div>
-          <div class="usr-hint" style="margin-top:0">z.B. <code>tgram://TOKEN/CHATID</code> | <code>gotify://host/token</code></div>
+          <div class="usr-hint" style="margin-top:0">Erlaubt: <code>discord://</code>, <code>ntfy://</code>, <code>ntfys://</code>, <code>mailtos://</code></div>
           <div class="url-list" id="userUrlList"></div>
-          <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
-            <input class="form-input" id="newUserUrlInput" placeholder="Neue Apprise-URL …"
+          <div class="usr-hint" id="userUrlHint"></div>
+          <div style="display:flex;gap:6px;margin-top:10px;align-items:center">
+            <input class="form-input" id="newUserUrlInput" placeholder="Neue Apprise-URL …" aria-label="Neue Apprise-URL"
                    style="flex:1" oninput="toggleUserAddUrlBtn(this)"/>
             <button class="btn btn-ghost btn-sm" id="addUserUrlBtn" onclick="addUserUrl()"
                     style="display:none;white-space:nowrap">+ Hinzufügen</button>
           </div>
+          <div class="usr-err" id="newUserUrlErr" role="alert"></div>
 
           <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <input class="form-input" id="editUserMention" value="${esc(mention)}"
@@ -4962,8 +5030,8 @@ async function editUser(userId){
       </details>
 
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="saveEditUser('${userId}')" style="flex:1">Speichern</button>
-        <button class="btn btn-ghost btn-sm" onclick="testUserNotification()">🔔 Testen</button>
+        <button class="btn btn-primary btn-sm" onclick="saveEditUser(${jsArg(userId)})" style="flex:1">Speichern</button>
+        <button class="btn btn-ghost btn-sm" onclick="testUserNotification()">Alle testen</button>
         <button class="btn btn-ghost btn-sm" onclick="openUserModal()">Abbrechen</button>
       </div>
     </div>`;
@@ -5011,12 +5079,17 @@ async function saveEditUser(userId){
   const digestTime = document.getElementById("editUserDigestTime")?.value || "20:00";
   const dailyDigestTime = document.getElementById("editUserDailyDigestTime")?.value || "21:00";
   const wlDigest   = document.getElementById("editUserWlDigest")?.checked||false;
-  const body    = {name, apprise_urls:userUrls, notification_mention:mention, notification_confirm:confirm,
+  const body    = {name, apprise_urls:userUrls.map(u=>u.kind==="stored" ? {keep:u.idx} : u.url),
+                   notification_mention:mention, notification_confirm:confirm,
                    digest_day:digestDay, digest_time:digestTime, daily_digest_time:dailyDigestTime,
                    daily_watchlist_digest:wlDigest};
   if(pin) body.pin = pin;
-  await fetch(`${API}/users/${userId}`, {method:"PATCH",
+  const r = await fetch(`${API}/users/${userId}`, {method:"PATCH",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if(!r.ok){
+    const d = await r.json().catch(()=>({}));
+    toast(d.error || "Speichern fehlgeschlagen", false); return;   // Formular bleibt offen, nichts geht verloren
+  }
   if(activeUser?.id === userId){
     _usersCache = await fetch(`${API}/users`).then(r=>r.json());
     activeUser  = _usersCache.find(u=>u.id===userId) || activeUser;
@@ -5078,7 +5151,7 @@ async function openNotifModal(){
     const allChip = `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfUall" onclick="setNotifUserFilter('all')" style="font-size:12px">Alle</button>`;
     const userChips = namedUsers.map(u =>
         `<button class="btn btn-ghost btn-sm notif-filter-btn" id="nfU_${u.id}"
-                 onclick="setNotifUserFilter('${u.id}')"
+                 onclick="setNotifUserFilter(${jsArg(u.id)})"
                  style="font-size:12px">${esc(u.name)}</button>`
       ).join("");
     userWrap.innerHTML = allChip + userChips;
@@ -5137,10 +5210,10 @@ function _renderNotifList(){
       daySep = `<div class="notif-day-sep">${esc(_notifDayLabel(day))}</div>`;
       lastDay = day;
     }
-    const userTag = n.user_name ? `<span style="font-size:10px;color:var(--accent);margin-left:6px">👤 ${n.user_name}</span>` : "";
+    const userTag = n.user_name ? `<span style="font-size:10px;color:var(--accent);margin-left:6px">👤 ${esc(n.user_name)}</span>` : "";
     return `${daySep}<div class="notif-item ${n.success?typeClass[n.type]||n.type:"fail"}">
-      <div class="notif-title">${typeLabel[n.type]||n.type} &nbsp; ${n.title}${userTag}</div>
-      <div class="notif-body">${n.body}</div>
+      <div class="notif-title">${esc(typeLabel[n.type]||n.type)} &nbsp; ${esc(n.title)}${userTag}</div>
+      <div class="notif-body">${esc(n.body)}</div>
       <div class="notif-meta"><span>${n.time}</span><span>${n.success?"✓ OK":"✗ Fehler"}</span></div>
     </div>`;
   }).join("") + '</div>';
@@ -5175,6 +5248,14 @@ let _scrollY = 0;
 // einzeln aufgeführt. Jeder Eintrag deckt eine Versionsspanne ab,
 // da meist mehrere kleine Versionsbumps zu einem Eintrag gehören.
 const CHANGELOG = [
+  {
+    label: "September 2026",
+    versions: "Frontend v2.13.72 · Backend v2.8.40",
+    changes: [
+      "Sicherheits-Härtung: Freitextfelder (Aktienname, Börse, ISIN, Sektor, Verlauf-Texte, Suchtreffer) werden überall escaped und Inline-Handler übergeben ihre Werte sicher — schließt mehrere Stellen, an denen eingeschleuster HTML-/Script-Text ausgeführt werden konnte. Das Backend prüft Ticker, ISIN, Längen, Einstellungen und Request-Größe und antwortet bei ungültigen Eingaben mit einer klaren Fehlermeldung statt eines Serverfehlers.",
+      "Apprise-URLs: erlaubt sind nur noch Discord, ntfy (ntfy://, ntfys://) und E-Mail (mailtos://). Gespeicherte URLs enthalten Zugangsdaten und werden im Benutzer-Formular nur noch maskiert angezeigt (Dienst-Chip + z. B. discord://•••/•••); ändern heißt entfernen und neu hinzufügen. Jede URL lässt sich einzeln testen, „Alle testen“ testet alle. Bereits gespeicherte URLs anderer Dienste werden nicht mehr bedient und im Formular als „nicht erlaubt“ markiert."
+    ]
+  },
   {
     label: "September 2026",
     versions: "Frontend v2.13.71 · Backend v2.8.35–39",
@@ -6571,9 +6652,9 @@ function renderEgList(){
       <div class="eg-icon">${r.type === "div" ? "&#128181;" : "&#128200;"}</div>
       <div class="eg-info" data-name="${esc(r.name)}"${r.unresolved ? "" : ` onclick="pickEgStock(this.dataset.name)"`}>
         ${r.unresolved
-          ? `<span class="eg-name-unresolved">ISIN ${esc(r.isin || "—")}</span><button class="eg-edit-name-btn" onclick="event.stopPropagation();startEgNameEdit('${r.id}','${r.type}')">&#9998; Namen vergeben</button>`
+          ? `<span class="eg-name-unresolved">ISIN ${esc(r.isin || "—")}</span><button class="eg-edit-name-btn" onclick="event.stopPropagation();startEgNameEdit(${jsArg(r.id)},${jsArg(r.type)})">&#9998; Namen vergeben</button>`
           : `<div class="eg-name">${esc(r.name)}${r.ticker ? ` (${esc(r.ticker)})` : ""}</div>`}
-        <div class="eg-date">${fmtEgDate(r.date)} · ${r.label}</div>
+        <div class="eg-date">${fmtEgDate(r.date)} · ${esc(r.label)}</div>
       </div>
       <div class="eg-amount" style="color:${r.amount >= 0 ? "var(--green)" : "var(--red)"}">${fmtEgAmount(r.amount)}</div>
     </div>`).join("");
@@ -6626,8 +6707,8 @@ function startEgNameEdit(id, type){
   info.innerHTML = `
     <div class="eg-name-edit-row" onclick="event.stopPropagation()">
       <input type="text" class="eg-name-input" id="eg-name-input-${id}" placeholder="Name eingeben…"
-             onkeydown="if(event.key==='Enter')saveEgName('${id}','${type}');if(event.key==='Escape')renderEgList()"/>
-      <button class="btn btn-primary btn-sm" onclick="saveEgName('${id}','${type}')">&#10003;</button>
+             onkeydown="if(event.key==='Enter')saveEgName(${jsArg(id)},${jsArg(type)});if(event.key==='Escape')renderEgList()"/>
+      <button class="btn btn-primary btn-sm" onclick="saveEgName(${jsArg(id)},${jsArg(type)})">&#10003;</button>
       <button class="btn btn-ghost btn-sm" onclick="renderEgList()">&#10005;</button>
     </div>`;
   document.getElementById(`eg-name-input-${id}`).focus();
@@ -6884,7 +6965,7 @@ async function loadParqetStatus(depotId){
       if(s.has_backup){
         const btime = s.backup_time ? `<br><span style="font-size:10px;font-weight:400;opacity:.6">vom ${s.backup_time}</span>` : "";
         btns += `<button class="btn btn-ghost btn-sm" style="color:var(--muted);line-height:1.4"
-                   onclick="parqetUndoSync('${depotId}')">&#8617; Rückgängig${btime}</button>`;
+                   onclick="parqetUndoSync(${jsArg(depotId)})">&#8617; Rückgängig${btime}</button>`;
       }
       btns += `<button class="btn btn-danger btn-sm" onclick="doParqetDisconnect()">Trennen</button>`;
       actions.innerHTML = btns;
@@ -7228,7 +7309,7 @@ async function openParqetImportModal(newStocks){
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px" id="pqi-${i}">
         <div style="font-weight:600;font-size:13px;margin-bottom:2px">${esc(item.name || item.isin)}</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-          ISIN: ${item.isin} &nbsp;·&nbsp; ${item.shares} Stk. &nbsp;·&nbsp; Einstand: ${fmtEUR(item.buy_price_eur)}
+          ISIN: ${esc(item.isin)} &nbsp;·&nbsp; ${esc(item.shares)} Stk. &nbsp;·&nbsp; Einstand: ${fmtEUR(item.buy_price_eur)}
         </div>
         <div id="pqi-status-${i}" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
         <input class="form-input" placeholder="Ticker suchen …" autocomplete="off" id="pqi-search-${i}"
@@ -7309,7 +7390,7 @@ async function pqiSearch(idx, q){
       pqiSelect(idx, 0, preferred);
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map((it,j) =>
         `<div class="search-item${it.ticker===preferred.ticker?' selected-result':''}"
-              onclick="pqiSelect(${idx},${j},${JSON.stringify(it).replace(/"/g,'&quot;')})">
+              onclick="pqiSelect(${idx},${j},${esc(JSON.stringify(it))})">
           <span style="font-size:12px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
             ${it.ticker.endsWith(".DE")?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
@@ -7440,23 +7521,23 @@ function openMismatchModal(mismatches){
   list.innerHTML = mismatches.map((m,i) => `
     <div style="background:var(--bg3);border:1px solid rgba(234,179,8,.3);border-radius:8px;padding:12px 14px">
       <div style="font-size:11px;color:var(--yellow);font-weight:600;margin-bottom:6px">
-        &#9888; ISIN: ${m.isin}
+        &#9888; ISIN: ${esc(m.isin)}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:12px">
         <div style="background:var(--bg2);border-radius:6px;padding:8px">
           <div style="color:var(--muted);margin-bottom:3px">Parqet</div>
-          <div style="font-weight:600">${m.parqet_name}</div>
+          <div style="font-weight:600">${esc(m.parqet_name)}</div>
           <div style="color:var(--muted);margin-top:3px">${m.shares} Stk. · Einstand: ${fmtEUR(m.avg_price_eur)}</div>
         </div>
         <div style="background:var(--bg2);border-radius:6px;padding:8px">
           <div style="color:var(--muted);margin-bottom:3px">ATH-Tracker</div>
-          <div style="font-weight:600">${m.depot_name}</div>
-          <div style="color:var(--muted);margin-top:3px">${m.depot_ticker}</div>
+          <div style="font-weight:600">${esc(m.depot_name)}</div>
+          <div style="color:var(--muted);margin-top:3px">${esc(m.depot_ticker)}</div>
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm"
-          onclick="applyMismatch(${i},${JSON.stringify(m).replace(/"/g,'&quot;')})">
+          onclick="applyMismatch(${i},${esc(JSON.stringify(m))})">
           &#10003; Übernehmen — gleiche Aktie
         </button>
         <button class="btn btn-ghost btn-sm"
@@ -7498,9 +7579,9 @@ function openRemovedModal(removed){
   list.innerHTML = _removedItems.map((r,i) => `
     <div id="removedItem${i}" style="background:var(--bg3);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:12px 14px">
       <div style="font-size:11px;color:var(--red);font-weight:600;margin-bottom:6px">
-        &#128683; ISIN: ${r.isin}
+        &#128683; ISIN: ${esc(r.isin)}
       </div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${r.name}${r.ticker ? " ("+r.ticker+")" : ""}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${esc(r.name)}${r.ticker ? " ("+esc(r.ticker)+")" : ""}</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
         Noch im ATH-Tracker: ${r.shares ?? "?"} Stk. · Einstand: ${r.buy_price_eur != null ? fmtEUR(r.buy_price_eur) : "—"}
       </div>
@@ -7638,7 +7719,7 @@ function _ctLoadExchangeOptions(){
       const isXetra = it => it.ticker.endsWith(".DE") || !!it.xetra_suggested;
       items.sort((a,b) => (isXetra(b)?1:0) - (isXetra(a)?1:0));
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
-        `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
+        `<div class="search-item" onclick="ctSelect(${esc(JSON.stringify(it))})">
           <span style="font-size:13px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
             ${isXetra(it)?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
@@ -7702,7 +7783,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const isXetra2 = it => it.ticker.endsWith(".DE") || !!it.xetra_suggested;
       items.sort((a,b) => (isXetra2(b)?1:0) - (isXetra2(a)?1:0));
       res.innerHTML = '<div class="search-results">' + items.slice(0,8).map(it =>
-        `<div class="search-item" onclick="ctSelect(${JSON.stringify(it).replace(/"/g,'&quot;')})">
+        `<div class="search-item" onclick="ctSelect(${esc(JSON.stringify(it))})">
           <span style="font-size:13px;font-weight:500">${esc(it.name)}</span>
           <div class="si-right">
             ${isXetra2(it)?'<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green)">XETRA</span>':""}
@@ -7815,7 +7896,7 @@ async function loadSplitsTable(){
         <div style="font-size:12px;color:var(--muted);white-space:nowrap;flex:1">${s.date}</div>
         <div style="font-size:13px;font-weight:600;white-space:nowrap;min-width:36px;text-align:right">${fmtSplitRatio(s.ratio)}</div>
         <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--muted);flex-shrink:0"
-          onclick="deleteSplit('${s.isin}','${s.date}')">🗑</button>
+          onclick="deleteSplit(${jsArg(s.isin)},${jsArg(s.date)})">🗑</button>
       </div>`;
 
     tbody.innerHTML = sorted.map(g => {
@@ -7824,7 +7905,7 @@ async function loadSplitsTable(){
       const open   = _splitGroupsOpen.has(s0.isin);
       const header = `
         <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;${single ? "" : "cursor:pointer"}"
-             ${single ? "" : `onclick="toggleSplitGroup('${s0.isin}')"`}>
+             ${single ? "" : `onclick="toggleSplitGroup(${jsArg(s0.isin)})"`}>
           <span style="font-size:20px;line-height:1;color:var(--muted);width:22px;flex-shrink:0;text-align:center">${single ? "" : (open ? "▾" : "▸")}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s0.name)||"—"}</div>
@@ -7834,7 +7915,7 @@ async function loadSplitsTable(){
           <div style="font-size:12px;color:var(--muted);white-space:nowrap">${s0.date}</div>
           <div style="font-size:13px;font-weight:600;white-space:nowrap;min-width:36px;text-align:right">${fmtSplitRatio(s0.ratio)}</div>
           <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--muted);flex-shrink:0"
-            onclick="deleteSplit('${s0.isin}','${s0.date}')">🗑</button>`
+            onclick="deleteSplit(${jsArg(s0.isin)},${jsArg(s0.date)})">🗑</button>`
           : `<div style="font-size:11px;color:var(--muted);white-space:nowrap">${g.length} Splits</div>`}
         </div>`;
       return `
@@ -7880,7 +7961,7 @@ function onSplitStockSearch(q){
   if(matches.length){
     box.innerHTML = matches.map(s =>
       `<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border)"
-            onmousedown="selectSplitStock('${s.isin}')">
+            onmousedown="selectSplitStock(${jsArg(s.isin)})">
         <span style="font-weight:500">${esc(s.name)}</span>
         <span style="font-size:11px;color:var(--muted);margin-left:6px">${esc(s.ticker)}</span>
       </div>`
@@ -8042,7 +8123,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.71 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.72 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
