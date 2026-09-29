@@ -2064,6 +2064,25 @@ function toast(msg, ok=true){
   document.getElementById("toasts").appendChild(d); setTimeout(()=>d.remove(),3500);
 }
 
+// Globale Behandlung von HTTP 429 (Rate-Limit von nginx oder Backend): Die Schleifen über Ticker
+// (ATH-Prüfung, Watchlist-Refresh) prüfen r.ok nicht und würden abgelehnte Ticker sonst stillschweigend
+// überspringen. Der Toast erscheint höchstens alle 4 s, damit eine Schleife nicht 50 Meldungen erzeugt.
+// Die Antwort wird unverändert weitergereicht — bestehender Code läuft wie zuvor.
+(function(){
+  const _origFetch = window.fetch.bind(window);
+  let _last429 = 0;
+  window.fetch = async function(...args){
+    const r = await _origFetch(...args);
+    if(r.status === 429 && Date.now() - _last429 > 4000){
+      _last429 = Date.now();
+      let msg = "Zu viele Anfragen, bitte kurz warten und erneut versuchen";
+      try { const j = await r.clone().json(); if(j && j.error) msg = j.error; } catch(e) {}
+      toast(msg, false);
+    }
+    return r;
+  };
+})();
+
 // HTML-Escaping für alle frei editierbaren Felder (Aktien-, Watchlist-, Depot-,
 // Benutzernamen), die in innerHTML-Templates landen. Verhindert gespeicherten
 // XSS falls jemand z.B. über die PATCH-API einen Namen mit HTML/Event-Handlern setzt.
@@ -5250,6 +5269,14 @@ let _scrollY = 0;
 const CHANGELOG = [
   {
     label: "September 2026",
+    versions: "Frontend v2.13.73 · Backend v2.8.41",
+    changes: [
+      "Härtung, Schritt 2: nginx begrenzt jetzt die Anfragen pro Client — ganze Depot-Operationen (Kurs-Refresh aller Aktien, Parqet-Sync/-Import, ATH-Prüfung des Depots) auf eine je 10 Sekunden, einzelne Kursabfragen, Suche und PIN-Prüfung großzügiger. Im normalen Betrieb merkst du davon nichts; wird ein Limit erreicht, erscheint die Meldung „Zu viele Anfragen, bitte kurz warten und erneut versuchen“.",
+      "Der nie genutzte Debug-Endpunkt der Parqet-Anbindung wurde entfernt. Die Parqet Client ID wird beim Speichern geprüft (Buchstaben, Ziffern, Punkt, Unter- und Bindestrich), und Suchbegriffe werden für externe Abfragen sauber kodiert."
+    ]
+  },
+  {
+    label: "September 2026",
     versions: "Frontend v2.13.72 · Backend v2.8.40",
     changes: [
       "Sicherheits-Härtung: Freitextfelder (Aktienname, Börse, ISIN, Sektor, Verlauf-Texte, Suchtreffer) werden überall escaped und Inline-Handler übergeben ihre Werte sicher — schließt mehrere Stellen, an denen eingeschleuster HTML-/Script-Text ausgeführt werden konnte. Das Backend prüft Ticker, ISIN, Längen, Einstellungen und Request-Größe und antwortet bei ungültigen Eingaben mit einer klaren Fehlermeldung statt eines Serverfehlers.",
@@ -8123,7 +8150,7 @@ setInterval(loadSchedulerStatus,30000);
 setInterval(updateHealthStatusDot,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v2.13.72 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v2.13.73 &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
