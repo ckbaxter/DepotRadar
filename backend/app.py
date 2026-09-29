@@ -33,7 +33,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.40"
+VERSION           = "2.8.41"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -250,6 +250,7 @@ def _clean_patch_field(key, val):
 # Container an beliebige Ziele senden (SSRF). Deshalb nur die tatsächlich genutzten Dienste.
 # (ntfy und mailtos erlauben weiterhin frei wählbare Hosts — das ist bei selbst gehosteten
 # Servern gewollt und im Homelab-Kontext akzeptiert.)
+_CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9._\-]{1,100}$")   # Parqet-Client-ID (v2.8.41)
 _APPRISE_ALLOWED_SCHEMES = ("discord", "ntfy", "ntfys", "mailtos")
 _APPRISE_MAX_URLS, _APPRISE_MAX_LEN = 10, 500
 _APPRISE_LABEL = {"discord": "Discord", "ntfy": "ntfy", "ntfys": "ntfy", "mailtos": "E-Mail"}
@@ -2792,7 +2793,7 @@ def parqet_connect(depot_id):
     for k in [k for k,v in _oauth_states.items() if time_mod.time()-v.get("ts",0)>600]:
         _oauth_states.pop(k, None)
     callback = f"{APP_URL}/api/parqet/callback"
-    auth_url = (f"{PARQET_AUTH_URL}?client_id={client_id}&response_type=code"
+    auth_url = (f"{PARQET_AUTH_URL}?client_id={urlquote(client_id, safe='')}&response_type=code"
                 f"&scope=portfolio%3Aread&redirect_uri={urlquote(callback)}"
                 f"&code_challenge={challenge}&code_challenge_method=S256&state={state}")
     return jsonify({"auth_url": auth_url})
@@ -2921,8 +2922,8 @@ def parqet_select_portfolio(depot_id):
 
 def _fetch_all_parqet_activities(depot, depot_id, pid):
     """Lädt alle Parqet-Aktivitäten (buy/sell/transfer/dividend) vollständig paginiert.
-    Kapselt den while-True/cursor-Loop der zuvor in parqet_sync und parqet_debug
-    dupliziert war. Wirft eine Exception bei Netzwerk- oder API-Fehlern.
+    Kapselt den while-True/cursor-Loop, der zuvor in parqet_sync und einem inzwischen
+    entfernten Debug-Endpoint (bis v2.8.40) dupliziert war. Wirft eine Exception bei Netzwerk- oder API-Fehlern.
     dividend seit v2.8.25 ergänzt (für _sync_earnings) — calculate_holdings() ignoriert
     den Typ unverändert (nur buy/sell/transfer_* werden dort behandelt), kein Risiko
     für die bestehende Holdings-Berechnung."""
@@ -2958,7 +2959,7 @@ def _resolve_isin_name(isin):
     try:
         bh = {"User-Agent":"Mozilla/5.0","Accept":"application/json",
               "Origin":"https://www.boerse-frankfurt.de","Referer":"https://www.boerse-frankfurt.de/"}
-        r = requests.get(f"https://api.boerse-frankfurt.de/v1/search/quick_search?searchTerms={isin}&limit=1",
+        r = requests.get(f"https://api.boerse-frankfurt.de/v1/search/quick_search?searchTerms={urlquote(isin)}&limit=1",
                          headers=bh, timeout=8)
         items = r.json().get("data", [])
         if items and items[0].get("name"):
@@ -3430,28 +3431,6 @@ def parqet_import_stock(depot_id):
         stocks.append(stock); save_stocks(depot_id, stocks)
         return jsonify({"ok": True, "action": "added", "stock": stock}), 201
 
-@app.route("/api/depots/<depot_id>/parqet/debug", methods=["GET"])
-def parqet_debug(depot_id):
-    """Debug-Endpunkt: zeigt Aktivitätszahl, berechnete Holdings und ISINs im Depot."""
-    depot = get_depot(depot_id)
-    if not depot or not depot.get("parqet", {}).get("connected"):
-        return jsonify({"error": "Nicht verbunden"}), 400
-    pq = depot.get("parqet", {}); pid = pq.get("portfolio_id", ""); out = {}
-    try:
-        all_acts = _fetch_all_parqet_activities(depot, depot_id, pid)
-        out["total_activities"] = len(all_acts)
-        holdings = calculate_holdings(all_acts); out["holdings_count"] = len(holdings)
-        for isin in [s["isin"] for s in load_splits()[:3]]:
-            out[f"holding_{isin}"] = (
-                {k: holdings[isin][k] for k in ("name","shares","avg_price_eur","total_cost")}
-                if isin in holdings else "NOT IN ACTIVITIES"
-            )
-        stocks = load_stocks(depot_id)
-        out["depot_isins"] = {s["ticker"]: s.get("isin", "MISSING") for s in stocks}
-    except Exception as e:
-        out["error"] = str(e)
-    return jsonify(out)
-
 @app.route("/api/depots/<depot_id>/earnings", methods=["GET"])
 def get_depot_earnings(depot_id):
     """Liest realisierte G/V + Dividenden für dieses Depot (befüllt ausschließlich durch
@@ -3853,11 +3832,18 @@ def clear_pending_flags_watchlist(wl_id):
 @app.route("/api/depots/<depot_id>", methods=["PUT"])
 def update_depot(depot_id):
     body = _body(); depots = load_depots()
+    # Parqet-Client-ID: nur Zeichen, die in einer OAuth-Client-ID vorkommen (Muster wie UUIDs/Slugs).
+    # Vor jeder Änderung prüfen, damit bei einem Fehler nichts halb angewendet wird.
+    new_client_id = None
+    if "parqet_client_id" in body:
+        new_client_id = _clean_text(body["parqet_client_id"], 100)
+        if new_client_id and not _CLIENT_ID_RE.match(new_client_id):
+            return jsonify({"error": "Ungültige Parqet Client ID (erlaubt: Buchstaben, Ziffern, . _ -)"}), 400
     for d in depots:
         if d["id"] == depot_id:
             new_name = _clean_text(body.get("name"), 60) if "name" in body else ""
             if new_name: d["name"] = new_name
-            if "parqet_client_id" in body: d["parqet_client_id"] = _clean_text(body["parqet_client_id"], 100)
+            if new_client_id is not None: d["parqet_client_id"] = new_client_id
             if "buy_budget" in body:
                 raw = body["buy_budget"]
                 try:
@@ -4347,7 +4333,7 @@ def search_companies():
     def bff(term):
         bh = {"User-Agent":"Mozilla/5.0","Accept":"application/json",
               "Origin":"https://www.boerse-frankfurt.de","Referer":"https://www.boerse-frankfurt.de/"}
-        r  = requests.get(f"https://api.boerse-frankfurt.de/v1/search/quick_search?searchTerms={term}&limit=6",
+        r  = requests.get(f"https://api.boerse-frankfurt.de/v1/search/quick_search?searchTerms={urlquote(term)}&limit=6",
                           headers=bh, timeout=8)
         return r.json().get("data", [])
 
