@@ -3,6 +3,7 @@ data/
 
 # Docker
 .env
+docker-compose.yml
 
 # macOS
 .DS_Store
