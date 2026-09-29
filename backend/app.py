@@ -1,4 +1,4 @@
-import json, re, time as time_mod, hashlib, base64, secrets, logging, os, math, shutil, uuid as _uuid, threading
+import json, re, time as time_mod, hashlib, hmac, base64, secrets, logging, os, math, shutil, uuid as _uuid, threading
 from contextlib import contextmanager
 from collections import Counter
 from datetime import datetime, timedelta
@@ -8,12 +8,18 @@ import pytz, requests, apprise as apprise_lib
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, jsonify, request, redirect
+from werkzeug.exceptions import HTTPException
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 app = Flask(__name__)
+# Request-Größe begrenzen (seit v2.8.40): die größte legitime Nutzlast ist ein Parqet-Bulk-Import,
+# der weit unter 1 MB liegt — 2 MB lassen reichlich Luft, verhindern aber Speicher-/Platzmissbrauch.
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
 
-DATA_DIR      = "/data"
+# Per Umgebungsvariable überschreibbar (v2.8.40) — vor allem, damit sich app.py für Tests
+# importieren lässt, ohne /data anzulegen. Im Container bleibt der Default /data.
+DATA_DIR      = os.environ.get("DATA_DIR", "/data")
 DEPOTS_FILE   = os.path.join(DATA_DIR, "depots.json")
 WATCHLISTS_FILE = os.path.join(DATA_DIR, "watchlists.json")
 NOTIF_FILE     = os.path.join(DATA_DIR, "notifications.json")
@@ -27,7 +33,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.39"
+VERSION           = "2.8.40"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -189,6 +195,166 @@ _CFG_DEF = {
     "refresh_interval_seconds": 3600,
 }
 
+# ── Eingabe-Validierung (seit v2.8.40) ───────────────────────────
+# Die API hat kein Login (siehe Trust-Modell in CURRENT_STATE.md) — umso wichtiger, dass
+# freie Textfelder begrenzt und Bezeichner streng geprüft werden, bevor sie gespeichert
+# und später im Frontend dargestellt werden. Das Frontend escaped zusätzlich beim Rendern
+# (esc()/jsArg()); beides zusammen ist Absicht (Defense in Depth).
+# Ticker: Yahoo-Symbole wie BRK-B, EUNL.DE, ^GSPC, GC=F, M&M.NS — keine Quotes/Leerzeichen/<>.
+_TICKER_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-^=&]{0,19}$")
+_ISIN_RE   = re.compile(r"^[A-Z0-9]{12}$")
+_CTRL_RE   = re.compile(r"[\x00-\x1f\x7f]")
+_MAX_NAME, _MAX_EXCHANGE, _MAX_SECTOR, _MAX_NOTES, _MAX_MENTION = 120, 40, 60, 2000, 100
+
+def _clean_text(v, maxlen):
+    """Beliebigen Wert in einen bereinigten Text (ohne Steuerzeichen, getrimmt, gekürzt) wandeln."""
+    if v is None: return ""
+    return _CTRL_RE.sub("", str(v)).strip()[:maxlen]
+
+def _valid_ticker(v):
+    """Gibt den normalisierten (Großbuchstaben) Ticker zurück oder None, wenn er ungültig ist."""
+    t = _clean_text(v, 40).upper()
+    return t if _TICKER_RE.match(t) else None
+
+def _clean_isin(v):
+    """Gültige ISIN (12 Zeichen) in Großbuchstaben, sonst leerer String — ISIN ist optional."""
+    i = _clean_text(v, 20).upper()
+    return i if _ISIN_RE.match(i) else ""
+
+def _body():
+    """JSON-Body als dict; fehlender/kaputter/nicht-objekthafter Body → {} statt 500."""
+    b = request.get_json(silent=True)
+    return b if isinstance(b, dict) else {}
+
+def _clean_patch_field(key, val):
+    """Validiert ein per PATCH änderbares Aktienfeld. Wirft ValueError bei ungültigem Wert."""
+    if key == "sector":
+        return _clean_text(val, _MAX_SECTOR)
+    if key == "notes":   # Zeilenumbrüche/Tabs bleiben erhalten, übrige Steuerzeichen fliegen raus
+        return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", "" if val is None else str(val))[:_MAX_NOTES]
+    if key == "ath_alert_enabled":
+        return bool(val)
+    if key == "bought_levels":
+        if not isinstance(val, list) or len(val) > 20:
+            raise ValueError("muss eine Liste (max. 20 Einträge) sein")
+        levels = []
+        for x in val:
+            if isinstance(x, bool) or not isinstance(x, int) or not (0 <= x <= 100):
+                raise ValueError("Level müssen ganze Zahlen von 0 bis 100 sein")
+            levels.append(x)
+        return levels
+    raise ValueError("Feld nicht erlaubt")
+
+# ── Apprise-URLs: Erlaubnisliste, Maskierung, Auflösung (seit v2.8.40) ───────────
+# Apprise kann per json://, xml://, form:// und http(s):// beliebige Requests aus dem
+# Container an beliebige Ziele senden (SSRF). Deshalb nur die tatsächlich genutzten Dienste.
+# (ntfy und mailtos erlauben weiterhin frei wählbare Hosts — das ist bei selbst gehosteten
+# Servern gewollt und im Homelab-Kontext akzeptiert.)
+_APPRISE_ALLOWED_SCHEMES = ("discord", "ntfy", "ntfys", "mailtos")
+_APPRISE_MAX_URLS, _APPRISE_MAX_LEN = 10, 500
+_APPRISE_LABEL = {"discord": "Discord", "ntfy": "ntfy", "ntfys": "ntfy", "mailtos": "E-Mail"}
+_MASK = "•••"   # •••
+_APPRISE_HINT = "Möglich sind discord://, ntfy://, ntfys:// und mailtos://."
+
+def _apprise_scheme(url):
+    m = re.match(r"^\s*([a-z][a-z0-9+.\-]*)://", str(url), re.I)
+    return m.group(1).lower() if m else None
+
+def validate_apprise_url(url):
+    """Prüft eine neu eingegebene Apprise-URL. Rückgabe: (bereinigte_url, None) oder (None, Fehlertext)."""
+    if not isinstance(url, str):
+        return None, "URL muss ein Text sein"
+    u = url.strip()
+    if not u:
+        return None, "URL darf nicht leer sein"
+    if len(u) > _APPRISE_MAX_LEN or re.search(r"[\x00-\x1f\x7f]", u):
+        return None, "URL ist zu lang oder enthält ungültige Zeichen"
+    scheme = _apprise_scheme(u)
+    if scheme is None:
+        return None, f"Ungültige URL. {_APPRISE_HINT}"
+    if scheme not in _APPRISE_ALLOWED_SCHEMES:
+        return None, f"Dieser Dienst ({scheme}://) ist nicht erlaubt. {_APPRISE_HINT}"
+    # Apprise zerlegt einen String mit Komma/Leerzeichen in mehrere URLs — ein Eintrag = eine URL
+    if re.search(r"[,;\s]\s*[a-z][a-z0-9+.\-]*://", u[1:], re.I):
+        return None, "Pro Eintrag ist nur eine URL erlaubt"
+    return u, None
+
+def mask_apprise_url(url):
+    """Anzeigeform einer gespeicherten Apprise-URL ohne Zugangsdaten. Rückgabe:
+    {"service": Chip-Text, "masked": Text, "allowed": bool}. Bei ntfy/E-Mail bleibt der Host
+    sichtbar (kein Geheimnis), Token, Topic und Zugangsdaten werden verdeckt."""
+    scheme = _apprise_scheme(url) or "?"
+    text   = str(url).strip()
+    rest   = text.split("://", 1)[1] if "://" in text else ""
+    main, has_query = rest.split("?", 1)[0], "?" in rest
+    if scheme == "discord":
+        masked = f"discord://{_MASK}/{_MASK}"
+    elif scheme in ("ntfy", "ntfys"):
+        netloc, _, path = main.partition("/")
+        if path.strip("/"):
+            masked = f"{scheme}://{netloc.rsplit('@', 1)[-1]}/{_MASK}"
+        else:
+            masked = f"{scheme}://{_MASK}"   # ntfy://<topic> (ntfy.sh): das Topic ist das Geheimnis
+    elif scheme == "mailtos":
+        netloc = main.partition("/")[0]
+        if "@" in netloc:
+            masked = f"mailtos://{_MASK}@{netloc.rsplit('@', 1)[-1]}"
+        elif ":" in netloc:
+            masked = f"mailtos://{_MASK}"
+        else:
+            masked = f"mailtos://{netloc}"
+    else:
+        masked = f"{scheme}://{_MASK}"
+    if has_query:
+        masked += f"?{_MASK}"
+    return {"service": _APPRISE_LABEL.get(scheme, scheme),
+            "masked": masked, "allowed": scheme in _APPRISE_ALLOWED_SCHEMES}
+
+def resolve_apprise_url_list(stored, items):
+    """Baut aus dem Request-Feld apprise_urls die neue URL-Liste eines Users. Einträge sind
+    entweder {"keep": <Index in der gespeicherten Liste>} (unverändert übernehmen, ohne dass
+    die URL je zum Client musste) oder ein String (neue URL, wird geprüft).
+    Rückgabe: (liste, None) oder (None, Fehlertext)."""
+    if not isinstance(items, list):
+        return None, "apprise_urls muss eine Liste sein"
+    if len(items) > _APPRISE_MAX_URLS:
+        return None, f"Maximal {_APPRISE_MAX_URLS} URLs pro Benutzer"
+    out = []
+    for it in items:
+        if isinstance(it, dict) and "keep" in it:
+            i = it["keep"]
+            if isinstance(i, bool) or not isinstance(i, int) or not (0 <= i < len(stored)):
+                return None, "Gespeicherte URL nicht gefunden — bitte das Formular neu öffnen"
+            url = stored[i]
+        else:
+            url, err = validate_apprise_url(it)
+            if err: return None, err
+        if url not in out:
+            out.append(url)
+    return out, None
+
+def _public_user(u):
+    """Benutzer-Objekt für API-Antworten: ohne PIN-Daten und ohne Apprise-URLs im Klartext
+    (die enthalten Tokens/Passwörter) — stattdessen maskierte Anzeigeform in gleicher Reihenfolge."""
+    out = {k: v for k, v in u.items() if k not in ("pin_hash", "pin_salt", "apprise_urls")}
+    out["has_pin"]             = bool(u.get("pin_hash"))
+    out["is_admin"]            = is_admin_user(u)
+    out["apprise_urls_masked"] = [mask_apprise_url(x) for x in (u.get("apprise_urls") or [])]
+    return out
+
+# Einheitliche JSON-Fehlerantworten (statt HTML-Fehlerseiten bzw. Stacktrace-losem 500 ohne Body)
+_HTTP_ERR_TEXT = {400: "Ungültige Anfrage", 404: "Nicht gefunden", 405: "Methode nicht erlaubt",
+                  413: "Anfrage zu groß", 415: "Ungültiger Inhaltstyp (JSON erwartet)"}
+
+@app.errorhandler(HTTPException)
+def _handle_http_error(e):
+    return jsonify({"error": _HTTP_ERR_TEXT.get(e.code, e.name)}), e.code
+
+@app.errorhandler(Exception)
+def _handle_unexpected_error(e):
+    log.exception(f"Unbehandelter Fehler in {request.method} {request.path}")
+    return jsonify({"error": "Interner Serverfehler"}), 500
+
 # ── File helpers ──────────────────────────────────────────────────
 def _safe(s):            return re.sub(r'[^a-z0-9_\-]', '_', s.lower())
 def depot_file(d):        return os.path.join(DATA_DIR, f"depot_{_safe(d)}.json")
@@ -331,9 +497,9 @@ def verify_user_pin(user, pin):
     if not stored: return True, False
     salt = user.get("pin_salt")
     if salt:
-        return hash_pin(str(pin), salt) == stored, False
+        return hmac.compare_digest(hash_pin(str(pin), salt) or "", stored), False
     # Legacy-Format: reines, unsalted SHA256
-    if hashlib.sha256(str(pin).encode()).hexdigest() == stored:
+    if hmac.compare_digest(hashlib.sha256(str(pin).encode()).hexdigest(), stored):
         set_user_pin(user, pin)
         return True, True
     return False, False
@@ -1124,6 +1290,15 @@ def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, w
     Testnachrichtigungen übergeben "test", damit sie im Verlauf als ✅ Test erscheinen
     statt wie ein echter Alarm auszusehen — vorher wurde jeder Versand pauschal als
     "alert" geloggt und der Frontend-Typ "test" war faktisch tot."""
+    # Nur erlaubte Dienste versenden (v2.8.40): schützt auch vor URLs, die vor der
+    # Erlaubnisliste bereits gespeichert wurden — sie werden übersprungen statt gesendet.
+    allowed = []
+    for u in urls or []:
+        if _apprise_scheme(u) in _APPRISE_ALLOWED_SCHEMES:
+            allowed.append(u)
+        else:
+            log.warning(f"Apprise-URL übersprungen (Dienst nicht erlaubt): {mask_apprise_url(u)['masked']}")
+    urls = allowed
     if not urls: return False
     try:
         ok = True
@@ -3166,8 +3341,9 @@ def parqet_apply_mismatch(depot_id):
 def parqet_import_bulk(depot_id):
     """Importiert mehrere neue Aktien in einem einzigen Schreibvorgang.
     Gibt Ergebnisse als Liste zurück — Index entspricht Input-Index."""
-    items  = request.get_json()
-    if not items: return jsonify({"error": "Keine Daten"}), 400
+    items  = request.get_json(silent=True)
+    if not isinstance(items, list) or not items: return jsonify({"error": "Keine Daten"}), 400
+    if len(items) > 500: return jsonify({"error": "Zu viele Einträge (max. 500)"}), 400
     with depot_lock(depot_id):
         stocks          = load_stocks(depot_id)
         # Backup vor Import anlegen (Import = immer Änderung)
@@ -3177,8 +3353,11 @@ def parqet_import_bulk(depot_id):
         existing_ticker = {s["ticker"].upper() for s in stocks}
         results = []
         for item in items:
-            ticker = item.get("ticker","").strip()
-            isin   = (item.get("isin") or "").strip().upper()
+            if not isinstance(item, dict):
+                results.append({"ok": False, "error": "Ungültiger Eintrag"})
+                continue
+            ticker = _valid_ticker(item.get("ticker")) or ""
+            isin   = _clean_isin(item.get("isin"))
             # Duplikat-Check: ISIN oder Ticker bereits vorhanden
             if isin and isin in existing_isins:
                 results.append({"ok": False, "skipped": True, "reason": "ISIN bereits im Depot"})
@@ -3188,20 +3367,26 @@ def parqet_import_bulk(depot_id):
                 if isin:
                     for s in stocks:
                         if s["ticker"].upper() == ticker.upper() and not s.get("isin"):
-                            s["isin"] = item.get("isin","")
+                            s["isin"] = isin
                             log.info(f"ISIN nachträglich gesetzt: {ticker} → {isin}")
                             break
                 results.append({"ok": False, "skipped": True, "reason": "Ticker bereits im Depot"})
                 continue
             if not ticker:
-                results.append({"ok": False, "error": "Kein Ticker"})
+                results.append({"ok": False, "error": "Kein gültiger Ticker"})
                 continue
             try:
+                try:
+                    imp_price = _parse_import_number(item.get("buy_price_eur"), 4)
+                    imp_shares = _parse_import_number(item.get("shares"), 6)
+                except ValueError as ve:
+                    raise ValueError(f"Ungültige Positionsangabe: {ve}")
                 data  = fetch_stock_data(ticker)
                 stock = _make_stock(data, {
-                    "ticker": ticker, "name": item.get("name",""), "exchange": item.get("exchange",""),
-                    "isin": item.get("isin",""), "buy_price_eur": item.get("buy_price_eur"),
-                    "shares": item.get("shares"), "last_notified_block": 0,
+                    "ticker": ticker, "name": _clean_text(item.get("name"), _MAX_NAME),
+                    "exchange": _clean_text(item.get("exchange"), _MAX_EXCHANGE),
+                    "isin": isin, "buy_price_eur": imp_price,
+                    "shares": imp_shares, "last_notified_block": 0,
                     "parqet_synced": True  # Werte kommen von Parqet (siehe v2.8.15)
                 })
                 stocks.append(stock)
@@ -3215,14 +3400,17 @@ def parqet_import_bulk(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/import", methods=["POST"])
 def parqet_import_stock(depot_id):
-    body      = request.get_json() or {}
-    ticker    = body.get("ticker", "").strip().upper()
-    name      = body.get("name", "").strip()
-    exchange  = body.get("exchange", "").strip()
-    isin      = body.get("isin", "").strip()
-    buy_price = float(body.get("buy_price_eur") or 0)
-    shares    = float(body.get("shares") or 0)
-    if not ticker or not name: return jsonify({"error": "ticker und name erforderlich"}), 400
+    body      = _body()
+    ticker    = _valid_ticker(body.get("ticker"))
+    name      = _clean_text(body.get("name"), _MAX_NAME)
+    exchange  = _clean_text(body.get("exchange"), _MAX_EXCHANGE)
+    isin      = _clean_isin(body.get("isin"))
+    try:
+        buy_price = _parse_import_number(body.get("buy_price_eur"), 4) or 0
+        shares    = _parse_import_number(body.get("shares"), 6) or 0
+    except ValueError as e:
+        return jsonify({"error": f"Ungültige Positionsangabe: {e}"}), 400
+    if not ticker or not name: return jsonify({"error": "gültiger ticker und name erforderlich"}), 400
     with depot_lock(depot_id):
         stocks   = load_stocks(depot_id)
         existing = next((s for s in stocks if s["ticker"] == ticker), None)
@@ -3355,32 +3543,37 @@ def ath_check(depot_id):
                 "Alle ATH-Werte sind korrekt ✓", True, depot_id=depot_id)
     return jsonify(results)
 
+def _ath_log_text(data):
+    """Verlauf-Text einer ATH-Prüfung aus den Client-Daten. Zahlen werden geprüft und Namen
+    gekürzt, damit über diese Route kein beliebiger Text (oder ein 500er) im Verlauf landet."""
+    items = data.get("items", [])
+    if not isinstance(items, list): items = []
+    parts = []
+    for r in items[:100]:
+        try:
+            parts.append(f"{_clean_text(r['name'], _MAX_NAME)}: {float(r['stored_ath']):.2f}→{float(r['yahoo_ath']):.2f} EUR")
+        except (KeyError, TypeError, ValueError):
+            continue
+    if parts:
+        return f"{len(parts)} Abweichung(en) gefunden — " + ", ".join(parts)
+    return "Alle ATH-Werte sind korrekt ✓"
+
 @app.route("/api/depots/<depot_id>/ath-log", methods=["POST"])
 def ath_log(depot_id):
     """Schreibt das Ergebnis einer ATH-Prüfung in den Verlauf."""
-    data   = request.get_json() or {}
+    data   = _body()
     depots = load_depots()
     depot  = next((d for d in depots if d["id"] == depot_id), {})
-    count  = data.get("count", 0)
-    items  = data.get("items", [])
-    if count:
-        body = f"{count} Abweichung(en) gefunden — " +                ", ".join(f"{r['name']}: {r['stored_ath']:.2f}→{r['yahoo_ath']:.2f} EUR" for r in items)
-    else:
-        body = "Alle ATH-Werte sind korrekt ✓"
+    body   = _ath_log_text(data)
     add_log("manual_refresh", f"ATH-Prüfung: {depot.get('name', depot_id)}", body, True, depot_id=depot_id)
     return jsonify({"ok": True})
 
 @app.route("/api/watchlists/<wl_id>/ath-log", methods=["POST"])
 def ath_log_watchlist(wl_id):
     """Analog zu ath_log, aber für eine (eigenständige) Watchlist statt eines Depots."""
-    data = request.get_json() or {}
+    data = _body()
     wl   = get_watchlist(wl_id) or {}
-    count = data.get("count", 0)
-    items = data.get("items", [])
-    if count:
-        body = f"{count} Abweichung(en) gefunden — " +                ", ".join(f"{r['name']}: {r['stored_ath']:.2f}→{r['yahoo_ath']:.2f} EUR" for r in items)
-    else:
-        body = "Alle ATH-Werte sind korrekt ✓"
+    body = _ath_log_text(data)
     add_log("manual_refresh", f"ATH-Prüfung: {wl.get('name', wl_id)}", body, True, watchlist_id=wl_id)
     return jsonify({"ok": True})
 
@@ -3395,12 +3588,27 @@ def ath_check_single():
     except Exception as e:
         return jsonify({"ticker": ticker, "error": str(e)}), 502
 
+def _parse_ath_corrections():
+    """Liest [{ticker, new_ath}] aus dem Request; ungültige Einträge (fehlender Ticker,
+    keine positive endliche Zahl) werden verworfen statt einen 500er auszulösen."""
+    raw = request.get_json(silent=True)
+    if not isinstance(raw, list): return []
+    out = []
+    for c in raw[:500]:
+        try:
+            ath = float(c["new_ath"])
+            if isinstance(c["ticker"], str) and math.isfinite(ath) and ath > 0:
+                out.append({"ticker": c["ticker"], "new_ath": ath})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
 @app.route("/api/depots/<depot_id>/ath-correct", methods=["POST"])
 def ath_correct(depot_id):
     """Übernimmt korrigierte ATH-Werte in die Depot-Datei."""
-    corrections = request.get_json()  # [{ticker, new_ath}]
+    corrections = _parse_ath_corrections()  # [{ticker, new_ath}]
     if not corrections:
-        return jsonify({"error": "Keine Korrekturen übergeben"}), 400
+        return jsonify({"error": "Keine gültigen Korrekturen übergeben"}), 400
     depots  = load_depots()
     depot   = next((d for d in depots if d["id"] == depot_id), {})
     updated = []
@@ -3426,9 +3634,9 @@ def ath_correct(depot_id):
 @app.route("/api/watchlists/<wl_id>/ath-correct", methods=["POST"])
 def ath_correct_watchlist(wl_id):
     """Analog zu ath_correct, aber für eine (eigenständige) Watchlist statt eines Depots."""
-    corrections = request.get_json()  # [{ticker, new_ath}]
+    corrections = _parse_ath_corrections()  # [{ticker, new_ath}]
     if not corrections:
-        return jsonify({"error": "Keine Korrekturen übergeben"}), 400
+        return jsonify({"error": "Keine gültigen Korrekturen übergeben"}), 400
     wl      = get_watchlist(wl_id) or {}
     updated = []
     details = []
@@ -3457,13 +3665,15 @@ def get_splits():
 
 @app.route("/api/splits", methods=["POST"])
 def add_split():
-    body  = request.get_json()
-    isin  = body.get("isin",  "").strip()
-    name  = body.get("name",  "").strip()
-    date  = body.get("date",  "").strip()
+    body  = _body()
+    isin  = _clean_isin(body.get("isin"))
+    name  = _clean_text(body.get("name"), _MAX_NAME)
+    date  = _clean_text(body.get("date"), 10)
     ratio = body.get("ratio", 0)
     if not isin or not date or not ratio:
-        return jsonify({"error": "isin, date und ratio erforderlich"}), 400
+        return jsonify({"error": "gültige isin, date und ratio erforderlich"}), 400
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+        return jsonify({"error": "date muss im Format JJJJ-MM-TT angegeben werden"}), 400
     try:
         ratio = float(ratio)
     except (TypeError, ValueError):
@@ -3594,7 +3804,7 @@ def get_depots():
 
 @app.route("/api/depots", methods=["POST"])
 def create_depot():
-    body = request.get_json(); name = body.get("name", "").strip()
+    body = _body(); name = _clean_text(body.get("name"), 60)
     if not name: return jsonify({"error": "Name erforderlich"}), 400
     depots = load_depots()
     if any(d["name"].lower() == name.lower() for d in depots):
@@ -3642,14 +3852,21 @@ def clear_pending_flags_watchlist(wl_id):
 
 @app.route("/api/depots/<depot_id>", methods=["PUT"])
 def update_depot(depot_id):
-    body = request.get_json(); depots = load_depots()
+    body = _body(); depots = load_depots()
     for d in depots:
         if d["id"] == depot_id:
-            if "name" in body and body["name"].strip(): d["name"] = body["name"].strip()
-            if "parqet_client_id" in body: d["parqet_client_id"] = body["parqet_client_id"].strip()
+            new_name = _clean_text(body.get("name"), 60) if "name" in body else ""
+            if new_name: d["name"] = new_name
+            if "parqet_client_id" in body: d["parqet_client_id"] = _clean_text(body["parqet_client_id"], 100)
             if "buy_budget" in body:
                 raw = body["buy_budget"]
-                d["buy_budget"] = float(raw) if raw else None
+                try:
+                    budget = float(raw) if raw else None
+                except (TypeError, ValueError):
+                    return jsonify({"error": "Ungültiges Kaufbudget"}), 400
+                if budget is not None and (not math.isfinite(budget) or budget < 0):
+                    return jsonify({"error": "Ungültiges Kaufbudget"}), 400
+                d["buy_budget"] = budget
             if "nachkauf_threshold" in body:
                 raw = body["nachkauf_threshold"]
                 d["nachkauf_threshold"] = (max(_NACHKAUF_THRESHOLD_MIN, min(_NACHKAUF_THRESHOLD_MAX, int(raw)))
@@ -3713,7 +3930,7 @@ def get_watchlists(): return jsonify(load_watchlists())
 
 @app.route("/api/watchlists", methods=["POST"])
 def create_watchlist():
-    body = request.get_json(); name = body.get("name", "").strip()
+    body = _body(); name = _clean_text(body.get("name"), 60)
     if not name: return jsonify({"error": "Name erforderlich"}), 400
     watchlists = load_watchlists()
     if any(w["name"].lower() == name.lower() for w in watchlists):
@@ -3733,10 +3950,11 @@ def create_watchlist():
 
 @app.route("/api/watchlists/<wl_id>", methods=["PUT"])
 def update_watchlist(wl_id):
-    body = request.get_json(); watchlists = load_watchlists()
+    body = _body(); watchlists = load_watchlists()
     for wl in watchlists:
         if wl["id"] == wl_id:
-            if "name" in body and body["name"].strip(): wl["name"] = body["name"].strip()
+            new_name = _clean_text(body.get("name"), 60) if "name" in body else ""
+            if new_name: wl["name"] = new_name
             notif_toggled = False
             if "notifications_enabled" in body:
                 old_enabled = wl.get("notifications_enabled", True)
@@ -3785,6 +4003,19 @@ def _parse_position_value(val, decimals):
         raise ValueError("muss größer 0 sein")
     return round(num, decimals)
 
+def _parse_import_number(val, decimals):
+    """Wie _parse_position_value, aber 0 ist erlaubt (Parqet liefert z.B. bei geschenkten oder
+    übertragenen Positionen einen Einstandskurs von 0). None/leer → None; negativ/unendlich → ValueError."""
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return None
+    try:
+        num = float(str(val).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        raise ValueError("keine gültige Zahl")
+    if not math.isfinite(num) or num < 0:
+        raise ValueError("darf nicht negativ sein")
+    return round(num, decimals)
+
 # ── Stocks (Bestand) ──────────────────────────────────────────────
 @app.route("/api/stocks", methods=["GET"])
 def api_get_stocks():
@@ -3794,12 +4025,12 @@ def api_get_stocks():
 
 @app.route("/api/stocks", methods=["POST"])
 def api_add_stock():
-    body     = request.get_json()
-    did      = body.get("depot", ""); ticker = body.get("ticker", "").strip().upper()
-    name     = body.get("name", "").strip(); exchange = body.get("exchange", "").strip()
-    isin     = body.get("isin", "").strip()
+    body     = _body()
+    did      = _clean_text(body.get("depot"), 80); ticker = _valid_ticker(body.get("ticker"))
+    name     = _clean_text(body.get("name"), _MAX_NAME); exchange = _clean_text(body.get("exchange"), _MAX_EXCHANGE)
+    isin     = _clean_isin(body.get("isin"))
     if not did or not ticker or not name:
-        return jsonify({"error": "depot, ticker, name erforderlich"}), 400
+        return jsonify({"error": "depot, gültiger ticker und name erforderlich"}), 400
     # Optionale manuelle Positionsangaben (v2.8.14) — Validierung vor dem Lock
     # und vor dem Yahoo-Call, damit ein Tippfehler nicht erst nach dem Laden auffällt.
     try:
@@ -3885,10 +4116,10 @@ def api_refresh_progress():
 
 @app.route("/api/stocks/<ticker>/change-ticker", methods=["POST"])
 def change_ticker(ticker):
-    did       = request.args.get("depot", ""); body = request.get_json() or {}
-    new_tick  = body.get("ticker", "").strip().upper()
-    new_name  = body.get("name", "").strip(); new_exch = body.get("exchange", "").strip()
-    if not new_tick: return jsonify({"error": "Neuer Ticker erforderlich"}), 400
+    did       = request.args.get("depot", ""); body = _body()
+    new_tick  = _valid_ticker(body.get("ticker"))
+    new_name  = _clean_text(body.get("name"), _MAX_NAME); new_exch = _clean_text(body.get("exchange"), _MAX_EXCHANGE)
+    if not new_tick: return jsonify({"error": "Gültiger neuer Ticker erforderlich"}), 400
     with depot_lock(did):
         stocks = load_stocks(did)
         idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
@@ -3907,7 +4138,7 @@ def change_ticker(ticker):
 @app.route("/api/depots/<depot_id>/stocks/<ticker>", methods=["PATCH"])
 def patch_stock(depot_id, ticker):
     """Aktualisiert einzelne Felder eines Stocks direkt in der Depot-Datei."""
-    body   = request.get_json() or {}
+    body   = _body()
     with depot_lock(depot_id):
         stocks = load_stocks(depot_id)
         stock  = next((s for s in stocks if s["ticker"] == ticker), None)
@@ -3920,7 +4151,9 @@ def patch_stock(depot_id, ticker):
         POSITION_FIELDS = {"shares": 6, "buy_price_eur": 4}
         for key, val in body.items():
             if key in ALLOWED:
-                stock[key] = val
+                try: stock[key] = _clean_patch_field(key, val)
+                except ValueError as e:
+                    return jsonify({"error": f"Ungültiger Wert für {key}: {e}"}), 400
             elif key in POSITION_FIELDS:
                 try:
                     stock[key] = _parse_position_value(val, POSITION_FIELDS[key])
@@ -3956,10 +4189,10 @@ def wl_get_stocks(wl_id): return jsonify(load_wl_stocks(wl_id))
 
 @app.route("/api/watchlists/<wl_id>/stocks", methods=["POST"])
 def wl_add_stock(wl_id):
-    body     = request.get_json()
-    ticker   = body.get("ticker", "").strip().upper(); name = body.get("name", "").strip()
-    exchange = body.get("exchange", "").strip(); isin = body.get("isin", "").strip()
-    if not ticker or not name: return jsonify({"error": "ticker und name erforderlich"}), 400
+    body     = _body()
+    ticker   = _valid_ticker(body.get("ticker")); name = _clean_text(body.get("name"), _MAX_NAME)
+    exchange = _clean_text(body.get("exchange"), _MAX_EXCHANGE); isin = _clean_isin(body.get("isin"))
+    if not ticker or not name: return jsonify({"error": "gültiger ticker und name erforderlich"}), 400
     with watchlist_lock(wl_id):
         stocks = load_wl_stocks(wl_id)
         if any(s["ticker"] == ticker for s in stocks): return jsonify({"error": "Bereits in dieser Liste"}), 409
@@ -3975,7 +4208,7 @@ def wl_add_stock(wl_id):
 
 @app.route("/api/watchlists/<wl_id>/stocks/<ticker>", methods=["PATCH"])
 def wl_patch_stock(wl_id, ticker):
-    body   = request.get_json() or {}
+    body   = _body()
     with watchlist_lock(wl_id):
         stocks = load_wl_stocks(wl_id)
         stock  = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
@@ -3983,7 +4216,9 @@ def wl_patch_stock(wl_id, ticker):
         ALLOWED = {"sector", "notes", "ath_alert_enabled"}
         for key, val in body.items():
             if key in ALLOWED:
-                stock[key] = val
+                try: stock[key] = _clean_patch_field(key, val)
+                except ValueError as e:
+                    return jsonify({"error": f"Ungültiger Wert für {key}: {e}"}), 400
         save_wl_stocks(wl_id, stocks)
         return jsonify(stock)
 
@@ -4208,23 +4443,49 @@ def get_settings():
 
 @app.route("/api/settings", methods=["POST"])
 def update_settings():
-    body = request.get_json(); s = load_settings()
-    if "notifications_enabled" in body:
-        s["notifications_enabled"] = bool(body["notifications_enabled"])
-    if "verlauf_retention_days" in body:
-        s["verlauf_retention_days"] = max(1, int(body["verlauf_retention_days"]))
-    if "refresh_interval" in body:
-        s["refresh_interval"] = int(body["refresh_interval"])
-    if "timezone" in body:
-        s["timezone"] = str(body["timezone"])
-    if "trading" in body:
-        t = body["trading"]
-        if "days"         in t: s["trading"]["days"]         = [int(d) for d in t["days"]]
-        if "start_hour"   in t: s["trading"]["start_hour"]   = int(t["start_hour"])
-        if "start_minute" in t: s["trading"]["start_minute"] = int(t["start_minute"])
-        if "end_hour"     in t: s["trading"]["end_hour"]      = int(t["end_hour"])
-        if "end_minute"   in t: s["trading"]["end_minute"]    = int(t["end_minute"])
-    tz_changed = "timezone" in body and str(body["timezone"]) != load_settings().get("timezone")
+    body = _body(); s = load_settings()
+    # Erst komplett validieren, dann übernehmen und speichern (v2.8.40): vorher konnte ein
+    # ungültiger Wert (z.B. Intervall 0 oder eine unbekannte Zeitzone) den Scheduler stören.
+    try:
+        def _ival(key, lo, hi, label):
+            try: v = int(body[key] if isinstance(body, dict) and key in body else None)
+            except (TypeError, ValueError): raise ValueError(f"{label}: keine ganze Zahl")
+            if not lo <= v <= hi: raise ValueError(f"{label}: erlaubt sind {lo} bis {hi}")
+            return v
+        new = {}
+        if "notifications_enabled" in body:
+            new["notifications_enabled"] = bool(body["notifications_enabled"])
+        if "verlauf_retention_days" in body:
+            new["verlauf_retention_days"] = _ival("verlauf_retention_days", 1, 3650, "Verlauf-Aufbewahrung")
+        if "refresh_interval" in body:
+            new["refresh_interval"] = _ival("refresh_interval", 60, 86400, "Refresh-Intervall (Sekunden)")
+        if "timezone" in body:
+            tz_name = str(body["timezone"])
+            if tz_name not in pytz.all_timezones_set: raise ValueError("Unbekannte Zeitzone")
+            new["timezone"] = tz_name
+        new_trading = {}
+        if "trading" in body:
+            t = body["trading"]
+            if not isinstance(t, dict): raise ValueError("trading muss ein Objekt sein")
+            if "days" in t:
+                if not isinstance(t["days"], list) or len(t["days"]) > 7: raise ValueError("Handelstage: ungültige Liste")
+                days = []
+                for d in t["days"]:
+                    try: d = int(d)
+                    except (TypeError, ValueError): raise ValueError("Handelstage: ungültiger Wert")
+                    if not 0 <= d <= 6: raise ValueError("Handelstage: erlaubt sind 0 (Mo) bis 6 (So)")
+                    if d not in days: days.append(d)
+                new_trading["days"] = days
+            for key, hi in (("start_hour", 23), ("start_minute", 59), ("end_hour", 23), ("end_minute", 59)):
+                if key in t:
+                    try: v = int(t[key])
+                    except (TypeError, ValueError): raise ValueError(f"{key}: keine ganze Zahl")
+                    if not 0 <= v <= hi: raise ValueError(f"{key}: erlaubt sind 0 bis {hi}")
+                    new_trading[key] = v
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    s.update(new); s["trading"].update(new_trading)
+    tz_changed = "timezone" in new and new["timezone"] != load_settings().get("timezone")
     save_settings(s)
     # Wochenbericht/Tageszusammenfassung sind seit v2.7.21 userbezogen (siehe /api/users) —
     # nur bei geänderter Zeitzone müssen die pro-User-Jobs neu geplant werden, da die
@@ -4247,8 +4508,27 @@ def get_notifications():
 
 @app.route("/api/notifications/test", methods=["POST"])
 def test_notification():
-    body    = request.get_json(silent=True) or {}; urls = body.get("urls", [])
-    mention = body.get("mention", "").strip()
+    """Testnachricht. Gespeicherte URLs werden nie vom Client geliefert, sondern per Index aus
+    dem Profil des Users aufgelöst (`stored`: Liste von Indizes, `user_id`); neu eingetippte
+    URLs (`urls`) durchlaufen dieselbe Erlaubnisliste wie beim Speichern."""
+    body    = _body()
+    mention = _clean_text(body.get("mention"), _MAX_MENTION)
+    stored_idx, new_urls = body.get("stored", []), body.get("urls", [])
+    if not isinstance(stored_idx, list) or not isinstance(new_urls, list):
+        return jsonify({"error": "stored und urls müssen Listen sein"}), 400
+    user   = next((u for u in load_users() if u["id"] == str(body.get("user_id") or "")), None)
+    stored = (user or {}).get("apprise_urls") or []
+    urls = []
+    for i in stored_idx:
+        if isinstance(i, bool) or not isinstance(i, int) or not (0 <= i < len(stored)):
+            return jsonify({"error": "Gespeicherte URL nicht gefunden — bitte das Formular neu öffnen"}), 400
+        urls.append(stored[i])
+    for u in new_urls:
+        clean, err = validate_apprise_url(u)
+        if err: return jsonify({"error": err}), 400
+        urls.append(clean)
+    if not urls: return jsonify({"error": "Keine URLs zum Testen angegeben"}), 400
+    if len(urls) > _APPRISE_MAX_URLS: return jsonify({"error": f"Maximal {_APPRISE_MAX_URLS} URLs"}), 400
     link    = f"\n\n{APP_URL}" if APP_URL else ""
     msg     = "DepotRadar Testbenachrichtigung"
     txt     = f"Verbindung funktioniert!{link}"
@@ -4258,70 +4538,93 @@ def test_notification():
 # ── User API ──────────────────────────────────────────────────────
 @app.route("/api/users", methods=["GET"])
 def api_get_users():
-    users = load_users()
-    return jsonify([{**{k: v for k, v in u.items() if k not in ("pin_hash", "pin_salt")},
-                     "has_pin": bool(u.get("pin_hash")),
-                     "is_admin": is_admin_user(u)} for u in users])
+    return jsonify([_public_user(u) for u in load_users()])
 
 @app.route("/api/users", methods=["POST"])
 def api_create_user():
-    body = request.get_json() or {}
+    body = _body()
     users = load_users()
     # Benutzeranlage nur durch Admins — Ausnahme: der allererste Benutzer (Bootstrap,
     # vor dem Erststart existiert noch niemand, der Admin sein könnte).
     if users and not is_admin_id(body.get("creator_user_id")):
         return jsonify({"error": "Nur Admins können Benutzer anlegen (ADMIN_USERS in docker-compose.yml)"}), 403
+    apprise_urls, err = resolve_apprise_url_list([], body.get("apprise_urls", []))
+    if err: return jsonify({"error": err}), 400
     new_user = {
         "id":                    str(_uuid.uuid4())[:8],
-        "name":                  body.get("name", "").strip(),
+        "name":                  _clean_text(body.get("name"), 60),
         "pin_hash":              None,
         "pin_salt":              None,
         "depots":                body.get("depots", []),
         "watchlists":            body.get("watchlists", []),
-        "apprise_urls":          body.get("apprise_urls", []),
-        "notification_mention":  body.get("notification_mention", ""),
+        "apprise_urls":          apprise_urls,
+        "notification_mention":  _clean_text(body.get("notification_mention"), _MAX_MENTION),
         "notification_confirm":  bool(body.get("notification_confirm", False)),
         "digest_day":            _DIGEST_DAY_DEFAULT,
         "digest_time":           _DIGEST_TIME_DEFAULT,
         "daily_digest_time":     _DAILY_DIGEST_TIME_DEFAULT,
         "daily_watchlist_digest": bool(body.get("daily_watchlist_digest", False)),
     }
-    if "digest_day"        in body: new_user["digest_day"]        = int(body["digest_day"])
-    if "digest_time"       in body: new_user["digest_time"]       = str(body["digest_time"])
-    if "daily_digest_time" in body: new_user["daily_digest_time"] = str(body["daily_digest_time"])
+    try:
+        if "digest_day"        in body: new_user["digest_day"]        = _validate_digest_day(body["digest_day"])
+        if "digest_time"       in body: new_user["digest_time"]       = _validate_hhmm(body["digest_time"])
+        if "daily_digest_time" in body: new_user["daily_digest_time"] = _validate_hhmm(body["daily_digest_time"])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     set_user_pin(new_user, body.get("pin"))
     users.append(new_user); save_users(users)
     schedule_user_digest_jobs(new_user)
-    return jsonify({**{k: v for k, v in new_user.items() if k not in ("pin_hash", "pin_salt")},
-                    "has_pin": bool(new_user.get("pin_hash")),
-                    "is_admin": is_admin_user(new_user)}), 201
+    return jsonify(_public_user(new_user)), 201
+
+def _validate_digest_day(v):
+    """Wochentag 0 (Montag) bis 6 (Sonntag); ValueError bei ungültigem Wert."""
+    try: d = int(v)
+    except (TypeError, ValueError): raise ValueError("Ungültiger Wochentag")
+    if not 0 <= d <= 6: raise ValueError("Ungültiger Wochentag")
+    return d
+
+def _validate_hhmm(v):
+    """Uhrzeit 'HH:MM'; ValueError bei ungültigem Wert."""
+    s = str(v).strip()
+    m = re.match(r"^(\d{1,2}):(\d{2})$", s)
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59: raise ValueError("Ungültige Uhrzeit")
+    return f"{int(m.group(1)):02d}:{m.group(2)}"
 
 @app.route("/api/users/<user_id>", methods=["PATCH"])
 def api_update_user(user_id):
-    body  = request.get_json() or {}
+    body  = _body()
     users = load_users()
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return jsonify({"error": "Nicht gefunden"}), 404
-    if "name"                 in body: user["name"]                = body["name"].strip()
-    if "pin"                  in body: set_user_pin(user, body["pin"])
+    # Alles validieren, BEVOR etwas am User-Objekt geändert wird — sonst bliebe bei einem
+    # Fehler ein halb angewendeter Zustand im Speicher (es wird zwar nur bei Erfolg gespeichert,
+    # aber schedule_user_digest_jobs/save laufen nach den Zuweisungen).
+    new_urls = None
+    if "apprise_urls" in body:
+        new_urls, err = resolve_apprise_url_list(user.get("apprise_urls") or [], body["apprise_urls"])
+        if err: return jsonify({"error": err}), 400
+    try:
+        new_day  = _validate_digest_day(body["digest_day"]) if "digest_day" in body else None
+        new_dt   = _validate_hhmm(body["digest_time"]) if "digest_time" in body else None
+        new_ddt  = _validate_hhmm(body["daily_digest_time"]) if "daily_digest_time" in body else None
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    # Leerer Name bleibt erlaubt (Altbestand: der frühere Standard-User hatte keinen Namen)
+    if "name"                 in body: user["name"]                = _clean_text(body["name"], 60)
+    if "pin"                in body: set_user_pin(user, body["pin"])
     if "depots"               in body: user["depots"]              = body["depots"]
     if "watchlists"           in body: user["watchlists"]           = body["watchlists"]
-    if "apprise_urls"         in body: user["apprise_urls"]        = body["apprise_urls"]
-    if "notification_mention" in body: user["notification_mention"]= body["notification_mention"]
+    if new_urls is not None:          user["apprise_urls"]         = new_urls
+    if "notification_mention" in body: user["notification_mention"]= _clean_text(body["notification_mention"], _MAX_MENTION)
     if "notification_confirm" in body: user["notification_confirm"]= bool(body["notification_confirm"])
     if "daily_watchlist_digest" in body: user["daily_watchlist_digest"] = bool(body["daily_watchlist_digest"])
     digest_changed = False
-    if "digest_day" in body:
-        user["digest_day"] = int(body["digest_day"]); digest_changed = True
-    if "digest_time" in body:
-        user["digest_time"] = str(body["digest_time"]); digest_changed = True
-    if "daily_digest_time" in body:
-        user["daily_digest_time"] = str(body["daily_digest_time"]); digest_changed = True
+    if new_day is not None: user["digest_day"] = new_day; digest_changed = True
+    if new_dt  is not None: user["digest_time"] = new_dt; digest_changed = True
+    if new_ddt is not None: user["daily_digest_time"] = new_ddt; digest_changed = True
     save_users(users)
     if digest_changed: schedule_user_digest_jobs(user)
-    return jsonify({**{k: v for k, v in user.items() if k not in ("pin_hash", "pin_salt")},
-                    "has_pin": bool(user.get("pin_hash")),
-                    "is_admin": is_admin_user(user)})
+    return jsonify(_public_user(user))
 
 @app.route("/api/users/<user_id>", methods=["DELETE"])
 def api_delete_user(user_id):
@@ -4354,7 +4657,7 @@ def api_delete_user(user_id):
 
 @app.route("/api/users/<user_id>/verify-pin", methods=["POST"])
 def api_verify_pin(user_id):
-    body  = request.get_json() or {}
+    body  = _body()
     users = load_users()
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return jsonify({"ok": False}), 404
