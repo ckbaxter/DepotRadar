@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.35-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.69-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.40-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.72-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -60,7 +60,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Tägliche Depot-Zusammenfassung** — optional pro Depot aktivierbar, läuft nur Montag–Freitag; fasst zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); nutzt dieselben Apprise-URLs wie normale Alarme
 - **Watchlist-Zusammenfassung, gebündelt** — ein einziger Schalter im Benutzerprofil fasst alle Discount-/ATH-Alarme über sämtliche eigenen Watchlists in einer Nachricht zusammen (statt pro Watchlist einzeln), zur gleichen Uhrzeit wie die tägliche Depot-Zusammenfassung
 - **Zeitplanung pro Benutzer** — Wochentag/Uhrzeit des Wochenberichts sowie die Uhrzeit der täglichen Zusammenfassung werden im eigenen Benutzerprofil eingestellt — jeder Benutzer im Haushalt kann so einen eigenen Zeitpunkt wählen
-- **System-Status** — Gesundheits-Dashboard im Footer; zeigt Scheduler-Status, Laufzeit, Refresh-Statistiken, Yahoo Finance-Erfolgsquote, Yahoo-Cache-Trefferquote und Fehler-Log der letzten 20 Abfragefehler; „✕ Leeren"-Button setzt das Fehler-Log zurück
+- **System-Status** — Gesundheits-Dashboard im Footer; zeigt Scheduler-Status, Laufzeit, Refresh-Statistiken, Yahoo Finance-Erfolgsquote, Yahoo-Cache-Trefferquote und Fehler-Log der letzten 20 Abfragefehler; „✕ Leeren"-Button setzt das Fehler-Log zurück. **Ausfall-Erkennung (seit 2.8.39):** fällt Yahoo Finance oder Parqet in 3 automatischen Refresh-Zyklen in Folge überwiegend aus (Frankfurter API/OpenFIGI nach 6), bekommen die Admins (`ADMIN_USERS`) einmalig einen Push und bei Wiederkehr eine Entwarnung mit Ausfalldauer; ein Wächter meldet, wenn in der Handelszeit länger als das Doppelte des Refresh-Intervalls kein Refresh mehr lief. Schwellen sind Konstanten in `app.py` (`_OUTAGE_SOURCES`, `_STALL_*`), der Zustand liegt nur im Speicher
 - **Verlauf** — Aktivitätsverlauf mit Filter nach Eintragstyp, gruppiert nach Tages-Trennern (Heute/Gestern/Datum); Admins sehen die Ereignisse aller Benutzer und können zusätzlich nach Benutzer filtern, alle anderen sehen nur eigene Einträge und Systemereignisse
 - **Letzte Änderungen** — Changelog direkt in der App abrufbar (Footer-Link)
 - **Einstellungen per UI** — Zeitzone, Handelstage, -zeiten und Wochenbericht direkt in der App konfigurierbar
@@ -365,16 +365,15 @@ Pro Depot in den Depot-Einstellungen (Parqet-Sektion) konfigurierbar: Toggle „
 - **Ein/Aus, Wochenbericht-/Tageszusammenfassung-Teilnahme** — pro Depot (Depot-Einstellungen → ⚙); Watchlists haben einen eigenen Ein/Aus-Schalter, nehmen aber grundsätzlich nicht an der Tages-/Wochenzusammenfassung teil (bleiben reine Einzel-Alarme)
 - Die tägliche Depot-Zusammenfassung läuft grundsätzlich nur Montag–Freitag
 
-Unterstützte Dienste (Auswahl):
+Erlaubte Dienste (seit v2.8.40 bewusst eingeschränkt — Apprise kann sonst per `json://`, `form://` oder `http(s)://` beliebige Requests aus dem Container senden):
 
 | Dienst      | URL-Format                                    |
 |-------------|-----------------------------------------------|
-| Telegram    | `tgram://TOKEN/CHATID`                        |
-| Gotify      | `gotify://host/token`                         |
-| ntfy        | `ntfy://host/topic`                           |
+| ntfy        | `ntfy://host/topic` bzw. `ntfys://host/topic` (HTTPS) |
 | Discord     | `discord://WEBHOOK_ID/TOKEN`                  |
-| E-Mail      | `mailto://user:pass@gmail.com` (HTML-Format)  |
-| Apprise API | `http://apprise.host/notify/tag`              |
+| E-Mail      | `mailtos://user:pass@gmail.com` (HTML-Format) |
+
+Gespeicherte URLs enthalten Zugangsdaten und werden im Benutzer-Formular nur **maskiert** angezeigt (z. B. `discord://•••/•••`); zum Ändern die URL entfernen und neu hinzufügen. Jede URL lässt sich einzeln testen. Bereits gespeicherte URLs anderer Dienste (z. B. Telegram, Gotify) werden nicht mehr bedient und im Formular als „nicht erlaubt" markiert.
 
 **Bestätigungsmodus:** Eine Aktie muss zwei aufeinanderfolgende Refreshes unter dem ATH-Level liegen bevor ein Alarm ausgelöst wird. Beim Umschalten des Depot-Toggles für Benachrichtigungen (ein/aus) werden offene Bestätigungen automatisch zurückgesetzt, damit kein veralteter Zustand fälschlich als „bestätigt" gewertet wird.
 
@@ -394,6 +393,8 @@ Unterstützte Dienste (Auswahl):
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.40 / 2.13.72 | Sicherheits-Härtung: Frontend escaped Freitextfelder (Name, Börse, ISIN, Sektor, Verlauf, Suchtreffer) überall und übergibt Inline-Handler-Werte per `jsArg()` (schließt gespeichertes XSS). Backend validiert Ticker (Muster), ISIN, Längen, Einstellungen (Intervall ≥ 60 s, Zeitzone, Handelszeiten), Split-Datum, ATH-Korrekturen und Request-Größe (2 MB), liefert einheitliche JSON-Fehler (400/404/413/415/500) und vergleicht PINs zeitkonstant. Apprise: Erlaubnisliste (discord, ntfy, ntfys, mailtos) beim Speichern, Testen **und** Senden; `GET /api/users` liefert nur noch maskierte URLs (`apprise_urls_masked`), das Formular zeigt Dienst-Chip + Maske, Einzel-Test pro URL, „Alle testen". `notifications/test` löst gespeicherte URLs serverseitig per Index auf (neuer Body: `user_id`, `stored`, `urls`). `DATA_DIR` per Umgebungsvariable überschreibbar. nginx: Security-Header, `server_tokens off`. |
+| 2.8.39 / 2.13.71 | Neu: Push bei anhaltendem Datenquellen-Ausfall — nur an Admins (`ADMIN_USERS`). Pro Quelle wird nach jedem automatischen Refresh-Zyklus bewertet, ob sie überwiegend ausgefallen ist (≥ 50 % der Aufrufe fehlgeschlagen, mindestens 2; ein einzelner toter Ticker zählt nicht, Parqet-401-Token-Fehler ebenfalls nicht, sie haben ihre eigene Meldung). Nach 3 Zyklen in Folge (Yahoo Finance, Parqet) bzw. 6 (Frankfurter API, OpenFIGI) geht **eine** Meldung raus, bei Wiederkehr eine Entwarnung mit Ausfalldauer. Neuer Wächter (alle 5 Min.) meldet Stillstand des Kurs-Refreshs in der Handelszeit (kein Lauf seit dem Doppelten des Intervalls, mindestens 15 Min.). System-Status: Datenquellen zeigen „gestört seit …“ bzw. „n von 3 Zyklen gestört“, bei Stillstand erscheint ein Banner. `/api/health` liefert dafür `sources.*.outage` und `watchdog`. Schwellen fest im Code (`_OUTAGE_SOURCES`, `_STALL_FACTOR`, `_STALL_MIN_SECONDS`), Zustand nur In-Memory |
 | 2.8.35 | Der Verlauf-Eintrag/Push bei getrennter Parqet-Verbindung (siehe 2.8.34) nennt jetzt zusätzlich den konkreten Fehlergrund (z.B. abgelehnter Refresh Token vs. Timeout/Netzwerkfehler) statt nur der generischen Reconnect-Meldung — vorher nur im Docker-Log sichtbar |
 | 2.8.34 / 2.13.69 | Bugfix: eine abgelaufene Parqet-Verbindung (Token-Erneuerung fehlgeschlagen) blieb bei aktiviertem automatischem Sync oft wochenlang unbemerkt — sichtbar war der Status bisher nur im Depot-Einstellungen-Modal. Beim Übergang in diesen Zustand gibt es jetzt zusätzlich einen Verlauf-Eintrag, eine obligatorische Push-Benachrichtigung (unabhängig von den Benachrichtigungs-Einstellungen) sowie einen roten „🔒 Parqet: neu verbinden"-Hinweis direkt in der Hauptansicht |
 | 2.8.33 | Wochenbericht: neue Zeile zeigt die Portfolio-Wochenperformance (Gesamtwert-Veränderung ggü. Vorwoche in % und €), berechnet aus den bereits vorhandenen Snapshots — kein neues Datenfeld. Bestehende Sektion zur besten/schlechtesten Einzelaktie von „📈 Wochenperformance" in „🏆 Bester/Schlechtester Performer (Woche)" umbenannt, um Verwechslung mit der neuen Portfolio-Zeile zu vermeiden |
