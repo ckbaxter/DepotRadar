@@ -33,7 +33,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.41"
+VERSION           = "2.8.42"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -3292,6 +3292,135 @@ def _parqet_sync_core(depot_id, auto=False):
 def parqet_sync(depot_id):
     result, status = _parqet_sync_core(depot_id, auto=False)
     return jsonify(result), status
+
+# ── Parqet-Diagnose: Bestandsberechnung nachvollziehen (seit v2.8.42) ─────────
+# Bewusst standardmäßig AUS: der in v2.8.41 entfernte Debug-Endpoint gab rohe Parqet-Daten
+# ohne Authentifizierung preis. Dieser hier antwortet nur dann, wenn PARQET_DEBUG=1 gesetzt
+# ist (docker-compose.yml → environment, nach der Diagnose wieder entfernen), ist rein
+# lesend und schreibt weder Depots noch Stocks (kein Stale-Object-Risiko beim Token-Refresh).
+PARQET_DEBUG = os.environ.get("PARQET_DEBUG", "").strip().lower() in ("1", "true", "yes")
+_SYNC_ACTIVITY_TYPES = ("buy", "sell", "transfer_in", "transfer_out", "dividend")
+
+def _replay_holdings(isin, acts):
+    """Spielt calculate_holdings() für eine ISIN Schritt für Schritt nach und protokolliert
+    je Aktivität Bestand vorher/nachher plus Hinweis, falls sie ignoriert oder gekappt wurde.
+    Muss die Logik von calculate_holdings() exakt spiegeln — der Aufrufer vergleicht das
+    Endergebnis deshalb mit calculate_holdings() selbst (replay_matches)."""
+    steps, shares, cost = [], 0.0, 0.0
+    for a in sorted(acts, key=lambda a: a.get("datetime", "")):
+        atype  = a.get("type", "")
+        raw    = float(a.get("shares") or 0)
+        price  = float(a.get("price") or 0)
+        curr   = a.get("currency", "EUR")
+        dt     = a.get("datetime", "")
+        adj    = _split_adj(isin, dt, raw)
+        before = shares; note = ""
+        if atype in ("buy", "transfer_in"):
+            shares += adj
+            cost   += raw * price * get_eur_rate(curr)
+        elif atype in ("sell", "transfer_out"):
+            if shares > 0:
+                eff = min(adj, shares)
+                if eff < adj:
+                    note = f"Verkauf auf Bestand gekappt ({adj:.6f} → {eff:.6f})"
+                shares = max(0, shares - eff)
+                cost   = max(0, cost * (1 - eff / before))
+            else:
+                note = "Verkauf IGNORIERT: berechneter Bestand war 0"
+        else:
+            note = f"Typ '{atype}' fließt nicht in die Bestandsberechnung ein"
+        steps.append({"datetime": dt, "type": atype, "currency": curr, "price": price,
+                      "raw_shares": raw, "split_adjusted_shares": round(adj, 6),
+                      "shares_before": round(before, 6), "shares_after": round(shares, 6),
+                      "note": note, "raw": a})
+    return steps, shares, cost
+
+def _debug_fetch_unfiltered(depot, depot_id, pid, max_pages=20):
+    """Lädt die Aktivitäten OHNE activityType-Filter (nur assetType=security), um Typen zu
+    sehen, die der Sync gar nicht erst abfragt, und liefert Seitenstatistik zur Paginierung."""
+    acts, cursors, pages, cursor = [], [], 0, None
+    while pages < max_pages:
+        url = f"/portfolios/{pid}/activities?assetType=security&limit=500"
+        if cursor: url += f"&cursor={cursor}"   # bewusst wie im Sync: Cursor unkodiert
+        data = parqet_api_get(depot, url, depot_id); pages += 1
+        page = data.get("activities", data) if isinstance(data, dict) else data
+        if isinstance(page, list): acts.extend(page)
+        cursor = data.get("nextCursor") if isinstance(data, dict) else None
+        if not cursor: break
+        cursors.append(str(cursor)[:60])
+    return acts, pages, cursors
+
+@app.route("/api/depots/<depot_id>/parqet/debug-holdings", methods=["GET"])
+def parqet_debug_holdings(depot_id):
+    """Diagnose für abweichende Stückzahlen nach dem Parqet-Sync: gibt für eine ISIN die
+    gespeicherten Werte (aktuell + Backup vor dem letzten Sync), Splits, Parqets eigenen
+    Holdings-Eintrag, alle geladenen Aktivitäten samt Rechenweg und einen Abgleich der
+    Aktivitätstypen/Paginierung zurück. Aufruf: ?isin=US11135F1012 (nur mit PARQET_DEBUG=1)."""
+    if not PARQET_DEBUG:
+        return jsonify({"error": "Nicht gefunden"}), 404
+    isin = _clean_isin(request.args.get("isin", ""))
+    if not isin: return jsonify({"error": "gültige isin erforderlich"}), 400
+    depot = get_depot(depot_id)
+    if not depot or not depot.get("parqet", {}).get("connected"):
+        return jsonify({"error": "Nicht verbunden"}), 400
+    pid = depot["parqet"].get("portfolio_id")
+    if not pid: return jsonify({"error": "Kein Portfolio ausgewählt"}), 400
+
+    def _stock_view(s):
+        return ({k: s.get(k) for k in ("name", "ticker", "isin", "shares", "buy_price_eur", "parqet_synced")}
+                if s else None)
+
+    out = {"isin": isin, "version": VERSION}
+    cur = next((s for s in load_stocks(depot_id) if s.get("isin") == isin), None)
+    out["stored_stock"] = _stock_view(cur)
+    bak_path = depot_backup_file(depot_id)
+    try:
+        bak = next((s for s in _load_json(bak_path, []) if s.get("isin") == isin), None)
+        out["backup_stock_before_last_sync"] = _stock_view(bak)
+    except Exception as e:
+        out["backup_stock_before_last_sync"] = {"error": str(e)}
+    out["splits"] = [{"date": d, "ratio": r} for d, r in splits_as_dict().get(isin, [])]
+
+    # Parqets eigener Bestand laut /holdings (Rohdaten des Eintrags zur ISIN)
+    try:
+        hld = parqet_api_get(depot, f"/portfolios/{pid}/holdings", depot_id)
+        items = hld.get("items", []) if isinstance(hld, dict) else []
+        out["parqet_holding"] = next((h for h in items if h.get("asset", {}).get("isin") == isin), None)
+    except Exception as e:
+        out["parqet_holding"] = {"error": str(e)}
+
+    # Exakt dieselben Aktivitäten, die auch der Sync verwendet
+    try:
+        all_acts = _fetch_all_parqet_activities(depot, depot_id, pid)
+    except Exception as e:
+        out["error"] = f"Parqet API Fehler: {e}"
+        return jsonify(out), 502
+    acts = [a for a in all_acts if a.get("asset", {}).get("isin") == isin]
+    steps, replay_shares, replay_cost = _replay_holdings(isin, acts)
+    calc = calculate_holdings(acts).get(isin)
+    out["activities_sync_fetch_total"] = len(all_acts)
+    out["activity_type_counts_sync_fetch"] = {}
+    for a in all_acts:
+        t = a.get("type", "?"); out["activity_type_counts_sync_fetch"][t] = out["activity_type_counts_sync_fetch"].get(t, 0) + 1
+    out["replay"] = {"steps": steps, "final_shares": round(replay_shares, 6),
+                     "calculate_holdings_shares": round(calc["shares"], 6) if calc else None,
+                     "calculate_holdings_avg_price_eur": calc["avg_price_eur"] if calc else None,
+                     "replay_matches": (abs(replay_shares - calc["shares"]) < 1e-9) if calc else (replay_shares <= 0.001)}
+
+    # Typ-/Paginierungs-Gegenprobe ohne activityType-Filter
+    try:
+        u_acts, u_pages, u_cursors = _debug_fetch_unfiltered(depot, depot_id, pid)
+        counts = {}
+        for a in u_acts:
+            t = a.get("type", "?"); counts[t] = counts.get(t, 0) + 1
+        out["unfiltered"] = {
+            "pages": u_pages, "cursors_seen": u_cursors, "total": len(u_acts), "type_counts": counts,
+            "sync_type_count": sum(1 for a in u_acts if a.get("type") in _SYNC_ACTIVITY_TYPES),
+            "other_type_activities_for_isin": [a for a in u_acts
+                if a.get("asset", {}).get("isin") == isin and a.get("type") not in _SYNC_ACTIVITY_TYPES]}
+    except Exception as e:
+        out["unfiltered"] = {"error": str(e)}
+    return jsonify(out), 200
 
 @app.route("/api/depots/<depot_id>/parqet/apply-removal", methods=["POST"])
 def parqet_apply_removal(depot_id):
