@@ -33,7 +33,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.42"
+VERSION           = "2.8.43"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2920,27 +2920,85 @@ def parqet_select_portfolio(depot_id):
             break
     save_depots(depots); return jsonify({"ok": True})
 
+class ParqetIncompleteError(ValueError):
+    """Parqet-Aktivitäten möglicherweise unvollständig geladen (Paginierung nicht erkannt)."""
+
+_PARQET_PAGE_LIMIT = 500   # Seitengröße der Activities-Abfrage (laut Parqet-API maximal)
+_PARQET_MAX_PAGES  = 100   # Notbremse gegen Endlosschleifen bei fehlerhaftem Cursor
+_PARQET_CURSOR_KEYS = ("nextCursor", "next_cursor", "cursor", "next", "nextPageToken", "next_page_token")
+_PARQET_CURSOR_CONTAINERS = ("pagination", "meta", "paging", "page", "links")
+
+def _extract_next_cursor(data):
+    """Sucht den Cursor der Folgeseite in einer Parqet-Antwort. Bisher wurde nur das Top-Level-
+    Feld 'nextCursor' gelesen (bis v2.8.42) — fehlte es oder hieß es anders, endete der Abruf
+    stillschweigend nach der ersten Seite. Jetzt: mehrere übliche Feldnamen, auch in
+    verschachtelten Objekten (pagination/meta/…). Gibt None zurück, wenn keiner gefunden wird."""
+    if not isinstance(data, dict): return None
+    for key in _PARQET_CURSOR_KEYS:
+        v = data.get(key)
+        if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v): return v
+    for cont in _PARQET_CURSOR_CONTAINERS:
+        c = data.get(cont)
+        if isinstance(c, dict):
+            for key in _PARQET_CURSOR_KEYS:
+                v = c.get(key)
+                if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v): return v
+    return None
+
+def _paginate_parqet_activities(depot, depot_id, base_url, strict=True):
+    """Lädt alle Seiten einer Activities-Abfrage. Gibt (aktivitäten, info) zurück.
+    info: pages, cursors_seen, page_sizes, top_level_keys (der ersten Seite), truncated.
+    'truncated' = eine Seite hatte genau _PARQET_PAGE_LIMIT Einträge, aber es wurde kein Cursor
+    erkannt (oder er wiederholte sich) — die Daten sind dann möglicherweise unvollständig.
+    strict=True (Sync): wirft in diesem Fall ParqetIncompleteError, statt mit unvollständigen
+    Daten Bestände zu überschreiben. strict=False (Diagnose): liefert, was da ist."""
+    acts, cursors, sizes = [], [], []
+    top_keys, truncated, cursor, pages = None, False, None, 0
+    sep = "&" if "?" in base_url else "?"
+    while True:
+        url = f"{base_url}{sep}limit={_PARQET_PAGE_LIMIT}"
+        if cursor is not None: url += f"&cursor={urlquote(str(cursor), safe='')}"
+        data = parqet_api_get(depot, url, depot_id); pages += 1
+        page = data.get("activities", data) if isinstance(data, dict) else data
+        page = page if isinstance(page, list) else []
+        if top_keys is None and isinstance(data, dict): top_keys = sorted(data.keys())
+        acts.extend(page); sizes.append(len(page))
+        nxt = _extract_next_cursor(data)
+        if nxt is None:
+            if len(page) >= _PARQET_PAGE_LIMIT: truncated = True
+            break
+        if str(nxt) in cursors or str(nxt) == str(cursor):
+            truncated = True; break   # Cursor wiederholt sich → Endlosschleife verhindern
+        cursors.append(str(nxt)); cursor = nxt
+        if pages >= _PARQET_MAX_PAGES:
+            truncated = True; break
+    info = {"pages": pages, "page_sizes": sizes, "cursors_seen": [c[:60] for c in cursors],
+            "top_level_keys": top_keys, "truncated": truncated}
+    if truncated and strict:
+        raise ParqetIncompleteError(
+            f"Parqet lieferte {len(acts)} Aktivitäten, aber keine erkennbare Folgeseite "
+            f"(Seitengröße {_PARQET_PAGE_LIMIT}, {pages} Seite(n)) — Daten möglicherweise "
+            "unvollständig, Sync abgebrochen und nichts überschrieben.")
+    return acts, info
+
 def _fetch_all_parqet_activities(depot, depot_id, pid):
     """Lädt alle Parqet-Aktivitäten (buy/sell/transfer/dividend) vollständig paginiert.
-    Kapselt den while-True/cursor-Loop, der zuvor in parqet_sync und einem inzwischen
-    entfernten Debug-Endpoint (bis v2.8.40) dupliziert war. Wirft eine Exception bei Netzwerk- oder API-Fehlern.
+    Wirft eine Exception bei Netzwerk- oder API-Fehlern und ParqetIncompleteError, wenn die
+    Paginierung nicht zuverlässig erkannt wurde (siehe _paginate_parqet_activities, v2.8.43 —
+    zuvor wurden bei genau 500 Treffern ohne 'nextCursor' stillschweigend Aktivitäten
+    verworfen und daraus falsche Stückzahlen berechnet).
     dividend seit v2.8.25 ergänzt (für _sync_earnings) — calculate_holdings() ignoriert
     den Typ unverändert (nur buy/sell/transfer_* werden dort behandelt), kein Risiko
     für die bestehende Holdings-Berechnung."""
-    all_activities = []; cursor = None
-    while True:
-        url = (f"/portfolios/{pid}/activities"
-               f"?activityType=buy&activityType=sell"
-               f"&activityType=transfer_in&activityType=transfer_out"
-               f"&activityType=dividend"
-               f"&assetType=security&limit=500")
-        if cursor: url += f"&cursor={cursor}"
-        data   = parqet_api_get(depot, url, depot_id)
-        acts   = data.get("activities", data) if isinstance(data, dict) else data
-        if isinstance(acts, list): all_activities.extend(acts)
-        cursor = data.get("nextCursor") if isinstance(data, dict) else None
-        if not cursor: break
-    return all_activities
+    acts, _info = _paginate_parqet_activities(depot, depot_id, _parqet_activities_base_url(pid))
+    return acts
+
+def _parqet_activities_base_url(pid):
+    return (f"/portfolios/{pid}/activities"
+            f"?activityType=buy&activityType=sell"
+            f"&activityType=transfer_in&activityType=transfer_out"
+            f"&activityType=dividend"
+            f"&assetType=security")
 
 def _resolve_isin_name(isin):
     """Best-effort Namensauflösung per ISIN. Fallback für Fälle, in denen weder die lokale
@@ -3160,6 +3218,15 @@ def _parqet_sync_core(depot_id, auto=False):
         # 3) Aktivitäten laden (paginiert)
         try:
             all_activities = _fetch_all_parqet_activities(depot, depot_id, pid)
+        except ParqetIncompleteError as e:
+            # Sicherheitsnetz (v2.8.43): unvollständig geladene Aktivitäten würden falsche
+            # Stückzahlen/Einstände erzeugen und echte Bestände überschreiben → nichts schreiben.
+            # Zusätzlicher Verlaufseintrag, weil der Scheduler den zurückgegebenen Fehler sonst
+            # nicht bemerkt (zählt den Lauf als "synchronisiert") und der Abbruch unsichtbar bliebe.
+            log.error(f"Parqet-Sync abgebrochen ({depot_id}): {e}")
+            add_log("system", f"⚠️ Parqet-Sync abgebrochen: {depot.get('name', depot_id)}",
+                    f"{e}\n\nEs wurde nichts geändert.", False, depot_id=depot_id)
+            return {"error": f"Parqet API Fehler: {e}"}, 502
         except Exception as e:
             err = str(e)
             if "401" in err or "Unauthorized" in err: return handle_401(e)
@@ -3335,20 +3402,21 @@ def _replay_holdings(isin, acts):
                       "note": note, "raw": a})
     return steps, shares, cost
 
-def _debug_fetch_unfiltered(depot, depot_id, pid, max_pages=20):
-    """Lädt die Aktivitäten OHNE activityType-Filter (nur assetType=security), um Typen zu
-    sehen, die der Sync gar nicht erst abfragt, und liefert Seitenstatistik zur Paginierung."""
-    acts, cursors, pages, cursor = [], [], 0, None
-    while pages < max_pages:
-        url = f"/portfolios/{pid}/activities?assetType=security&limit=500"
-        if cursor: url += f"&cursor={cursor}"   # bewusst wie im Sync: Cursor unkodiert
-        data = parqet_api_get(depot, url, depot_id); pages += 1
-        page = data.get("activities", data) if isinstance(data, dict) else data
-        if isinstance(page, list): acts.extend(page)
-        cursor = data.get("nextCursor") if isinstance(data, dict) else None
-        if not cursor: break
-        cursors.append(str(cursor)[:60])
-    return acts, pages, cursors
+def _debug_page_probe(depot, depot_id, base_url):
+    """Zeigt die Struktur der ERSTEN Antwortseite, ohne die Aktivitäten selbst auszugeben:
+    Top-Level-Felder (Skalare mit Wert, Listen mit Länge, Objekte mit ihren Schlüsseln) — damit
+    erkennbar wird, unter welchem Feld Parqet den Cursor der Folgeseite liefert (v2.8.43)."""
+    sep = "&" if "?" in base_url else "?"
+    data = parqet_api_get(depot, f"{base_url}{sep}limit={_PARQET_PAGE_LIMIT}", depot_id)
+    if not isinstance(data, dict):
+        return {"response_type": type(data).__name__, "length": len(data) if hasattr(data, "__len__") else None}
+    scalars, lists, objects = {}, {}, {}
+    for k, v in data.items():
+        if isinstance(v, list): lists[k] = len(v)
+        elif isinstance(v, dict): objects[k] = sorted(v.keys())
+        else: scalars[k] = (v[:80] if isinstance(v, str) else v)
+    return {"scalars": scalars, "list_lengths": lists, "object_keys": objects,
+            "detected_next_cursor": (str(_extract_next_cursor(data))[:60] if _extract_next_cursor(data) is not None else None)}
 
 @app.route("/api/depots/<depot_id>/parqet/debug-holdings", methods=["GET"])
 def parqet_debug_holdings(depot_id):
@@ -3389,12 +3457,21 @@ def parqet_debug_holdings(depot_id):
     except Exception as e:
         out["parqet_holding"] = {"error": str(e)}
 
-    # Exakt dieselben Aktivitäten, die auch der Sync verwendet
+    # Struktur der ersten Antwortseite (zeigt den tatsächlichen Cursor-Feldnamen)
     try:
-        all_acts = _fetch_all_parqet_activities(depot, depot_id, pid)
+        out["page_probe"] = _debug_page_probe(depot, depot_id, _parqet_activities_base_url(pid))
+    except Exception as e:
+        out["page_probe"] = {"error": str(e)}
+
+    # Dieselbe Paginierung wie der Sync, aber nicht-strikt: liefert auch bei erkannter
+    # Unvollständigkeit Daten (der echte Sync würde in dem Fall abbrechen).
+    try:
+        all_acts, pinfo = _paginate_parqet_activities(
+            depot, depot_id, _parqet_activities_base_url(pid), strict=False)
     except Exception as e:
         out["error"] = f"Parqet API Fehler: {e}"
         return jsonify(out), 502
+    out["pagination_sync_fetch"] = {**pinfo, "sync_would_abort": pinfo["truncated"]}
     acts = [a for a in all_acts if a.get("asset", {}).get("isin") == isin]
     steps, replay_shares, replay_cost = _replay_holdings(isin, acts)
     calc = calculate_holdings(acts).get(isin)
@@ -3409,12 +3486,13 @@ def parqet_debug_holdings(depot_id):
 
     # Typ-/Paginierungs-Gegenprobe ohne activityType-Filter
     try:
-        u_acts, u_pages, u_cursors = _debug_fetch_unfiltered(depot, depot_id, pid)
+        u_acts, u_info = _paginate_parqet_activities(
+            depot, depot_id, f"/portfolios/{pid}/activities?assetType=security", strict=False)
         counts = {}
         for a in u_acts:
             t = a.get("type", "?"); counts[t] = counts.get(t, 0) + 1
         out["unfiltered"] = {
-            "pages": u_pages, "cursors_seen": u_cursors, "total": len(u_acts), "type_counts": counts,
+            **u_info, "total": len(u_acts), "type_counts": counts,
             "sync_type_count": sum(1 for a in u_acts if a.get("type") in _SYNC_ACTIVITY_TYPES),
             "other_type_activities_for_isin": [a for a in u_acts
                 if a.get("asset", {}).get("isin") == isin and a.get("type") not in _SYNC_ACTIVITY_TYPES]}
