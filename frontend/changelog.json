@@ -1,0 +1,710 @@
+{
+  "frontend_version": "2.13.75",
+  "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.75",
+      "changes": [
+        "Der Änderungsverlauf („Letzte Änderungen“) und die Frontend-Version in der Fußzeile kommen jetzt aus einer eigenen Datei (changelog.json) statt aus dem Seitencode. Für dich ändert sich nichts Sichtbares; Änderungen am Verlauf lassen sich künftig getrennt von der Oberfläche pflegen."
+      ]
+    },
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.74 · Backend v2.8.42–43",
+      "changes": [
+        "Bugfix Parqet-Sync: Der Abruf lud bisher nur die ersten 500 Aktivitäten, weil Parqet den Seitenzähler (Cursor) unter einem anderen Feldnamen liefert als erwartet. Bei größeren Depots fehlten dadurch ältere Käufe, und einzelne Stückzahlen wichen nach einem Sync falsch ab. Jetzt werden alle Seiten geladen. Wird ein Abruf als unvollständig erkannt, bricht der Sync ab, ändert nichts und legt einen Verlaufseintrag „Parqet-Sync abgebrochen“ an. Für künftige Diagnosen gibt es einen optionalen Endpunkt, der nur mit der Umgebungsvariable PARQET_DEBUG=1 aktiv ist.",
+        "Auf kleinen Displays (bis 640 px Breite) zeigt der Benutzer-Chip oben rechts nur noch die Initiale statt des ausgeschriebenen Namens; der volle Name steht weiterhin im Tooltip."
+      ]
+    },
+    {
+      "label": "September 2026",
+      "versions": "Frontend v2.13.73 · Backend v2.8.41",
+      "changes": [
+        "Härtung, Schritt 2: nginx begrenzt jetzt die Anfragen pro Client — ganze Depot-Operationen (Kurs-Refresh aller Aktien, Parqet-Sync/-Import, ATH-Prüfung des Depots) auf eine je 10 Sekunden, einzelne Kursabfragen, Suche und PIN-Prüfung großzügiger. Im normalen Betrieb merkst du davon nichts; wird ein Limit erreicht, erscheint die Meldung „Zu viele Anfragen, bitte kurz warten und erneut versuchen“.",
+        "Der nie genutzte Debug-Endpunkt der Parqet-Anbindung wurde entfernt. Die Parqet Client ID wird beim Speichern geprüft (Buchstaben, Ziffern, Punkt, Unter- und Bindestrich), und Suchbegriffe werden für externe Abfragen sauber kodiert."
+      ]
+    },
+    {
+      "label": "September 2026",
+      "versions": "Frontend v2.13.72 · Backend v2.8.40",
+      "changes": [
+        "Sicherheits-Härtung: Freitextfelder (Aktienname, Börse, ISIN, Sektor, Verlauf-Texte, Suchtreffer) werden überall escaped und Inline-Handler übergeben ihre Werte sicher — schließt mehrere Stellen, an denen eingeschleuster HTML-/Script-Text ausgeführt werden konnte. Das Backend prüft Ticker, ISIN, Längen, Einstellungen und Request-Größe und antwortet bei ungültigen Eingaben mit einer klaren Fehlermeldung statt eines Serverfehlers.",
+        "Apprise-URLs: erlaubt sind nur noch Discord, ntfy (ntfy://, ntfys://) und E-Mail (mailtos://). Gespeicherte URLs enthalten Zugangsdaten und werden im Benutzer-Formular nur noch maskiert angezeigt (Dienst-Chip + z. B. discord://•••/•••); ändern heißt entfernen und neu hinzufügen. Jede URL lässt sich einzeln testen, „Alle testen“ testet alle. Bereits gespeicherte URLs anderer Dienste werden nicht mehr bedient und im Formular als „nicht erlaubt“ markiert."
+      ]
+    },
+    {
+      "label": "September 2026",
+      "versions": "Frontend v2.13.71 · Backend v2.8.35–39",
+      "changes": [
+        "Benachrichtigung bei anhaltendem Ausfall einer Datenquelle: Ist Yahoo Finance oder Parqet in 3 automatischen Refresh-Zyklen in Folge überwiegend fehlgeschlagen (Frankfurter API und OpenFIGI, die Fallbacks haben, erst nach 6), erhalten die Admins (ADMIN_USERS) einen einzelnen Push — nicht bei jedem Fehlversuch. Wenn die Quelle wieder antwortet, folgt eine Entwarnung mit der Dauer des Ausfalls. Ein einzelner nicht erreichbarer Ticker gilt nicht als Ausfall, abgelaufene Parqet-Tokens werden weiter separat gemeldet. Zusätzlich meldet ein Wächter, wenn in der Handelszeit länger als das Doppelte des Refresh-Intervalls kein automatischer Refresh mehr durchgelaufen ist (z.B. hängender Scheduler). Im System-Status zeigt der Abschnitt „Datenquellen\" jetzt „gestört seit …\" bzw. den Zyklen-Zähler, bei Stillstand erscheint oben ein Banner. Schwellen sind fest im Code, der Zustand liegt nur im Speicher.",
+        "System-Status-Dashboard erweitert: neue Abschnitte „Datenquellen\" (Yahoo Finance, Frankfurter API, Parqet, OpenFIGI einzeln mit Ø-Antwortzeit und Erfolgsquote statt nur Yahoo gesamt), „Scheduler-Jobs\" (Kurs-Refresh, Parqet-Sync, Tages-/Wochen-Digest mit letztem Lauf, Dauer und nächstem Termin) sowie „Speicher\" (JSON-Dateigrößen, File-Locking-Konflikte seit Start). Dazu eine neue Kachel „Ladezeit (diese Sitzung)\" — rein clientseitig über die Performance API gemessen, keine Historie."
+      ]
+    },
+    {
+      "label": "September 2026",
+      "versions": "Frontend v2.13.69 · Backend v2.8.34",
+      "changes": [
+        "Bugfix: eine abgelaufene Parqet-Verbindung (Token-Erneuerung fehlgeschlagen) blieb bei aktiviertem automatischen Sync oft wochenlang unbemerkt — sichtbar war der Status bisher nur im Depot-Einstellungen-Modal. Jetzt gibt es beim Übergang in diesen Zustand zusätzlich eine obligatorische Push-Benachrichtigung, einen Verlauf-Eintrag sowie einen roten „🔒 Parqet: neu verbinden\"-Hinweis direkt in der Hauptansicht."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.68 · Backend v2.8.32",
+      "changes": [
+        "Portfolio-Verlauf: ETF-Vergleichslinien (MSCI World, S&P 500, DAX) über Chips unter der Zeitraum-Leiste ein-/ausblendbar. Sobald mindestens eine ETF-Linie aktiv ist, wechselt der Chart automatisch von absolutem €-Wert auf %-Veränderung seit Periodenbeginn (Portfolio-, EK- und ETF-Linien alle rebased auf 0% am ersten dargestellten Punkt) — im €-Modus bleibt alles wie gewohnt. Neuer Backend-Endpoint `GET /api/etf-history` liefert dafür Tagesschlusskurse über den bereits genutzten auth-freien Yahoo-chart-Endpoint, 24h In-Memory-Cache pro Ticker."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.65–67",
+      "changes": [
+        "Bugfix: aufgeklappte Details-Elemente (z.B. „Automatischer Sync\", Digest-Infoboxen) blieben beim erneuten Öffnen eines Modals ausgeklappt, der ▶-Pfeil drehte sich beim Aufklappen nicht mit und hatte teils eine falsche Farbe. Alle drei behoben."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.63 · Backend v2.8.31",
+      "changes": [
+        "Automatischer Parqet-Sync (pro Depot konfigurierbar, Depot-Einstellungen → Parqet-Sektion): Toggle + Intervall (Std.) + Zeitraum von/bis. Läuft Mo–Fr zur vollen Stunde (Backend-Scheduler-Job). Werden dabei komplett verkaufte Positionen erkannt, bleiben sie als Bestätigungs-Hinweis erhalten (Badge in der Kopfzeile neben „Parqet: zuletzt …\", klickbar) und öffnen das bestehende Bestätigungs-Modal automatisch beim nächsten Besuch — geht also nicht verloren, auch wenn niemand beim Sync selbst zugesehen hat."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.62",
+      "changes": [
+        "Erträge-Chart: Jahressumme unter den Monatsbalken ergänzt — zeigt Dividenden und realisierte Gewinne/Verluste getrennt für das im Jahres-Umschalter gewählte Jahr (💵/📈, farbcodiert grün/rot je nach Vorzeichen). Folgt derselben gefilterten Basis wie die Balken selbst (Typ-Filter, Suche, gewähltes Jahr) — bei aktivem Typ-Filter erscheint nur die jeweils relevante Zeile. Rein aus den bereits pro Monat aggregierten Werten summiert, keine zusätzliche Berechnung."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.60–61",
+      "changes": [
+        "System-Status-Modal: Button „✕ Leeren\" bei „Letzte Fehler\" ergänzt (nur sichtbar, wenn Einträge vorhanden) — ruft den bereits länger bestehenden Backend-Endpoint `POST /api/health/clear-errors` auf und lädt das Modal danach neu. Der Endpoint war zwar in Doku und Changelog bereits erwähnt, es fehlte aber die JS-seitige Anbindung im Frontend — der Button war dadurch faktisch nie aufrufbar. **Bugfix (v2.13.61):** der Footer-Statusdot (`updateHealthStatusDot`) hat den Rot/Grün-Zustand entgegen der Doku weiterhin über die Länge des `recent_errors`-Ring-Buffers bestimmt statt über das dafür vorgesehene, vom Backend bereits korrekt gelieferte `last_refresh_had_errors`-Flag — der Dot blieb dadurch bis zum manuellen Leeren rot, auch wenn der nächste Refresh-Zyklus bereits fehlerfrei durchlief. Jetzt liest die Funktion das Flag aus; der Dot springt damit wie ursprünglich vorgesehen nach dem nächsten sauberen Zyklus automatisch auf Grün."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.58–59",
+      "changes": [
+        "Erträge-Modal: neue Monatsübersicht als Balkenchart (Jan–Dez, Jahres-Umschalter ‹ › mit oberer Grenze = laufendes Kalenderjahr, untere Grenze = Jahr des ältesten Erträge-Eintrags) — Dividenden grün, realisierte Gewinne/Verluste blau, Verluste unterhalb der Nulllinie in Rot. Reagiert auf den bestehenden Typ-Filter (Alle/Dividenden/Verkäufe) und die Aktien-Suche, genau wie die Liste darunter. Rein frontend-seitige Aggregation der bereits geladenen Erträge-Daten — kein neuer Backend-Endpoint. **Bugfix (v2.13.59):** auf Touch-Geräten (z.B. iPad) verschwand der Tooltip beim Antippen eines Balkens sofort wieder, statt lesbar stehen zu bleiben — lag am ursprünglich genutzten Press-and-Hold-Muster (pointerdown/pointerup, analog zum Crosshair im Portfolio-Verlauf-Chart), das für diskrete Balken ungeeignet ist. Umgestellt auf Tap-Toggle: Klick zeigt/versteckt, bleibt stehen bis ein anderer Balken oder wo anders im Modal getippt wird."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.57 · Backend v2.8.30",
+      "changes": [
+        "Erträge-Modal: Dividenden und realisierte Gewinne/Verluste zeigen jetzt den tatsächlich zugeflossenen Netto-Betrag (nach Steuer/Gebühr, von Parqet als amountNet/realizedGainsNet mitgeliefert) statt brutto — sowohl in Zeilenanzeige, Summenkachel als auch Suche. Bereits gespeicherte Dividenden-Alt-Einträge ohne Netto-Feld werden beim nächsten Sync automatisch nachgerechnet. Versionssprung bereinigt eine Kollision zwischen zwei parallel entstandenen Änderungssträngen (Erträge-Feature und Rebalancing hatten unabhängig überlappende Versionsnummern vergeben) — Rebalancing ist davon inhaltlich nicht betroffen und vollständig enthalten."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.55–56 · Backend v2.8.29",
+      "changes": [
+        "Neu: „⚖️ Rebalancing\"-Kachel in der Portfolio-Übersicht — zeigt, wie viele Positionen von einer Gleichgewichtung (Ziel = 100% ÷ Anzahl Positionen im Bestand) um mehr als 2 %-Punkte abweichen. Antippen öffnet ein Modal mit Kauf-/Verkaufsempfehlung je abweichender Position (Stückzahl + ≈-Betrag), sowie einem zweiten Modus, der ein hinterlegtes Kaufbudget proportional auf die unterrepräsentierten Positionen verteilt. Rein laufzeitberechnet wie die Diversifikations-Lücke (⚖️) — keine manuelle Zielvorgabe pro Aktie, kein neues Datenfeld, keine Backend-Änderung. Positionen innerhalb der Toleranz werden zusammengefasst ausgeblendet. Nur im Bestand verfügbar, nicht in Watchlists (kein Einstandskurs/Stückzahl). Bugfix (v2.13.56): im Kaufbudget-Modus verschwanden Positionen kommentarlos aus der Liste, wenn ihr proportionaler Budget-Anteil nicht für ein ganzes Stück reichte (abgerundet auf 0, dann gefiltert) — betraf v. a. teure Aktien bei mehreren gleichzeitig unterrepräsentierten Positionen. Diese Positionen bleiben jetzt sichtbar mit Hinweis „Anteil X € reicht nicht für 1 Stk.\" statt zu verschwinden."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.54 · Backend v2.8.28",
+      "changes": [
+        "Bugfix: automatische ISIN-Namensauflösung bei komplett verkauften Positionen scheiterte auch für bekannte, große Unternehmen — Börse-Frankfurt-Suche allein reichte nicht aus. Yahoo Finance als zweite Quelle ergänzt (dieselbe Methode wie im Hinzufügen-Modal). Zusätzlich: einmal fehlgeschlagene Einträge blieben bisher dauerhaft blockiert (name_unresolved) statt bei künftigen Syncs erneut versucht zu werden — jetzt ein begrenzter Zähler (5 Versuche über mehrere Syncs verteilt) statt eines dauerhaften Stopp-Flags."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.53 · Backend v2.8.27",
+      "changes": [
+        "Erträge-Modal: Einträge, deren Name nicht automatisch aufgelöst werden konnte (name_unresolved), zeigen jetzt ISIN + „✎ Namen vergeben\" — Tap klappt die Zeile zu einem Textfeld auf, Speichern schreibt den Namen dauerhaft über zwei neue PATCH-Endpoints (/realized-gains/<id>, /dividends/<id>)."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.52 · Backend v2.8.25",
+      "changes": [
+        "Neu: „💰 Erträge gesamt\"-Kachel in der Portfolio-Übersicht (nur sichtbar bei vorhandenen Daten) öffnet ein neues Erträge-Modal mit Dividenden und realisierten Gewinnen/Verlusten aus dem Parqet-Sync — inkl. Typ-Filter (Alle/Dividenden/Verkäufe) und Aktien-Suche, die die Summenkacheln live umrechnet. Zeigt auch Positionen, die inzwischen komplett verkauft und aus dem Bestand entfernt wurden. Datenquelle ausschließlich Parqet, keine manuelle Erfassung."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.51 · Backend v2.8.24",
+      "changes": [
+        "Bugfix: der neue „Parqet Sync\"-Button + „Parqet: zuletzt …\"-Info (v2.13.50) tauchte fälschlich auch in Watchlisten auf, da activeDepot beim Wechsel zu einer Watchlist unverändert bestehen bleibt (nur activeView wechselt). Sichtbarkeits-Prüfung berücksichtigt jetzt zusätzlich activeView.type — Parqet-Kram erscheint nur noch in echten Depot-Ansichten."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.50 · Backend v2.8.24",
+      "changes": [
+        "Parqet-Sync jetzt auch direkt in der Hauptansicht möglich, ohne die Depot-Einstellungen öffnen zu müssen: neuer „🔗 Parqet Sync\"-Button in der Werkzeugleiste (neben „Kurse aktualisieren\") plus Info „Parqet: zuletzt …\" in der Kopfzeile — beides nur sichtbar, wenn das aktive Depot mit Parqet verbunden ist. Bleibt automatisch mit dem Depot-Einstellungen-Modal synchron, egal wo der Sync ausgelöst wird.",
+        "Sicherheits-Härtung: GET /api/depots lieferte bisher ungefiltert auch die Parqet Access-/Refresh-Token an das Frontend aus, obwohl dort nirgends gelesen — werden jetzt vor der Auslieferung entfernt (keine Funktionsänderung, reine Härtung)."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.49 · Backend v2.8.20",
+      "changes": [
+        "Parqet Access Token wird jetzt täglich um 04:00 Uhr automatisch erneuert, unabhängig von manuellen Syncs (vorher lief das Auto-Refresh nur gegen Yahoo/Frankfurter, nie gegen Parqet — der Access Token, bei Parqet ca. 1h gültig, konnte dadurch zwischen zwei Syncs ablaufen). Neuer Verlauf-Eintrag „🔑 Parqet Token-Erneuerung\" pro Lauf.",
+        "Depot-Einstellungen → Parqet-Integration zeigt jetzt zusätzlich den Namen des ausgewählten Parqet-Portfolios im Status (vorher nur beim erstmaligen Auswählen sichtbar, danach nirgends mehr) und erlaubt über einen neuen „Portfolio wechseln\"-Button den nachträglichen Wechsel (vorher nur einmalig bei der Erstverbindung möglich); ein Bestätigungsdialog weist vorab darauf hin, dass der nächste Sync dann gegen das neu gewählte Portfolio abgeglichen wird. Das Depot-Einstellungen-Modal ist ab Tablet-Breite (≥768px) breiter (620 statt 500px), damit „Sync starten\"/„Portfolio wechseln\"/„Rückgängig\"/„Trennen\" dort in einer Zeile passen; auf dem Smartphone unverändert."
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.43–48 · Backend v2.8.19",
+      "changes": [
+        "Portfolio-Übersicht: Top3/Flop3-Karten (Gesamt und Heute) zeigen den Wert wahlweise in % oder in Euro — Tippen auf eine der drei Zahlen einer Karte schaltet die ganze Karte gemeinsam um (Standard: %). Bei den Gesamt-Karten exakt berechnet ((current_eur − buy_price_eur) × shares); bei den Heute-Karten aus dem bereits gerundeten perf_1d abgeleitet (kein neues Backend-Feld, daher minimale Rundungstoleranz). Ersetzt die vorherige Lösung mit gleichzeitiger %/€-Anzeige nebeneinander. Lange Firmennamen bleiben weiterhin einzeilig gekürzt (…), Antippen des Namens zeigt ihn vollständig an (.ps-name/.ps-name.expanded). Zudem übersehene hardcodierte Frontend-Versionsnummer im Footer nachgezogen"
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.42 · Backend v2.8.16",
+      "changes": [
+        "Aktien-Detail-Modal zeigt jetzt 🛒 Nachkauf-Kandidat und/oder ⚖️ Sektor unterrepräsentiert als eigene Status-Zeile direkt unter Name/Ticker/Preis, sofern zutreffend — nutzt die bereits vorhandenen Flags _isBuyCandidate/_isSectorGap (keine neue Berechnung, kein neues Datenfeld). Zeile entfällt ganz, wenn beides nicht zutrifft"
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.41 · Backend v2.8.16",
+      "changes": [
+        "Aktiensuche: Backend fragt bei der allgemeinen Namenssuche einen Treffer mehr bei Yahoo an als angezeigt wird (Sentinel-Trick) — kommt er zurück, zeigt ein dezenter Hinweis unter der Trefferliste, dass es eventuell weitere Treffer gibt und die Suche z.B. mit Ticker oder ISIN eingegrenzt werden sollte. Weiterhin maximal 10 angezeigte Treffer (+ optionaler XETRA-Vorschlag), keine Änderung an WKN-/ISIN-Suche"
+      ]
+    },
+    {
+      "label": "August 2026",
+      "versions": "Frontend v2.13.40 · Backend v2.8.15",
+      "changes": [
+        "Bugfix: der Hinweistext im zugeklappten „Übersichten\"-Oberpunkt zeigte bei Watchlists fälschlich alle vier Emojis (📊 📉 🏷 📈), obwohl im aufgeklappten Zustand korrekt nur zwei Sektionen (📉 ATH-, 🏷 Sektor-Übersicht) angezeigt werden — Portfolio-Übersicht und -Verlauf sind für Watchlists ausgeblendet. Der Hinweis zeigt jetzt bei Watchlists ebenfalls nur „📉 🏷\""
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.39 · Backend v2.8.15",
+      "changes": [
+        "Portfolio-Übersicht: zwei neue Karten „🚀 Top 3 (Heute)\" / „📉 Flop 3 (Heute)\" zeigen die Tagesgewinner/-verlierer nach Tagesperformance (perf_1d), analog zu den bestehenden „Top 3\"/„Flop 3\" nach Gesamt-P&L — die zur Unterscheidung in „(Gesamt)\" umbenannt wurden. Nutzt dieselbe Positionsbasis wie die restliche Karte (nur Positionen mit Einstandskurs, keine Watchlists)"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.38 · Backend v2.8.15",
+      "changes": [
+        "Neue Ansicht „▤ Kompakt\" im Ansicht-Dropdown (Tabelle/Karten/Treemap/Kompakt): eine Zeile pro Aktie mit nur Ticker, Kurs, Tagesperformance und Discount-Farbe. Schalter „Nur Auffällige\" blendet Positionen ohne ausgelösten Discount-Alarm, neues Allzeithoch, Diversifikations-Lücke oder Nachkauf-Kandidat aus. Antippen einer Zeile öffnet unverändert das bestehende Aktien-Detail-Modal",
+        "Kompaktansicht: Tabellenkopf (Ticker/Name/Kurs/1T) ergänzt — fehlte in der ersten Fassung",
+        "Bugfix Kompaktansicht: „Nur Auffällige\" verwarf bisher aktive Suche/Sektor-/Nachkauf-Filter beim Umschalten, da gegen den unfilterten Rohbestand statt gegen die zuletzt gefilterte Liste geprüft wurde",
+        "Werkzeuge (Aktionsleiste + Sortierung) sind jetzt über einen Handle einklappbar — für alle Ansichten, Standard: ausgeklappt. Eingeklappt zeigt der Handle kompakt die aktive Ansicht und Sortierung an. Der Handle nutzt denselben Look wie der Oberpunkt-Header der Übersichten (fett, 13px, ▼/▶) statt der anfangs zu unscheinbaren kleinen grauen Variante",
+        "Bugfix Werkzeuge-Handle: Text färbte sich beim Hovern blau (versehentlich ergänzter Hover-Effekt) — entfernt, die Übersichten haben ebenfalls keinen Hover-Farbwechsel, nur den Zeiger-Cursor",
+        "Kompaktansicht: „Nur Auffällige\" war bisher nur per Hover-Tooltip erklärt — auf dem Smartphone unsichtbar, da es dort kein Hover gibt. Neues ⓘ-Icon neben dem Schalter blendet stattdessen eine Legende ein/aus, die erklärt, was als „auffällig\" zählt"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.33 · Backend v2.8.15",
+      "changes": [
+        "Bugfix: Der Link „Weitere Infos in der Hilfe →\" im Sync-Info-Aufklapper öffnete beim Parqet-Status fälschlich den Abschnitt „📋 Watchlists\" statt „🔗 Parqet — nach der Ersteinrichtung\" (falscher Index beim Aufklappen)"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.32 · Backend v2.8.15",
+      "changes": [
+        "Doku-Bugfix im System-Status-Modal: der Hinweis „Statistiken werden bei App-Neustart zurückgesetzt\" stand direkt neben den kumulierten Yahoo-Call-Zahlen (Refreshes gesamt, Yahoo-Calls gesamt/fehlgeschlagen, Cache-Treffer kumuliert) — diese werden aber seit Einführung von health.json persistiert und überstehen einen Neustart. Nur das Fehler-Log (letzte 20 Yahoo-Fehler) ist tatsächlich In-Memory und wird zurückgesetzt; Text entsprechend präzisiert"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.31 · Backend v2.8.15",
+      "changes": [
+        "Bugfix Split-Vorschläge: „Ausgewählte übernehmen\" erscheint jetzt nur noch, wenn tatsächlich mindestens ein neuer Split zur Auswahl steht — vorher blieb der Button auch ohne Yahoo-Treffer sichtbar und klickbar"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.30 · Backend v2.8.15",
+      "changes": [
+        "Hinweis im Einstellungen-Modal ergänzt, dass die dortigen Einstellungen global für alle Benutzer gelten"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.29 · Backend v2.8.15",
+      "changes": [
+        "Sicherheits-Bugfix: Benutzer mit leerer Depot-/Watchlist-Zuordnung sahen sämtliche Depots und Watchlisten aller Benutzer — ein Altlast-Fallback („keine Zuordnung = alles sichtbar\") aus der Zeit vor der User-Zuordnung. Die Filterung ist jetzt strikt: jeder sieht ausschließlich die ihm zugeordneten Depots und Watchlisten, eine leere Zuordnung ergibt eine leere Ansicht",
+        "Bugfix: Meldet sich ein Benutzer ohne zugeordnete Depots an (z.B. frisch angelegter User), blieben Tabelle, Übersichten und Verlaufschart des vorherigen Benutzers sichtbar. Die Ansicht wird jetzt vollständig geleert und zeigt einen Hinweis, über ＋ ein Depot oder eine Watchlist anzulegen — fremde Daten wurden dabei nie geladen, es war ein reiner Anzeigefehler",
+        "Anzahl und Einstandskurs können jetzt manuell erfasst werden: optional direkt beim Hinzufügen einer Aktie (nur Bestand) und nachträglich über den ✎-Button, der zum allgemeinen „Aktie bearbeiten\"-Modal erweitert wurde — der bisherige Handelsplatz-Wechsel liegt dort jetzt in einem Aufklapper. In Parqet-verbundenen Depots warnt das Modal deutlich, dass der nächste Parqet-Sync manuell geänderte Werte wieder überschreibt",
+        "Das P-Badge am Aktiennamen zeigt jetzt die tatsächliche Herkunft an (neues Feld parqet_synced): es erscheint nur noch, wenn Einstandskurs/Stückzahl wirklich von Parqet stammen — manuell erfasste oder geänderte Werte tragen kein P. Bestehende Parqet-Positionen erhalten das Badge mit dem nächsten Sync zurück"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.24 · Backend v2.8.13",
+      "changes": [
+        "Aktien-Detail-Modal: Label \"P&amp;L\" durch \"Gewinn &amp; Verlust\" ersetzt"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.23 · Backend v2.8.13",
+      "changes": [
+        "Aktien-Detail-Modal ergänzt um Gesamtwert (Kurs × Stückzahl), Anzahl (Stückzahl) sowie Kurs-Zeitstempel (Kurs-/Prüfzeit) — jeweils nur sichtbar wenn die zugrunde liegenden Werte vorhanden sind"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.20 · Backend v2.8.13",
+      "changes": [
+        "Gesamtwert je Position (Kurs × Stückzahl) direkt im Gewichtungs-Balken ergänzt, z.B. „23,4% (1.234 €)“ — in Tabelle und Karten, nur sichtbar wenn Kurs und Stückzahl vorhanden sind (gleiche Bedingung wie bisher für die Gewichtung)"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.19 · Backend v2.8.13",
+      "changes": [
+        "Aufklapp-Pfeil in der Split-Liste nochmals vergrößert, Einrückung der aufgeklappten Splits entsprechend angepasst"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.18 · Backend v2.8.13",
+      "changes": [
+        "Aufklapp-Pfeil in der gruppierten Split-Liste vergrößert — war vorher kaum als Pfeil erkennbar"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.17 · Backend v2.8.13",
+      "changes": [
+        "Split-Liste gruppiert jetzt nach Aktie: eine Zeile pro Aktie mit Anzahl der Splits, Antippen klappt die einzelnen Splits auf (absteigend nach Datum). Aktien mit nur einem Split zeigen ihn direkt in der Zeile — kein Aufklappen nötig"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.16 · Backend v2.8.13",
+      "changes": [
+        "Split-Vorschläge: nach Auswahl einer Aktie im Split-Dialog werden historische Splits automatisch von Yahoo Finance geladen — einzeln an-/abwählbar, Datum und Faktor vor dem Übernehmen korrigierbar. Bereits erfasste Splits werden als vorhanden markiert. Bei XETRA-Zweitlistings wird über das Original-Listing abgefragt",
+        "Reverse Splits (Aktienzusammenlegungen) werden jetzt unterstützt — Faktor < 1, z.B. 0,1667 für 1:6; Anzeige in der Split-Liste entsprechend als 1:6"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.15 · Backend v2.8.12",
+      "changes": [
+        "„Kurse aktualisieren“ zeigt jetzt einen Fortschrittsbalken mit Aktienname und Zähler — wie bei der ATH-Prüfung. Im Bestand meldet das Backend den Fortschritt während des laufenden Refreshs, in Watchlists kommt er direkt aus der Aktualisierungsschleife"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.14 · Backend v2.8.11",
+      "changes": [
+        "Der 🛒-Nachkauf-Filter erscheint nicht mehr in Watchlists. Er setzt Einstandskurs und Stückzahl voraus, die Watchlist-Aktien gar nicht haben — der Klick lieferte dort zwangsläufig kein Ergebnis",
+        "Bugfix: lieferte ein Filter keine Treffer, blieb die Tabelle kommentarlos leer statt einen Hinweis zu zeigen. Betraf jede Filterung — Suche, Klick auf eine ATH-Karte, Sektor-Filter und den Nachkauf-Filter. Es erscheint jetzt „Keine Treffer“ mit Angabe der aktiven Filter und einem Knopf zum Zurücksetzen"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.13 · Backend v2.8.11",
+      "changes": [
+        "Code-Cleanup: der Standardwert der Nachkauf-Schwelle (30%) sowie deren Ober- und Untergrenze standen an insgesamt sieben Stellen einzeln im Code — jetzt jeweils eine benannte Konstante pro Seite. Die Grenzen des Schiebereglers werden zusätzlich aus dieser Konstante gesetzt statt doppelt als HTML-Attribute gepflegt. Keine funktionale Änderung"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.12 · Backend v2.8.10",
+      "changes": [
+        "Nachkauf-Schwelle für Watchlists entfernt: das Feld existierte im Backend, war über die Oberfläche aber nie einstellbar und blieb dauerhaft auf dem Standardwert. Watchlists filtern jetzt eindeutig mit dem festen Standardwert — vorher rechnete die Anzeige in der Watchlist mit der Schwelle des zuletzt geöffneten Depots, während Benachrichtigungen den Standardwert nutzten (App und E-Mail konnten sich widersprechen)",
+        "Bugfix: der Schieberegler für die Nachkauf-Schwelle war auch in der Watchlist-Ansicht bedienbar und hat dort stillschweigend die Schwelle eines gar nicht sichtbaren Depots verändert — er erscheint jetzt nur noch im Bestand",
+        "Bugfix: beim Wechsel vom Bestand in eine Watchlist wurde der 🛒-Filter zwar intern zurückgesetzt, blieb optisch aber aktiv (Button hervorgehoben, Regler eingeblendet) — Filter-Reset für beide Wechsel jetzt identisch"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.11 · Backend v2.8.10",
+      "changes": [
+        "Code-Cleanup: die Vergleichsbasis der ⚖️ Sektor-Lücke wurde seit der Watchlist-Entkopplung (v2.8.0) immer schon aus der angezeigten Liste selbst gebildet, intern aber weiterhin über einen zusätzlichen Zwischenspeicher geführt. Dieser konnte nach dem Hinzufügen oder Löschen einer Aktie kurzzeitig noch gegen den vorherigen Stand rechnen — ersatzlos entfernt",
+        "Code-Cleanup: eine leere, dauerhaft ausgeblendete Leiste sowie ein nie befülltes Hinweisfeld aus der Zeit vor der einheitlichen Tab-Leiste entfernt (inkl. zugehöriger Formatvorlagen) — keine sichtbare Änderung"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.10 · Backend v2.8.9",
+      "changes": [
+        "Code-Cleanup nach Review: verwaister Funktionsparameter in der Sektor-Lücken-Berechnung entfernt, eine ungenutzte lokale Variable, eine wirkungslose Speicherung der Nachkauf-Schwelle im Browser sowie sieben nirgends verwendete Formatvorlagen; doppelter Code in der mobilen Suche zusammengefasst und zwei Kommentare korrigiert, die noch das Verhalten vor v2.8.0 beschrieben — keine funktionale Änderung"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Backend v2.8.8",
+      "changes": [
+        "Parqet-Sync: der Verlaufseintrag listet jetzt zusätzlich auf, was sich pro Position konkret geändert hat (Einstandskurs und/oder Stückzahl jeweils alt → neu) — vorher standen dort nur die Zähler „Aktualisiert / Neu / Konflikte / Verkauft“ ohne Details"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Backend v2.8.7",
+      "changes": [
+        "Tägliche Zusammenfassung: löst dieselbe Aktie an einem Tag mehrfach aus (Kurs pendelt über eine Blockgrenze, oder erst −40%- dann −50%-Block), erscheint sie jetzt nur noch einmal statt mehrfach. Es gewinnt der tiefste an diesem Tag erreichte Block, ein Zusatz „(n×)“ zeigt die Gesamtzahl der Alarme; die Zähler in den Überschriften bleiben die echte Alarm-Anzahl. Gilt für Depot- und Watchlist-Zusammenfassung, jeweils Text- und E-Mail-Version"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.9 · Backend v2.8.6",
+      "changes": [
+        "Benutzerverwaltung: Admins sind in der Benutzerliste jetzt mit einem „Admin”-Badge neben dem Namen gekennzeichnet",
+        "Neu: Admin-Rechte über die Umgebungsvariable ADMIN_USERS (kommaseparierte Benutzernamen in docker-compose.yml) — Admins sehen im Verlauf weiterhin die Ereignisse aller Benutzer inkl. Benutzer-Filter, alle anderen nur noch ihre eigenen Einträge plus Systemereignisse",
+        "Benutzer anlegen können jetzt nur noch Admins (Ausnahme: der allererste Benutzer bei der Ersteinrichtung); ohne gesetzte ADMIN_USERS-Variable ist das Anlegen deaktiviert",
+        "Neu: Admins können Benutzer direkt über die Benutzerverwaltung löschen (🗑) — mit Bestätigungsdialog, der vorab auflistet, welche exklusiv zugeordneten Depots/Watchlists mitgelöscht würden und welche geteilten erhalten bleiben; Selbstlöschung und das Löschen des letzten Benutzers sind blockiert (dafür bleibt die DELETE_USER-Variable)"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.7 · Backend v2.8.5",
+      "changes": [
+        "Testbenachrichtigungen erscheinen im Verlauf jetzt als „✅ Test” statt „🔔 Alarm” — der Verlauf-Typ „test” existierte im Frontend zwar von Anfang an, wurde vom Backend aber nie vergeben (jeder Versand wurde pauschal als „alert” geloggt)",
+        "Verlauf: der System-Eintrag „Fehlerlog geleert” (System-Status → ✕ Leeren) zeigt jetzt ein Label („⚙️ System”) statt des rohen Typ-Namens; außerdem bekommt die Tageszusammenfassung (🌙) jetzt wie die Watchlist-Zusammenfassung einen farbigen Rand in der Verlaufsliste",
+        "Code-Cleanup: drei verwaiste Funktionsparameter im Backend entfernt (build_alert_html/title, fetch_performance/currency, _refresh_depot/trigger), fünf ungenutzte id-Attribute im HTML entfernt, drei interne Textreste der alten Bezeichnung „Tägliche ATH-Zusammenfassung” angepasst — keine funktionale Änderung"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.6 · Backend v2.8.4",
+      "changes": [
+        "Bugfix: Discount-Block-Alarm nannte sich an zwei Stellen noch „ATH-Alarm”, obwohl er nichts mit einem neuen Allzeithoch zu tun hat — Überbleibsel aus dem Titel-Umbau in v2.7.27/v2.8.0, der nur den Plain-Text-Titel (📉 statt „ATH-Alarm [Label]: …”) umgestellt hatte. Betroffen: die HTML-E-Mail-Version des Discount-Alarms (Header hieß weiterhin „🔔 ATH-Alarm — {Label}”, jetzt „📉 Discount-Block-Alarm — {Label}”) sowie das Beispiel im Hilfe-Modal (zeigte noch das alte Titel-/Body-Format). Reine Text-/Formatkorrektur, keine Funktionsänderung"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.5 · Backend v2.8.3",
+      "changes": [
+        "„Tägliche ATH-Zusammenfassung” in „Tägliche Depot-Zusammenfassung” umbenannt (Depot-Einstellungen-Hilfe, Benutzer-Formular) — der alte Name war missverständlich, da die Zusammenfassung sowohl Discount- als auch ATH-Alarme enthält, nicht nur neue Höchststände. Grenzt sich jetzt außerdem klar von der neuen „Watchlist-Zusammenfassung” ab. Reine Textänderung, keine Funktions-/API-Änderung"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.4 · Backend v2.8.2",
+      "changes": [
+        "Hinweistext zur Watchlist-Zusammenfassung ist jetzt ausklappbar (ℹ️ Was bedeutet das?) statt fest sichtbar, analog zu anderen Erklärungen in der App"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.3 · Backend v2.8.2",
+      "changes": [
+        "Neu: gebündelte tägliche Watchlist-Zusammenfassung — ein Schalter im Benutzerprofil (Sektion 🕘 Zusammenfassungen) fasst alle Discount- und ATH-Alarme über sämtliche eigenen Watchlists hinweg in einer einzigen Nachricht zusammen (statt pro Watchlist einzeln), zur gleichen Uhrzeit wie die tägliche Depot-Zusammenfassung. Default: aus"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.2 · Backend v2.8.1",
+      "changes": [
+        "Neu: Ein/Aus-Schalter für Benachrichtigungen in den Watchlist-Einstellungen (Default: an) — das Backend-Feld gab es bereits seit der Watchlist-Entkopplung (v2.8.0), es fehlte bisher nur der UI-Schalter dafür (analog zum bestehenden Schalter bei Depots)"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.1 · Backend v2.8.1",
+      "changes": [
+        "ATH-Prüfung und -Korrektur funktionieren jetzt auch in der Watchlist-Ansicht, nicht mehr nur im Bestand — ATH-Werte können bei beobachteten Aktien genauso veralten. Prüft immer den gerade aktiven Kontext (Bestand ODER die offene Watchlist)"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.13.0 · Backend v2.8.0",
+      "changes": [
+        "Watchlists sind kein Unterobjekt eines Depots mehr, sondern eigenständig und direkt Benutzern zugeordnet (analog zu Depots, mehrere Benutzer pro Watchlist möglich). Aktien lassen sich weiterhin zwischen Watchlist und Bestand verschieben — dafür jetzt mit expliziter Depot-Auswahl statt automatischem Ziel-Depot. ATH-Alarme für Watchlists zeigen kein Depot-Suffix mehr im Label; die ⚖️-Sektor-Lücke entfällt in Watchlist-Benachrichtigungen (keine automatische Vergleichsbasis mehr), bleibt aber als Anzeige-Feature erhalten. ATH-Alarm-Titel zusätzlich neu formatiert: 📉 für Discount-Alarme statt „ATH-Alarm [Depot]: …”, Bestand/Beobachtung-Angabe steht jetzt als erste Body-Zeile"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.18 · Backend v2.7.25",
+      "changes": [
+        "Neu: Aktien-Detail-Modal — Klick auf den Aktiennamen in Tabelle oder Karte (sowie Tap auf eine Treemap-Kachel) zeigt Sektor, ATH-Abstand, 52W-Bereich, P&amp;L und eine kurze Unternehmensbeschreibung von Wikipedia (Deutsch, Fallback Englisch), wird bei Öffnung nachgeladen. Ursprünglich über Yahoo Finance geplant — dessen quoteSummary-Endpunkt verlangt inzwischen einen GDPR-Consent-Cookie-Flow, der aus Docker/EU-Umgebungen nicht zuverlässig automatisierbar ist"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.16 · Backend v2.7.22",
+      "changes": [
+        "Dialog „Bei Parqet verkauft” überarbeitet: klarerer Hinweistext, dass pro Position ein eigener Klick auf „Entfernen” nötig ist, sowie ein neuer „Alle entfernen”-Button im Footer (mit Zähler der noch offenen Positionen), falls man tatsächlich alle löschen möchte statt einzeln durchzuklicken"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.15 · Backend v2.7.22",
+      "changes": [
+        "Bugfix Parqet-Sync: komplett verkaufte Positionen wurden bisher nicht erkannt — Parqet zeigte den Verkauf korrekt an, der Sync meldete aber \"keine Änderungen\" und die Aktie blieb unverändert im ATH-Tracker. Solche Fälle werden jetzt erkannt und in einem eigenen Dialog zur Bestätigung angezeigt (\"Bei Parqet verkauft\"), bevor die Position auf Wunsch entfernt wird — analog zum bestehenden ISIN-Konflikt-Dialog"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.14 · Backend v2.7.21",
+      "changes": [
+        "Beim Anlegen eines neuen Benutzers erscheint die Depot-Zuordnungsauswahl jetzt nur noch, solange es tatsächlich unzugeordnete Depots gibt (z.B. beim Ersteinrichten oder wenn Depots vor dem nächsten Benutzer angelegt wurden). Sobald jedes Depot bereits einem Benutzer zugeordnet ist, entfällt die Auswahl komplett — neue Benutzer legen sich ihr Depot künftig selbst an, da Depots i.d.R. persönlich sind"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.13 · Backend v2.7.21",
+      "changes": [
+        "Benutzer-Einstellungen neu gegliedert: das Bearbeiten-Formular ist jetzt in drei aufklappbare Sektionen unterteilt (👤 Profil, 🔔 Benachrichtigungen, 🕘 Zusammenfassungen) statt einer langen Liste — nur Profil startet aufgeklappt. Zugeklappte Sektionen zeigen den aktuellen Zustand kompakt im Kopf an (z.B. \"2 URLs · Bestätigung an\" oder \"📊 So 20:00 · 🌙 21:00\"). Der Test-Button (🔔 Testen) liegt jetzt dauerhaft sichtbar neben Speichern/Abbrechen"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.12 · Backend v2.7.21",
+      "changes": [
+        "Wochentag/Uhrzeit der wöchentlichen Zusammenfassung sowie die Uhrzeit der täglichen ATH-Zusammenfassung sind jetzt userbezogen einstellbar (Benutzer-Icon oben rechts → Bearbeiten) statt global — jeder Benutzer kann so einen eigenen Zeitpunkt für seine Depots wählen; die Aktivierung selbst bleibt unverändert pro Depot. Der bisherige globale Ein/Aus-Schalter in den App-Einstellungen entfällt. Neue Defaults: Sonntag 20 Uhr (Wochenbericht) bzw. 21 Uhr (Tageszusammenfassung, weiterhin Mo–Fr); bestehende globale Werte wurden beim Update automatisch auf alle vorhandenen Benutzer übertragen"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.11 · Backend v2.7.20",
+      "changes": [
+        "Bugfix: ATH-Übersicht und Sektor-Übersicht starteten auf einem neuen Gerät (leerer localStorage) fälschlich aufgeklappt statt eingeklappt — Standard ist jetzt konsistent \"eingeklappt\", wie bei der Portfolio-Übersicht und dem Portfolio-Verlauf"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.10 · Backend v2.7.20",
+      "changes": [
+        "Depot-Ansicht (Tabelle/Karten/Treemap) sowie die Übersichten (Portfolio/ATH/Sektor/Verlauf) nutzen auf breiten Desktop-Monitoren jetzt deutlich mehr der verfügbaren Bildschirmbreite und laufen gemeinsam auf dieselbe Breite (vorher beide hart auf 1400px gedeckelt, dadurch auf 4K-Displays viel ungenutzter Platz links/rechts); Dialoge/Modals bleiben bewusst bei der bisherigen, kompakteren Breite"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.8 · Backend v2.7.20",
+      "changes": [
+        "Ansicht-Dropdown: „Tabelle\" zeigte auf dem Smartphone bisher weiterhin die Karten-Ansicht (unverändertes Alt-Verhalten) — jetzt wird bei expliziter Auswahl von „Tabelle\" auch auf Mobile wirklich die Tabelle angezeigt (horizontal scrollbar). Ohne bisherige eigene Auswahl bleibt der bewährte Start mit Karten auf Mobile / Tabelle auf Desktop erhalten; erst ein bewusster Wechsel im Dropdown gilt geräteunabhängig."
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.7 · Backend v2.7.20",
+      "changes": [
+        "Discount-Stufen (grün/gelb/orange/rot) werden in Tabelle und Karten jetzt als schmaler linker Farb-Akzent statt als Vollflächen-Tönung dargestellt — dadurch wirkt die Übersicht ruhiger und lässt Raum für ein Zebra-Muster",
+        "Neu: dezentes Zebra-Muster in der Depot-Tabelle (jede zweite Zeile leicht abgesetzt) für bessere Zeilen-Zuordnung beim Scannen; Kontrast im Dark Mode kräftiger als im Light Mode abgestimmt",
+        "Neu: Kartenraster-Ansicht auch für Desktop — bisher nur auf Mobilgeräten verfügbar, jetzt als mehrspaltiges Grid auch am großen Bildschirm wählbar (identische Felder wie Tabelle/Mobile-Karte, keine Informationslücke)",
+        "Der bisherige einzelne „⊞ Treemap\"-Button in der Aktionsleiste ist einem „Ansicht\"-Dropdown gewichen, das zwischen Tabelle, Karten und Treemap umschaltet (Häkchen zeigt die aktive Ansicht); Treemap bleibt wie bisher auf den Bestand ab 2 Positionen beschränkt, Karten und Tabelle sind auch für Watchlists wählbar"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.6 · Backend v2.7.20",
+      "changes": [
+        "Verlauf: Einträge werden jetzt durch Tages-Trenner gruppiert (Heute / Gestern / Datum) statt ununterbrochen ineinander überzugehen"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.5 · Backend v2.7.20",
+      "changes": [
+        "Code-Cleanup: zwei verwaiste Konstanten (storedDepotId, storedView) entfernt — Relikte eines früheren Umbaus, die Wiederherstellungslogik liest seither frisch aus localStorage; keine funktionale Änderung"
+      ]
+    },
+    {
+      "label": "Juli 2026",
+      "versions": "Frontend v2.12.4 · Backend v2.7.19",
+      "changes": [
+        "Wiederherstellung: ein versehentlicher Datei-Upload hatte app.py und index.html kurzzeitig auf einen älteren Stand zurückgesetzt (52-Wochen-Hoch/-Tief-Badge und der perf_1d-Kalendertag-Fix fehlten dadurch); beide Dateien sind jetzt wieder auf dem korrekten Stand"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.12.3 · Backend v2.7.16",
+      "changes": [
+        "Neu: 52-Wochen-Hoch/-Tief-Badge (52W-H / 52W-T) neben den Performance-Badges — zeigt an, wenn der Kurs innerhalb 3% des 52-Wochen-Hochs bzw. -Tiefs liegt; nutzt dieselben 5-Jahres-Kursdaten wie die Performance-Berechnung, kein zusätzlicher Yahoo-Call"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.12.2 · Backend v2.7.15",
+      "changes": [
+        "Hilfe: Kaufbudget-Tabelle (Discount-Multiplikator) durch kompakte Zeilen ersetzt — die vorherige 3-Spalten-Tabelle lief auf iPad/Smartphone aus dem Rahmen"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.12.1 · Backend v2.7.15",
+      "changes": [
+        "Hilfe: Neue Abschnitte für Tägliche ATH-Zusammenfassung und Wöchentliche Zusammenfassung ergänzt (fehlten bisher komplett); Kaufbudget-Abschnitt um die Discount-Multiplikator-Tabelle (1×/2×/3×) erweitert; Apprise-Abschnitt erklärt jetzt zusätzlich den Ein/Aus-Schalter pro Depot"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.12.0 · Backend v2.7.15",
+      "changes": [
+        "Neu: Tägliche ATH-Zusammenfassung — optional pro Depot aktivierbar (Depot-Einstellungen), fasst um 21 Uhr zusammen, welche Discount- und ATH-Alarme heute für dieses Depot gesendet wurden (auch als Meldung wenn keine Alarme vorlagen); gedacht als Erinnerung falls man tagsüber keine Zeit zum Reagieren hatte."
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.11.0 · Backend v2.7.13",
+      "changes": [
+        "Originalwährung unter EUR-Kurs: Bei Fremdwährungsaktien (USD, GBP etc.) wird der Kurs in der Originalwährung jetzt klein und grau unter dem EUR-Kurs angezeigt — in Tabelle und Mobile-Card. EUR-Aktien bleiben unverändert."
+      ]
+    },
+    {
+      "versions": "Frontend v2.10.2 · Backend v2.7.11",
+      "changes": [
+        "Bugfix Changelog: 'UNDEFINED' als Monats-Header behoben — fehlende label-Felder in vier Einträgen ergänzt und Render-Code defensiv gemacht (label-Div wird nur gerendert wenn vorhanden)"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.10.1 · Backend v2.7.11",
+      "changes": [
+        "Aktiensuche: XETRA-Eintrag wird jetzt dynamisch via Boerse Frankfurt + ISIN-Lookup ermittelt und immer an erster Stelle mit 'XETRA EMPFOHLEN'-Label angezeigt (kein hardcodiertes Mapping mehr); gilt auch für Handelsplatz-Wechseln-Dialog"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.10.0 · Backend v2.7.9",
+      "changes": [
+        "Suchfeld auf Smartphone: Icon-Button 🔍 in der Aktionsleiste öffnet vollbreite Suchleiste mit Abbrechen-Button (font-size 16px verhindert iOS-Zoom); Desktop/iPad unverändert"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.9 · Backend v2.7.8",
+      "items": [
+        "Portfolio-Verlauf: Header zeigt jetzt zusätzlich zum Prozent-Wert auch die absolute Wertveränderung in Euro an (z.B. +5,3% (+1.234,56 €)) — der aktuelle Depotwert entfällt dort, da er im Chart-Tooltip weiterhin sichtbar ist"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.8 · Backend v2.7.7",
+      "items": [
+        "Parqet: Portfolio-Auswahl nach OAuth-Callback als Callout-Card hervorgehoben (blauer Rahmen + \"Letzter Schritt\"-Hinweis) und zusätzlicher Toast — macht den nächsten Schritt auf Mobile unmissverständlich deutlich",
+        "Parqet: Nach erfolgreichem OAuth-Callback wird die Depot-Auswahl automatisch in den sichtbaren Bereich gescrollt (scrollIntoView) — verhindert dass der Picker auf Mobile unterhalb des Folds landet",
+        "Hilfe: Neue Abschnitte für Portfolio-Verlauf/EK-Kurve, Treemap-Ansicht und System-Status hinzugefügt; veralteten Hinweis auf Apprise-Konfiguration auf Depot-Ebene entfernt (Benachrichtigungen sind seit v2.8.0 ausschließlich pro Benutzer)"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.5 · Backend v2.7.5",
+      "items": [
+        "Übersichten: aktive Filter (ATH-Stufe, Sektor) werden als farbige Pills im Oberpunkt-Header angezeigt — sichtbar auch wenn die Übersichten zugeklappt sind"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.4 · Backend v2.7.5",
+      "items": [
+        "Übersichten: Portfolio-, ATH-, Sektor-Übersicht und Portfolio-Verlauf sind jetzt unter einem gemeinsamen Oberpunkt 'Übersichten' zusammengefasst — ein Tap klappt alles auf einmal weg; bei zugeklapptem Oberpunkt zeigen vier Emojis (📊 📉 🏷 📈) kurz an was sich dahinter verbirgt"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.3 · Backend v2.7.6",
+      "items": [
+        "Verlauf: ausstehende Bestätigungen (Bestätigungsmodus) werden jetzt auch dann als '↩ Nicht bestätigt' eingetragen, wenn der Kurs sich bereits vor dem zweiten Refresh erholt — bisher wurden solche Pending-Flags still verworfen"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.2 · Backend v2.7.5",
+      "items": [
+        "Depot-übergreifender Yahoo-Cache beim automatischen Refresh: identische Ticker in mehreren Depots oder Watchlists werden nur noch einmal abgefragt — spart Yahoo-Calls wenn Positionen in mehreren Depots vorkommen",
+        "System-Status: neue Cache-Zeile zeigt Treffer und Einsparung des letzten Refresh-Zyklus"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.1 · Backend v2.7.4",
+      "items": [
+        "Footer: zweizeilig auf Mobilgeräten — Versionsinfo oben, Links (Letzte Änderungen · System-Status · GitHub) unten"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.9.0 · Backend v2.7.4",
+      "items": [
+        "System-Status: farbiger Statusdot im Footer — grün (Handelszeit, kein Fehler), rot (Handelszeit + Yahoo-Fehler), grau (außerhalb Handelszeit); aktualisiert sich beim manuellen Refresh und automatisch alle 60 Sekunden"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.9 · Backend v2.7.4",
+      "items": [
+        "Code-Cleanup: tote Hilfsfunktion entfernt, dreifach-setTimeout-Bug in Einstellungen behoben, Multiplier-Berechnung in eine Funktion zusammengeführt, Discount-Helfer konsequent genutzt"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.8 · Backend v2.7.3",
+      "items": [
+        "System-Status: Fehler-Log als gestapelte Cards statt Tabelle — Ticker, Datum und Ursache übereinander, kein horizontales Abschneiden auf dem Smartphone mehr"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.7 · Backend v2.7.3",
+      "items": [
+        "Bugfix EK-Linie im Verlaufschart: Linie war nach dem Y-Skala-Fix unsichtbar wenn EK außerhalb des Wertebereichs lag — wird jetzt per Klammerung am unteren Chartrand sichtbar gehalten; Legende zeigt 'EK ↓' als Hinweis"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.6 · Backend v2.7.3",
+      "items": [
+        "Bugfix Portfolio-Verlauf: Y-Achsen-Skala basiert wieder nur auf Portfolio-Werten — EK-Linie (gestrichelt) hat die Skala nicht mehr zusammengestaucht wenn EK deutlich unter dem Depotwert lag",
+        "Bugfix Treemap: Kachelnamen zeigen jetzt immer den Firmennamen statt des Ticker-Kürzels (z.B. 'Caterpillar' statt 'CAT1'), bei kleinen Kacheln entsprechend abgekürzt"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.5 · Backend v2.7.3",
+      "items": [
+        "Portfolio-Verlauf: Invested-Capital-Kurve — zeigt den kumulierten Einstandswert als gestrichelte Linie im Verlaufschart an (nur bei Positionen mit bekanntem Einstandskurs)",
+        "Treemap-Ansicht — neuer View-Toggle (⊞ Treemap / ☰ Tabelle) im Depot-Header; jede Kachel zeigt Positionswert, ATH-Discount und Tagesperformance; Antippen öffnet Detail-Panel",
+        "System-Status — neuer Link im Footer öffnet Gesundheits-Dashboard: Laufzeit, Scheduler-Status, Yahoo-Erfolgsquote, überwachte Ticker und Fehler-Log"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.4 · Backend v2.7.2",
+      "items": [
+        "Portfolio-Übersicht: Gesamtwert zeigt jetzt den Zeitpunkt der ältesten Kursabfrage an (heute: nur Uhrzeit, ältere Tage: Datum + Uhrzeit) — so ist auf einen Blick erkennbar, wie aktuell der angezeigte Wert ist"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.3 · Backend v2.7.2",
+      "items": [
+        "Neu: Diversifikations-Lücke (⚖️) — markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind (Schwelle: unter 50% des Sektor-Durchschnitts), direkt am Sektor-Tag in Tabelle und Karten sowie als Ø-Hinweis in der Sektor-Übersicht. Watchlist-Aktien werden dabei immer gegen den echten Bestand bewertet, nicht gegen die Watchlist selbst.",
+        "ATH-Discount-Benachrichtigungen zeigen ⚖️ jetzt zusätzlich zu 🛒, wenn die betroffene Aktie aus einem unterrepräsentierten Sektor stammt (nur beim Discount-Block-Alarm, nicht beim separaten Neues-ATH-Alarm)"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.2 · Backend v2.7.1",
+      "items": [
+        "Logo oben links ist jetzt anklickbar und lädt die Seite neu",
+        "Performance-Badges umgestellt: 1T/1M/3M/1J/3J statt 1T/1W/1M/3M (Wochenperformance bleibt intern für die Wochenzusammenfassung erhalten)"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.8.0 · Backend v2.7.0",
+      "items": [
+        "Umbau: Benutzerprofil ist jetzt Pflicht — vereinfacht den Code erheblich, da Benachrichtigungseinstellungen nicht mehr doppelt (Depot- und Benutzer-Ebene) gepflegt werden müssen",
+        "Gibt es nur einen Benutzer ohne PIN, wirst du jetzt automatisch eingeloggt — kein Auswahl-Screen mehr nötig",
+        "Bugfix: Depot-Einstellungen speichern (PUT) war durch einen falsch zugeordneten Decorator unbeabsichtigt nicht erreichbar — behoben",
+        "Bugfix: Wöchentliche Zusammenfassung berücksichtigte Benutzer-Apprise-URLs nicht — las bisher ausschließlich vom Depot"
+      ]
+    },
+    {
+      "label": "Juni 2026",
+      "versions": "Frontend v2.7.25–2.7.45 · Backend v2.5.0–2.6.0",
+      "items": [
+        "Neu: Benachrichtigung bei neuem Allzeithoch — pro Aktie aktivierbar über das 🔔-Symbol neben dem ATH-Wert (auch für Watchlist-Aktien)",
+        "PIN-Eingabe beim Login funktioniert jetzt auch über die physische Tastatur (Desktop), zusätzlich zum Zahlenpad",
+        "Sicherheit: alle Aktien-, Watchlist-, Depot- und Benutzernamen werden jetzt korrekt HTML-escaped (verhindert gespeicherten XSS bei manuell gesetzten Namen)",
+        "Sicherheit: Datenbank-Dateien werden jetzt atomar geschrieben (verhindert Datenverlust bei einem Absturz mitten im Speichern)",
+        "Neu: Letzte Änderungen — dieser Changelog",
+        "Portfolio-Verlauf: Datenpunkte antippen/hovern zeigt Datum & exakten Wert, lange Zeiträume werden automatisch reduziert",
+        "ATH-, Portfolio-, Sektor-Übersicht und Portfolio-Verlauf zu einer kompakten, gemeinsam einklappbaren Ansicht zusammengeführt",
+        "Benachrichtigungen lassen sich jetzt pro Depot einzeln aktivieren/deaktivieren, unabhängig von der wöchentlichen Zusammenfassung",
+        "ATH-Alarm-E-Mails im selben übersichtlichen Design wie der Wochenbericht",
+        "App-Icon hinzugefügt",
+        "Kleinere Verbesserungen und Bugfixes (u.a. Darstellung auf iPad, Wechsel zwischen Watchlists, Y-Achsen-Skalierung im Chart)"
+      ]
+    }
+  ]
+}

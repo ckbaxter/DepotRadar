@@ -5,7 +5,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
 ![Version Backend](https://img.shields.io/badge/Backend-v2.8.43-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.74-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.75-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -99,6 +99,7 @@ DepotRadar/
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html
+│   ├── changelog.json         # Änderungsverlauf + aktuelle Frontend-Version (nginx cached die Datei nie)
 │   └── icons/
 │       ├── favicon.svg
 │       ├── favicon.ico
@@ -393,6 +394,7 @@ Gespeicherte URLs enthalten Zugangsdaten und werden im Benutzer-Formular nur **m
 
 | Version | Beschreibung                                                                    |
 |---------|---------------------------------------------------------------------------------|
+| 2.8.43 / 2.13.75 | Änderungsverlauf ausgelagert: Das `CHANGELOG`-Array (~650 Zeilen) liegt nicht mehr in `index.html`, sondern in `frontend/changelog.json` (`frontend_version` + `entries[]`, neueste oben). Die Frontend-Version in der Fußzeile wird von dort gelesen. Damit lassen sich Changelog-Einträge (z.B. für reine Backend-Releases) ohne Änderung an `index.html` pflegen. `openChangelog()` lädt die Datei asynchron und zeigt bei Fehlern (404, HTML-Fallback, kaputtes JSON) eine Meldung statt zu brechen. nginx: neue Exact-Match-Location `= /changelog.json` (no-cache, echtes 404 statt `index.html`-Fallback) — nach dem Update `docker compose up -d` ausführen, damit nginx die Konfiguration neu lädt. |
 | 2.8.43 / 2.13.74 | Bugfix Parqet-Sync: `_fetch_all_parqet_activities` las den Paginierungs-Cursor nur aus `nextCursor`, Parqet liefert ihn aber als Top-Level-Feld `cursor` — es kam immer nur die erste Seite (500 Aktivitäten), ältere Käufe fehlten und `calculate_holdings()` rechnete falsche Stückzahlen (seit Dividenden mitgeladen werden, v2.8.25, ab > 500 Aktivitäten sichtbar). Neu: robuste Cursor-Erkennung (`_extract_next_cursor`, URL-kodiert, Schutz gegen wiederholte Cursor/Seitenlimit), gemeinsame Funktion `_paginate_parqet_activities`. Sicherheitsnetz: genau 500 Einträge ohne erkennbaren Cursor → `ParqetIncompleteError`, Sync bricht ab, schreibt nichts, Verlaufseintrag „Parqet-Sync abgebrochen“ (Route antwortet 502). Frontend: Benutzer-Chip zeigt auf kleinen Displays (≤ 640 px) nur die Initiale, der volle Name steht im Tooltip; Changelog-Eintrag für Backend 2.8.42–43 nachgetragen. |
 | 2.8.42 / 2.13.73 | Diagnose-Endpoint `GET /api/depots/<id>/parqet/debug-holdings?isin=…` für abweichende Parqet-Stückzahlen — nur aktiv mit Env `PARQET_DEBUG=1` (sonst 404), rein lesend (Parqet-Holding, Seiten-Probe, Replay von `calculate_holdings`, Typzählung). Gibt Depotdaten ohne Authentifizierung preis, solange das Flag gesetzt ist — nur vorübergehend einschalten. |
 | 2.8.41 / 2.13.73 | Sicherheits-Härtung Schritt 2: nginx-Rate-Limits (Depot-Operationen 6/min, Kurs-/Such-Aufrufe 10/s, PIN-Prüfung 10/min, allgemein 30/s; Antwort 429 als JSON), Frontend zeigt bei 429 einen Toast (globaler `fetch`-Wrapper). Debug-Endpunkt `GET /api/depots/<id>/parqet/debug` entfernt, Parqet Client ID wird validiert, Suchbegriffe für Börse Frankfurt per `urlquote` kodiert. |
