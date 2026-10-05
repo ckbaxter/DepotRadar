@@ -33,7 +33,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.44"
+VERSION           = "2.8.45"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1245,6 +1245,15 @@ def fetch_stock_data(ticker):
     return {"current_eur": cur_eur, "current_orig": cur_orig, "ath_eur": ath_eur, "ath_date": ath_date,
             "currency": currency, "market_time": mt_str, **perfs}
 
+def _sma_series(values, k):
+    """Einfacher gleitender Durchschnitt über k Werte; Liste gleicher Länge, die ersten k-1 Einträge None."""
+    out, running = [], 0.0
+    for i, v in enumerate(values):
+        running += v
+        if i >= k: running -= values[i - k]
+        out.append(running / k if i >= k - 1 else None)
+    return out
+
 def fetch_performance(ticker, current_eur, eur_rate):
     """Berechnet 1T/1W/1M/3M/1J/3J Performance sowie 52-Wochen-Hoch/-Tief (week52_high/
     week52_low, seit v2.7.16). perf_1w wird nur noch intern für die Wochenzusammenfassung
@@ -1309,11 +1318,38 @@ def fetch_performance(ticker, current_eur, eur_rate):
             result["week52_high"] = None
             result["week52_low"]  = None
 
+        # SMA50/SMA200 (seit v2.8.45): einfache gleitende Durchschnitte der Tagesschlusskurse aus
+        # denselben 5J-Daten (kein zusätzlicher Yahoo-Call), in EUR wie week52_*. Zu wenig Historie
+        # (<50 bzw. <200 Handelstage) → None. Golden/Death Cross: letzte Kreuzung SMA50↔SMA200 in
+        # den letzten ~252 Handelstagen (Typ + Datum in App-Zeitzone); "ob noch aktuell" entscheidet
+        # das Frontend anhand des Datums.
+        closes_all = [p / divisor * eur_rate for _, p in valid_points]
+        s50  = _sma_series(closes_all, 50)
+        s200 = _sma_series(closes_all, 200)
+        result["sma50"]  = round(s50[-1], 2)  if s50  and s50[-1]  is not None else None
+        result["sma200"] = round(s200[-1], 2) if s200 and s200[-1] is not None else None
+        result["sma_cross_type"] = None
+        result["sma_cross_date"] = None
+        sma_tz = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+        for i in range(len(closes_all) - 1, max(0, len(closes_all) - 252) - 1, -1):
+            if i < 1 or None in (s50[i], s200[i], s50[i-1], s200[i-1]):
+                continue
+            d_now, d_prev = s50[i] - s200[i], s50[i-1] - s200[i-1]
+            if d_prev <= 0 < d_now:
+                result["sma_cross_type"] = "golden"
+            elif d_prev >= 0 > d_now:
+                result["sma_cross_type"] = "death"
+            else:
+                continue
+            result["sma_cross_date"] = datetime.fromtimestamp(int(valid_points[i][0]), tz=sma_tz).strftime("%Y-%m-%d")
+            break
+
         return result
     except Exception as e:
         log.warning(f"Performance {ticker}: {e}")
         return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
-                "week52_high": None, "week52_low": None}
+                "week52_high": None, "week52_low": None,
+                "sma50": None, "sma200": None, "sma_cross_type": None, "sma_cross_date": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
 EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "postmark://", "ses://")
@@ -1380,6 +1416,10 @@ def _make_stock(data, old=None):
         "perf_3y":       data.get("perf_3y"),
         "week52_high":   data.get("week52_high"),
         "week52_low":    data.get("week52_low"),
+        "sma50":          data.get("sma50"),
+        "sma200":         data.get("sma200"),
+        "sma_cross_type": data.get("sma_cross_type"),
+        "sma_cross_date": data.get("sma_cross_date"),
         # Parqet-Felder explizit beibehalten (nicht durch **base überschreiben lassen)
         "isin":          base.get("isin"),
         "buy_price_eur": base.get("buy_price_eur"),
