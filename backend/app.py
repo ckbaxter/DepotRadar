@@ -33,7 +33,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.43"
+VERSION           = "2.8.44"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1018,6 +1018,42 @@ def fetch_etf_history(ticker):
         log.warning(f"ETF-Historie '{ticker}': {e}")
     _etf_history_cache[ticker] = (data, time_mod.time())
     return data
+
+# ── Kursverlauf einer einzelnen Aktie (Aktien-Detail-Modal, seit v2.8.44) ──
+# Gleicher auth-freier chart-Endpoint und gleiche 5-Jahres-Tagesdaten wie fetch_etf_history, aber
+# mit GBp→GBP-Normalisierung und der Handelswährung im Ergebnis: das Frontend zeigt den Verlauf
+# bewusst in Originalwährung (keine historische EUR-Umrechnung verfügbar, ein Umrechnen mit dem
+# aktuellen Kurs würde den Verlauf verzerren). Eigener In-Memory-Cache, TTL 24h.
+_stock_history_cache = {}   # {ticker: (result_or_None, timestamp)} — result = {"currency":..,"data":[..]}
+STOCK_HISTORY_TTL     = 24 * 3600
+
+def fetch_stock_history(ticker):
+    cached = _stock_history_cache.get(ticker)
+    if cached and (time_mod.time() - cached[1]) < STOCK_HISTORY_TTL:
+        return cached[0]
+    result = None
+    try:
+        enc = urlquote(ticker)
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false"
+        r   = requests.get(url, headers=YH, timeout=10); r.raise_for_status()
+        res = r.json()["chart"]["result"][0]
+        chart_currency = res.get("meta", {}).get("currency", "") or ""
+        divisor  = 100.0 if chart_currency == "GBp" else 1.0
+        currency = "GBP" if chart_currency == "GBp" else chart_currency
+        tss    = res.get("timestamp", [])
+        closes = res["indicators"]["quote"][0].get("close", [])
+        tz     = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+        data = []
+        for ts, c in zip(tss, closes):
+            if c is None: continue
+            d = datetime.fromtimestamp(int(ts), tz=tz).strftime("%Y-%m-%d")
+            data.append({"date": d, "close": round(float(c) / divisor, 4)})
+        if data:
+            result = {"currency": currency, "data": data}
+    except Exception as e:
+        log.warning(f"Kursverlauf '{ticker}': {e}")
+    _stock_history_cache[ticker] = (result, time_mod.time())
+    return result
 
 def fetch_company_info(name):
     """Kurze Unternehmensbeschreibung von Wikipedia (zuerst DE, dann EN als Fallback), on-demand
@@ -4518,6 +4554,18 @@ def api_stock_info(ticker):
     except Exception as e:
         log.warning(f"Firmeninfo '{name}': {e}")
         return jsonify({"summary": None})
+
+@app.route("/api/stocks/<ticker>/history", methods=["GET"])
+def api_stock_history(ticker):
+    """Kursverlauf (Tagesschlusskurse, 5 Jahre, Originalwährung) fürs Aktien-Detail-Modal, on-demand,
+    reiner Read ohne Datei-Schreibzugriff (kein depot_lock nötig), In-Memory gecacht (siehe
+    fetch_stock_history). Antwort: {ticker, currency, data:[{date, close}, ...]}."""
+    ticker = ticker.strip()
+    if not ticker: return jsonify({"error": "ticker fehlt"}), 400
+    res = fetch_stock_history(ticker)
+    if res is None:
+        return jsonify({"ticker": ticker, "data": None, "error": "nicht abrufbar"}), 502
+    return jsonify({"ticker": ticker, "currency": res["currency"], "data": res["data"]})
 
 @app.route("/api/search", methods=["GET"])
 def search_companies():
