@@ -417,6 +417,11 @@ details[open] .usr-arrow{transform:rotate(90deg)}
 .sd-status-item.buy{background:rgba(34,197,94,.12);color:var(--green)}
 .sd-status-item.gap{background:rgba(234,179,8,.12);color:var(--yellow)}
 .sd-perf-wrap{margin-bottom:16px}
+.sd-chart-wrap{margin-bottom:16px}
+.sd-chart-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.sd-chart-perf{font-size:12px;font-weight:700}
+.sd-chart{min-height:140px}
+.sd-chart-msg{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;min-height:140px;justify-content:center}
 .sd-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:18px}
 .sd-item .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
 .sd-item .v{font-size:13px;font-weight:600}
@@ -5766,10 +5771,15 @@ function closeIfOverlay(e,id){if(e.target===document.getElementById(id))closeMod
 // nicht ausgewertet — Lookup erfolgt über den Ticker in stocksCache, das immer den
 // zuletzt gerenderten Bestand bzw. die zuletzt gerenderte Watchlist enthält.
 let _sdActiveTicker = null;
+let _sdPeriod = null;      // Zeitraum des Kursverlauf-Charts ("1W"…"1J"/"all"), siehe openStockDetail
+let _sdHistCache = {};     // ticker → {currency, data:[{date,close}]}; nur Erfolge, Fehlschläge werden neu versucht
 function openStockDetail(ticker, depotId, wlId){
   const s = stocksCache.find(x => x.ticker === ticker);
   if(!s) return;
   _sdActiveTicker = ticker;
+  // Zeitraum des Kursverlaufs startet mit der aktuellen Auswahl des Portfolio-Verlaufs,
+  // ist danach aber unabhängig davon (und bleibt über mehrere Detail-Öffnungen erhalten)
+  if(!_sdPeriod) _sdPeriod = _snapshotPeriod || "1J";
 
   const d = disc(s), c = dcls(d);
   document.getElementById("sdBody").innerHTML = `
@@ -5790,6 +5800,16 @@ function openStockDetail(ticker, depotId, wlId){
       ${s._isSectorGap ? `<div class="sd-status-item gap">&#9878;&#65039; Sektor unterrepräsentiert</div>` : ""}
     </div>` : ""}
     <div class="sd-perf-wrap">${perfWrap(s)}</div>
+    <div class="sd-chart-wrap">
+      <div class="sd-chart-head">
+        <span class="sd-chart-perf" id="sdChartPerf"></span>
+        <div class="snapshot-period" id="sdPeriodBar">
+          ${[["1W","1W"],["1M","1M"],["3M","3M"],["6M","6M"],["1J","1J"],["all","Max"]].map(([k,l]) =>
+            `<button onclick="setSdPeriod('${k}')" id="sdp-${k}" class="${k===_sdPeriod?"active":""}">${l}</button>`).join("")}
+        </div>
+      </div>
+      <div class="sd-chart" id="sdChart"><div class="sd-chart-msg"><div class="sd-spinner"></div> Kursverlauf wird geladen…</div></div>
+    </div>
     <div class="sd-grid">
       <div class="sd-item"><div class="lbl">Sektor</div><div class="v">${esc(s.sector || "—")}</div></div>
       <div class="sd-item"><div class="lbl">ATH-Abstand</div><div class="v"><span class="badge ${c.badge}">&#8722;${fmtPct(d)}${multiplier(d)}</span></div></div>
@@ -5805,6 +5825,7 @@ function openStockDetail(ticker, depotId, wlId){
     <div class="sd-summary loading" id="sdCompanyInfo"><div class="sd-spinner"></div> Firmeninfo wird geladen…</div>
   `;
   openModal("stockDetailModal");
+  loadStockHistory(ticker);
   loadCompanyInfo(ticker, s.name);
 }
 
@@ -5827,6 +5848,171 @@ async function loadCompanyInfo(ticker, name){
     const el = document.getElementById("sdCompanyInfo");
     if(el){ el.className = "sd-summary empty"; el.innerHTML = "Firmeninfo konnte nicht geladen werden."; }
   }
+}
+
+// ── Aktien-Detail: Kursverlauf-Chart (seit v2.13.76) ────────────────────
+// Tagesschlusskurse (5 Jahre) über GET /api/stocks/<ticker>/history, einmal pro Ticker
+// im Client gecacht — Zeitraumwechsel filtert nur lokal, kein erneuter Abruf. Anzeige bewusst
+// in Originalwährung (keine historische EUR-Umrechnung verfügbar). Die EK-Linie erscheint nur
+// bei EUR-Notierung, weil buy_price_eur sonst nicht zur Chart-Währung passt.
+const _sdPeriodDays = {"1W":7,"1M":30,"3M":90,"6M":180,"1J":365,"all":9999};
+
+function setSdPeriod(p){
+  _sdPeriod = p;
+  Object.keys(_sdPeriodDays).forEach(k => {
+    const b = document.getElementById("sdp-"+k);
+    if(b) b.classList.toggle("active", k === p);
+  });
+  if(_sdActiveTicker) renderStockChart(_sdActiveTicker);
+}
+
+async function loadStockHistory(ticker){
+  if(_sdHistCache[ticker]){ renderStockChart(ticker); return; }
+  try{
+    const r = await fetch(`${API}/stocks/${encodeURIComponent(ticker)}/history`);
+    const j = await r.json();
+    if(j && j.data && j.data.length) _sdHistCache[ticker] = {currency: j.currency || "", data: j.data};
+  } catch(e){ /* Fehlschlag: Hinweis unten, nächster Aufruf versucht es erneut */ }
+  if(_sdActiveTicker !== ticker) return; // inzwischen anderen Ticker geöffnet/Modal gewechselt
+  if(_sdHistCache[ticker]){ renderStockChart(ticker); return; }
+  const el = document.getElementById("sdChart");
+  if(el) el.innerHTML = `<div class="sd-chart-msg">Kursverlauf nicht verfügbar.</div>`;
+}
+
+function renderStockChart(ticker){
+  const el     = document.getElementById("sdChart");
+  const perfEl = document.getElementById("sdChartPerf");
+  const h      = _sdHistCache[ticker];
+  if(!el || !h) return;
+  const s   = stocksCache.find(x => x.ticker === ticker);
+  const cur = h.currency || (s && s.currency) || "EUR";
+  const fmtP = (v, digits) => { try { return new Intl.NumberFormat("de-DE",{style:"currency",currency:cur,minimumFractionDigits:digits,maximumFractionDigits:digits}).format(v); } catch(e){ return v.toFixed(digits) + " " + esc(cur); } };
+
+  const cutStr = new Date(Date.now() - _sdPeriodDays[_sdPeriod] * 86400000).toISOString().slice(0,10);
+  const raw = h.data.filter(p => p.date >= cutStr);
+  if(raw.length < 2){
+    if(perfEl) perfEl.textContent = "";
+    el.innerHTML = `<div class="sd-chart-msg">Zu wenig Daten für diesen Zeitraum.</div>`;
+    return;
+  }
+  // Veränderung immer auf Basis aller echten Punkte (nicht downgesampelt)
+  const first = raw[0].close, last = raw[raw.length-1].close;
+  const diff  = last - first;
+  const perf  = first > 0 ? diff / first * 100 : 0;
+  const up    = diff >= 0;
+  const lineColor = up ? "#22c55e" : "#ef4444";
+  if(perfEl) perfEl.innerHTML = `<span style="color:${up?"var(--green)":"var(--red)"}">${up?"+":""}${perf.toFixed(1)}% (${up?"+":""}${fmtP(diff, 2)})</span>`;
+
+  const pts    = downsampleSnapshots(raw, 120);
+  const closes = pts.map(p => p.close);
+  const dates  = pts.map(p => p.date);
+  const n      = closes.length;
+
+  // EK-Linie nur bei EUR-Notierung; Y-Skala hängt ausschließlich am Kurs (wie im Portfolio-
+  // Verlauf), ein weit entfernter EK staucht den Verlauf also nicht — die Linie wird geklemmt
+  // und mit ↑/↓ in der Legende markiert.
+  const ek = (s && s.buy_price_eur && cur === "EUR") ? s.buy_price_eur : null;
+
+  const dMin = Math.min(...closes), dMax = Math.max(...closes);
+  const padV = (dMax - dMin || dMax * 0.02 || 1) * 0.04;
+  const minV = dMin - padV, maxV = dMax + padV, range = maxV - minV;
+
+  const measuredW = el.getBoundingClientRect().width || 300;
+  const W = Math.max(Math.round(measuredW), 200), H = 140, pad = {t:8, r:8, b:22, l:58};
+  const iW = W - pad.l - pad.r, iH = H - pad.t - pad.b;
+  const px = i => n > 1 ? pad.l + (i / (n-1)) * iW : pad.l + iW/2;
+  const py = v => pad.t + iH - ((v - minV) / range) * iH;
+  const pyClamp = v => Math.max(pad.t + 1, Math.min(pad.t + iH - 1, py(v)));
+
+  const linePts = closes.map((v,i) => `${px(i)},${py(v)}`).join(" L ");
+  const fillPts = `${px(0)},${pad.t+iH} L ${linePts} L ${px(n-1)},${pad.t+iH} Z`;
+
+  let ekHtml = "", legendHtml = "";
+  if(ek){
+    const ekLabel = ek < minV ? "EK ↓" : ek > maxV ? "EK ↑" : "EK";
+    ekHtml = `<line x1="${pad.l}" y1="${pyClamp(ek)}" x2="${pad.l+iW}" y2="${pyClamp(ek)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.7"/>`;
+    legendHtml = `<g>
+      <line x1="${pad.l+4}" y1="${pad.t+6}" x2="${pad.l+16}" y2="${pad.t+6}" stroke="${lineColor}" stroke-width="2"/>
+      <text x="${pad.l+20}" y="${pad.t+10}" font-size="9" fill="var(--muted)">Kurs</text>
+      <line x1="${pad.l+48}" y1="${pad.t+6}" x2="${pad.l+60}" y2="${pad.t+6}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.7"/>
+      <text x="${pad.l+64}" y="${pad.t+10}" font-size="9" fill="var(--muted)">${ekLabel}</text>
+    </g>`;
+  }
+
+  // X-Achse: max. ~5 Labels; ab 6 Monaten Monat/Jahr, sonst Tag.Monat.
+  const longRange = _sdPeriodDays[_sdPeriod] >= 180;
+  const step = Math.max(1, Math.floor(n / 5));
+  const xLabels = dates.map((ds, i) => {
+    if(i % step !== 0 && i !== n-1) return "";
+    const d = new Date(ds + "T00:00:00");
+    const t = longRange ? `${d.getMonth()+1}/${String(d.getFullYear()).slice(2)}` : `${d.getDate()}.${d.getMonth()+1}.`;
+    return `<text x="${px(i)}" y="${H-5}" text-anchor="middle" font-size="10" fill="var(--muted)">${t}</text>`;
+  }).join("");
+  const yDigits = dMax >= 100 ? 0 : 2;
+  const yLabels = [dMin, (dMin+dMax)/2, dMax].map(v =>
+    `<text x="${pad.l-4}" y="${py(v)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmtP(v, yDigits)}</text>`
+  ).join("");
+
+  el.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"
+         style="width:100%;height:${H}px;display:block;touch-action:pan-y;cursor:crosshair">
+      <defs><linearGradient id="sdg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.2"/>
+        <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="M ${fillPts}" fill="url(#sdg)"/>
+      <path d="M ${linePts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
+      ${ekHtml}${legendHtml}${xLabels}${yLabels}
+      <g id="sdCrosshair" style="display:none;pointer-events:none">
+        <line id="sdCrossLine" x1="0" y1="${pad.t}" x2="0" y2="${pad.t+iH}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3,3"/>
+        <circle id="sdCrossDot" r="4" fill="${lineColor}" stroke="var(--bg2)" stroke-width="2"/>
+        <rect id="sdTtBg" rx="5" ry="5" fill="var(--bg3)" stroke="var(--border)" stroke-width="1"/>
+        <text id="sdTtDate" font-size="10" fill="var(--muted)" text-anchor="middle"></text>
+        <text id="sdTtVal" font-size="12" font-weight="700" fill="var(--text)" text-anchor="middle"></text>
+        <text id="sdTtChg" font-size="10" fill="var(--muted)" text-anchor="middle"></text>
+      </g>
+      <rect id="sdOverlay" x="${pad.l}" y="0" width="${iW}" height="${H}" fill="transparent"/>
+    </svg>`;
+
+  // Crosshair per Pointer Events (Maus-Hover + Touch-Drag), wie im Portfolio-Verlauf
+  const svgEl = el.querySelector("svg");
+  const overlay = document.getElementById("sdOverlay");
+  const crossG = document.getElementById("sdCrosshair");
+  const crossLine = document.getElementById("sdCrossLine");
+  const crossDot = document.getElementById("sdCrossDot");
+  const ttBg = document.getElementById("sdTtBg");
+  const ttDate = document.getElementById("sdTtDate");
+  const ttVal = document.getElementById("sdTtVal");
+  const ttChg = document.getElementById("sdTtChg");
+
+  function showCrosshair(clientX){
+    const rect = svgEl.getBoundingClientRect();
+    const svgX = clientX - rect.left;   // viewBox-Breite == gemessene Render-Breite → 1:1
+    const idx  = n <= 1 ? 0 : Math.max(0, Math.min(n-1, Math.round(((svgX - pad.l) / iW) * (n-1))));
+    const x = px(idx), y = py(closes[idx]);
+    crossLine.setAttribute("x1", x); crossLine.setAttribute("x2", x);
+    crossDot.setAttribute("cx", x);  crossDot.setAttribute("cy", y);
+
+    const d = new Date(dates[idx] + "T00:00:00");
+    const dateStr = `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
+    const valStr  = fmtP(closes[idx], 2);
+    const chg     = first > 0 ? (closes[idx] - first) / first * 100 : 0;
+    const chgStr  = `${chg>=0?"+":""}${chg.toFixed(1)}% seit Beginn`;
+    ttDate.textContent = dateStr; ttVal.textContent = valStr; ttChg.textContent = chgStr;
+
+    const boxW = Math.max(70, Math.max(dateStr.length * 5.5, valStr.length * 7, chgStr.length * 5.3) + 16), boxH = 46;
+    const boxX = Math.max(pad.l, Math.min(W - pad.r - boxW, x - boxW/2)), boxY = pad.t - 2;
+    ttBg.setAttribute("x", boxX); ttBg.setAttribute("y", boxY);
+    ttBg.setAttribute("width", boxW); ttBg.setAttribute("height", boxH);
+    [[ttDate,13],[ttVal,27],[ttChg,40]].forEach(([t,dy]) => { t.setAttribute("x", boxX + boxW/2); t.setAttribute("y", boxY + dy); });
+    crossG.style.display = "block";
+  }
+  const hideCrosshair = () => { crossG.style.display = "none"; };
+  overlay.addEventListener("pointermove", e => showCrosshair(e.clientX));
+  overlay.addEventListener("pointerdown", e => showCrosshair(e.clientX));
+  overlay.addEventListener("pointerleave", hideCrosshair);
+  overlay.addEventListener("pointerup", hideCrosshair);
+  overlay.addEventListener("pointercancel", hideCrosshair);
 }
 
 // ── Erträge (Dividenden + realisierte G/V aus Parqet-Sync, seit v2.13.52) ────

@@ -1,6 +1,13 @@
 {
-  "frontend_version": "2.13.75",
+  "frontend_version": "2.13.76",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.76 · Backend v2.8.44",
+      "changes": [
+        "Im Aktien-Detail gibt es jetzt einen Kursverlauf-Chart mit denselben Zeiträumen wie der Portfolio-Verlauf (1W bis Max = 5 Jahre). Die Veränderung im Zeitraum steht oben, Antippen oder Darüberfahren zeigt Datum und Kurs. Der Chart zeigt die Originalwährung der Aktie; bei EUR-Aktien mit Einstandskurs wird zusätzlich eine gestrichelte EK-Linie eingezeichnet."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.75",
