@@ -3152,7 +3152,10 @@ function crossBadge(s){
   const age = Math.round((t - new Date(s.sma_cross_date + "T00:00:00")) / 86400000);
   if(!(age >= 0 && age <= SMA_CROSS_RECENT_DAYS)) return "";
   const gc = s.sma_cross_type === "golden";
-  return `<button type="button" class="pb pb-cross ${gc?"gc":"dc"}" aria-haspopup="true" aria-expanded="false" onclick="toggleCrossInfo(event,'${s.sma_cross_type}',${age})">${gc?"Golden Cross":"Death Cross"}</button>`;
+  // Bestätigung nach N Handelstagen (Benutzer-Einstellung, seit v2.13.78): jüngere Crosses sind noch nicht bestätigt
+  const need = activeUser?.cross_confirm_days ?? 2;
+  const pending = s.sma_cross_age != null && s.sma_cross_age < need ? 1 : 0;
+  return `<button type="button" class="pb pb-cross ${gc?"gc":"dc"}" aria-haspopup="true" aria-expanded="false" onclick="toggleCrossInfo(event,'${s.sma_cross_type}',${age},${pending})">${gc?"Golden Cross":"Death Cross"}</button>`;
 }
 let _crossPopBtn = null;
 function closeCrossInfo(){
@@ -3161,7 +3164,7 @@ function closeCrossInfo(){
   if(_crossPopBtn) _crossPopBtn.setAttribute("aria-expanded","false");
   _crossPopBtn = null;
 }
-function toggleCrossInfo(ev, type, age){
+function toggleCrossInfo(ev, type, age, pending){
   ev.stopPropagation();   // Zeilen-/Karten-Klick und den globalen Schließen-Handler nicht auslösen
   const pop = document.getElementById("crossPopover");
   const btn = ev.currentTarget;
@@ -3170,7 +3173,7 @@ function toggleCrossInfo(ev, type, age){
   closeCrossInfo();
   const gc = type === "golden";
   const when = age <= 0 ? "heute" : age === 1 ? "vor 1 Tag" : `vor ${age} Tagen`;
-  pop.innerHTML = `<b style="color:${gc?"var(--green)":"var(--red)"}">${gc?"Golden Cross":"Death Cross"}</b> (${when}): Der SMA50 hat den SMA200 von ${gc?"unten":"oben"} gekreuzt – Hinweis auf einen entstehenden ${gc?"Aufwärts":"Abwärts"}trend.<div style="color:var(--muted);margin-top:4px">Trendindikator mit Verzögerung, keine Anlageempfehlung.</div>`;
+  pop.innerHTML = `<b style="color:${gc?"var(--green)":"var(--red)"}">${gc?"Golden Cross":"Death Cross"}</b> (${when}): Der SMA50 hat den SMA200 von ${gc?"unten":"oben"} gekreuzt – Hinweis auf einen entstehenden ${gc?"Aufwärts":"Abwärts"}trend.${pending ? `<div style="color:var(--yellow);margin-top:4px">Noch nicht bestätigt – er muss ${activeUser?.cross_confirm_days ?? 2} Handelstage bestehen, bevor er gemeldet wird.</div>` : ""}<div style="color:var(--muted);margin-top:4px">Trendindikator mit Verzögerung, keine Anlageempfehlung.</div>`;
   pop.style.display = "block";
   const r = btn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
   let top = r.bottom + 6;
@@ -5011,6 +5014,10 @@ async function editUser(userId){
   const digestTime   = user.digest_time || "20:00";
   const dailyDigestT = user.daily_digest_time || "21:00";
   const wlDigestChk  = !!user.daily_watchlist_digest;
+  const crossDigest  = user.cross_digest !== false;
+  const crossPush    = !!user.cross_push;
+  const crossDisc    = user.cross_in_discount !== false;
+  const crossDays    = user.cross_confirm_days ?? 2;
   const hasPin       = !!user.has_pin;
 
   document.getElementById("userFormArea").innerHTML = `
@@ -5124,6 +5131,42 @@ async function editUser(userId){
             Die Aktivierung läuft weiterhin pro Depot (Depot-Einstellungen → ⚙) — hier stellst du nur ein,
             <b style="color:var(--text)">wann</b> deine Zusammenfassungen gesendet werden.
           </div>
+
+          <div class="usr-label" style="margin-top:18px">🔀 Trendwechsel (SMA50/SMA200)</div>
+          <div class="usr-hint" style="margin-top:0">Golden Cross / Death Cross – eine Einstellung für Zusammenfassung, Push und Discount-Alarm. Trendindikator, keine Anlageempfehlung.</div>
+          <div style="margin-top:10px;display:flex;align-items:flex-start;gap:10px">
+            <label class="toggle-switch" style="margin-top:2px">
+              <input type="checkbox" id="editUserCrossDigest" ${crossDigest?"checked":""} onchange="updateUserSectionStates()"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">In Tageszusammenfassung aufnehmen
+              <span class="usr-hint" style="display:block;margin-top:2px">Depot- und Watchlist-Zusammenfassung zeigen eine Zeile je Cross.</span></span>
+          </div>
+          <div style="margin-top:10px;display:flex;align-items:flex-start;gap:10px">
+            <label class="toggle-switch" style="margin-top:2px">
+              <input type="checkbox" id="editUserCrossPush" ${crossPush?"checked":""} onchange="updateUserSectionStates()"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">Per Push melden, sobald bestätigt
+              <span class="usr-hint" style="display:block;margin-top:2px">Eigene Nachricht, sobald ein Trendwechsel die Bestätigungsdauer erreicht hat.</span></span>
+          </div>
+          <div style="margin-top:10px;display:flex;align-items:flex-start;gap:10px">
+            <label class="toggle-switch" style="margin-top:2px">
+              <input type="checkbox" id="editUserCrossDisc" ${crossDisc?"checked":""} onchange="updateUserSectionStates()"/>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span style="font-size:13px">Als Zusatzzeile im Discount-Alarm
+              <span class="usr-hint" style="display:block;margin-top:2px">Nur wenn bei der Aktie gerade ein bestätigter Cross aktiv ist (max. 30 Tage alt).</span></span>
+          </div>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:13px">Bestätigung nach</span>
+            <select class="form-input" id="editUserCrossDays" style="width:150px;font-size:13px" onchange="updateUserSectionStates()">
+              <option value="1" ${crossDays===1?"selected":""}>1 Handelstag</option>
+              <option value="2" ${crossDays===2?"selected":""}>2 Handelstagen</option>
+              <option value="3" ${crossDays===3?"selected":""}>3 Handelstagen</option>
+            </select>
+          </div>
+          <div class="usr-hint">Verhindert Meldungen, wenn sich die Linien nur kurz kreuzen und gleich wieder lösen.</div>
         </div>
       </details>
 
@@ -5164,7 +5207,8 @@ function updateUserSectionStates(){
     const wt = document.getElementById("editUserDigestTime")?.value || "20:00";
     const dt = document.getElementById("editUserDailyDigestTime")?.value || "21:00";
     const wl = document.getElementById("editUserWlDigest")?.checked;
-    dig.textContent = `📊 ${d} ${wt} · 🌙 ${dt}${wl?" · 📋":""}`;
+    const cx = document.getElementById("editUserCrossDigest")?.checked || document.getElementById("editUserCrossPush")?.checked;
+    dig.textContent = `📊 ${d} ${wt} · 🌙 ${dt}${wl?" · 📋":""}${cx?" · 🔀":""}`;
   }
 }
 
@@ -5180,7 +5224,11 @@ async function saveEditUser(userId){
   const body    = {name, apprise_urls:userUrls.map(u=>u.kind==="stored" ? {keep:u.idx} : u.url),
                    notification_mention:mention, notification_confirm:confirm,
                    digest_day:digestDay, digest_time:digestTime, daily_digest_time:dailyDigestTime,
-                   daily_watchlist_digest:wlDigest};
+                   daily_watchlist_digest:wlDigest,
+                   cross_digest:document.getElementById("editUserCrossDigest")?.checked||false,
+                   cross_push:document.getElementById("editUserCrossPush")?.checked||false,
+                   cross_in_discount:document.getElementById("editUserCrossDisc")?.checked||false,
+                   cross_confirm_days:parseInt(document.getElementById("editUserCrossDays")?.value ?? "2")};
   if(pin) body.pin = pin;
   const r = await fetch(`${API}/users/${userId}`, {method:"PATCH",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
@@ -5215,8 +5263,8 @@ function getUserWatchlistIds(){
 }
 
 // ── Verlauf ───────────────────────────────────────────────────────
-const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung",daily_watchlist_digest:"📋 Watchlist-Zusammenfassung",system:"⚙️ System"};
-const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh",daily_ath_digest:"auto_refresh",daily_watchlist_digest:"auto_refresh",system:"manual_refresh"};
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung",daily_watchlist_digest:"📋 Watchlist-Zusammenfassung",cross:"🔀 Trendwechsel",system:"⚙️ System"};
+const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh",daily_ath_digest:"auto_refresh",daily_watchlist_digest:"auto_refresh",cross:"auto_refresh",system:"manual_refresh"};
 let _notifItems = [];
 let _notifTypeFilter = "all";
 let _notifUserFilter = "all";
