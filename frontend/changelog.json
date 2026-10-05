@@ -1,6 +1,15 @@
 {
-  "frontend_version": "2.13.78",
+  "frontend_version": "2.13.79",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.79",
+      "changes": [
+        "Die Hilfe hat jetzt oben eine Suche und ein Glossar. Die Suche findet auch Schlagwörter und tolerante Schreibweisen („ueber“ für „über“) und klappt bei bis zu 3 Treffern die Abschnitte gleich auf. Das Glossar erklärt die wichtigsten Begriffe, z. B. Golden Cross, Death Cross, SMA50/SMA200, ATH, Discount, Rebalancing und Split.",
+        "Hilfe auf den aktuellen Stand gebracht: Der Parqet-Abschnitt behauptete fälschlich, der Sync laufe nicht automatisch – jetzt sind Auto-Sync, der Parqet-Sync-Button und der Hinweis bei abgelaufener Verbindung erklärt. Neue Abschnitte: Top 3 / Flop 3, Erträge, Rebalancing, Ansichten & Werkzeuge, Aktien-Detail, Trend (SMA50, Golden/Death Cross, Trendwechsel-Meldungen) sowie Einstellungen & Aktiensplits. Ergänzt wurden der ETF-Vergleich im Portfolio-Verlauf, die Portfolio-Wochenperformance im Wochenbericht und der Trendwechsel in der Tageszusammenfassung; der Treemap-Text verweist auf das Ansicht-Menü.",
+        "Intern: Hilfe-Abschnitte haben feste IDs. „Weitere Infos in der Hilfe →“ springt per ID statt per Abschnittsnummer und bleibt damit auch bei neuen Abschnitten korrekt."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.78 · Backend v2.8.46",

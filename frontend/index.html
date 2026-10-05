@@ -123,6 +123,19 @@ details[open] .help-summary::after{transform:rotate(90deg)}
   .help-summary{font-size:13px;padding:12px 14px}
   .help-body{font-size:12px;padding:0 14px 12px}
 }
+.help-top{position:sticky;top:0;z-index:2;background:var(--bg)}
+.help-search{position:relative;padding:10px 16px;border-bottom:1px solid var(--border)}
+.help-search input{width:100%;padding:8px 32px;border:1px solid var(--border);border-radius:20px;background:var(--bg3);color:var(--text);font-size:13px;outline:none;transition:border-color .2s}
+.help-search input:focus{border-color:var(--accent)}
+.help-search .hs-ic{position:absolute;left:29px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--muted);pointer-events:none}
+.help-search .hs-clear{position:absolute;right:23px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:6px;display:none}
+.help-search .hs-clear:hover{color:var(--text)}
+.help-search-info{display:none;padding:8px 16px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)}
+.help-section{scroll-margin-top:120px}
+.help-gloss{margin:0}
+.help-gloss dt{font-weight:600;color:var(--text);margin-top:12px}
+.help-gloss dt:first-child{margin-top:10px}
+.help-gloss dd{margin:2px 0 0 0}
 .toggle-switch{position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0}
 .toggle-switch input{opacity:0;width:0;height:0;position:absolute}
 .toggle-track{position:absolute;inset:0;background:var(--border);border-radius:13px;
@@ -1081,7 +1094,7 @@ select</style>
             Ein Sync gleicht deinen Bestand mit Parqet ab — z.B. nach einem Kauf, Verkauf
             oder Split. Läuft automatisch, wenn unten aktiviert; zusätzlich jederzeit manuell
             möglich, etwa um eine frische Änderung sofort zu übernehmen.<br><br>
-            <span onclick="closeModal(document.querySelector('.overlay[style*=flex]')?.id);openHelpModal();setTimeout(()=>{document.querySelectorAll('#helpModal details').forEach((d,i)=>d.open=i===16)},100)"
+            <span onclick="closeModal(document.querySelector('.overlay[style*=flex]')?.id);openHelpSection('parqet')"
                   style="color:var(--accent);cursor:pointer;text-decoration:underline">
               Weitere Infos in der Hilfe →
             </span>
@@ -1321,13 +1334,22 @@ select</style>
 <div class="overlay" id="helpModal" style="display:none" onclick="closeIfOverlay(event,'helpModal')">
   <div class="modal" onclick="event.stopPropagation()"
        style="max-width:600px;max-height:90vh;overflow-y:auto">
-    <div class="modal-header" style="position:sticky;top:0;background:var(--bg);z-index:1">
-      <span class="modal-title">? Hilfe &amp; Erklärungen</span>
-      <button class="close-btn" onclick="closeModal('helpModal')">&#215;</button>
+    <div class="help-top">
+      <div class="modal-header">
+        <span class="modal-title">? Hilfe &amp; Erklärungen</span>
+        <button class="close-btn" onclick="closeModal('helpModal')">&#215;</button>
+      </div>
+      <div class="help-search">
+        <span class="hs-ic">🔍</span>
+        <input id="helpSearch" type="text" placeholder="Hilfe durchsuchen … z. B. Golden Cross, Dividende" autocomplete="off" autocapitalize="off" spellcheck="false"
+               oninput="helpSearch(this.value)" onkeydown="helpSearchKey(event)" aria-label="Hilfe durchsuchen"/>
+        <button type="button" class="hs-clear" onclick="helpSearchClear()" aria-label="Suche löschen">✕</button>
+      </div>
+      <div class="help-search-info" id="helpSearchInfo" aria-live="polite"></div>
     </div>
     <div class="modal-body" style="padding:0">
 
-      <details class="help-section" open>
+      <details class="help-section" id="help-summary" data-kw="Karten Übersicht Filter Allzeithoch Abstand Verteilung" open>
         <summary class="help-summary">📊 Summary-Karten</summary>
         <div class="help-body">
           Zeigen wie viele Aktien wie weit von ihrem Allzeithoch entfernt sind.
@@ -1335,7 +1357,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-verlauf" data-kw="Chart Diagramm Depotwert Zeitraum Invested Capital eingesetztes Kapital EK Vergleich ETF MSCI World S&amp;P 500 DAX Benchmark">
         <summary class="help-summary">📈 Portfolio-Verlauf</summary>
         <div class="help-body">
           Zeigt den täglichen Gesamtwert deines Depots als Liniendiagramm. Mit den Zeitraum-Buttons
@@ -1345,11 +1367,47 @@ select</style>
           gestrichelte Linie, die den kumulierten Einstandswert aller Positionen zeigt — so lässt
           sich auf einen Blick erkennen, wie weit der aktuelle Depotwert über oder unter dem
           eingesetzten Kapital liegt. Der Tooltip zeigt bei jedem Datenpunkt zusätzlich den
-          Einstandswert an (EK: x €).
+          Einstandswert an (EK: x €).<br><br>
+          <b>ETF-Vergleich:</b> Über die Chips unter der Zeitraum-Leiste lassen sich
+          <b>MSCI World</b>, <b>S&amp;P 500</b> und <b>DAX</b> als Vergleichslinien ein- und
+          ausblenden. Sobald mindestens eine ETF-Linie aktiv ist, wechselt der Chart automatisch
+          von absolutem €-Wert auf die <b>%-Veränderung seit Beginn des Zeitraums</b> — Portfolio,
+          EK und ETFs starten dann alle bei 0&nbsp;%. Ein- und Auszahlungen werden dabei nicht
+          herausgerechnet, der Vergleich ist daher ein Richtwert.
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-topflop" data-kw="Gewinner Verlierer beste schlechteste Tagesperformance Prozent Euro umschalten Karten Übersicht">
+        <summary class="help-summary">🏆 Top 3 / Flop 3</summary>
+        <div class="help-body">
+          In der Portfolio-Übersicht zeigen vier Karten die besten und schlechtesten Positionen:
+          <b>Top 3 / Flop 3 (Gesamt)</b> nach Gewinn bzw. Verlust seit Kauf und
+          <b>🚀 Top 3 / 📉 Flop 3 (Heute)</b> nach der Tagesperformance. Berücksichtigt werden nur
+          Positionen im Bestand, für die ein Einstandskurs vorliegt — keine Watchlist-Aktien.<br><br>
+          Tippen auf eine der drei Zahlen einer Karte schaltet die ganze Karte zwischen <b>%</b> und
+          <b>€</b> um (Standard: %). Lange Firmennamen sind gekürzt — Tippen auf den Namen zeigt
+          ihn vollständig.
+        </div>
+      </details>
+
+      <details class="help-section" id="help-ertraege" data-kw="Dividenden realisierte Gewinne Verluste Verkäufe netto Steuer Monatsübersicht Jahressumme Balkenchart Namen vergeben ISIN">
+        <summary class="help-summary">💰 Erträge</summary>
+        <div class="help-body">
+          Die Kachel „💰 Erträge gesamt“ in der Portfolio-Übersicht erscheint, sobald Daten
+          vorhanden sind, und öffnet eine Auswertung deiner <b>Dividenden</b> und
+          <b>realisierten Gewinne/Verluste</b>. Datenquelle ist ausschließlich der Parqet-Sync —
+          es gibt keine manuelle Erfassung.
+          <ul style="margin:8px 0 0 16px;padding:0;line-height:1.8">
+            <li>Die Beträge sind <b>netto</b> (nach Steuer und Gebühren), so wie sie tatsächlich zugeflossen sind</li>
+            <li>Typ-Filter (Alle / Dividenden / Verkäufe) und Aktien-Suche rechnen die Summenkacheln live um</li>
+            <li>Monatsübersicht als Balkenchart (Jan–Dez) mit Jahres-Umschalter ‹ ›: Dividenden grün, realisierte Gewinne/Verluste blau, Verluste rot unterhalb der Nulllinie. Antippen eines Balkens zeigt den Wert; darunter stehen die Jahressummen</li>
+            <li>Auch inzwischen komplett verkaufte Positionen erscheinen weiterhin</li>
+            <li>Lässt sich ein Name nicht automatisch auflösen, steht dort die ISIN mit „✎ Namen vergeben“ — der Name wird dauerhaft gespeichert</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="help-section" id="help-pbadge" data-kw="Parqet Herkunft Einstandskurs Stückzahl P Badge synchronisiert">
         <summary class="help-summary"><span class="parqet-badge" style="font-size:11px;margin-right:2px">P</span> Badge</summary>
         <div class="help-body">
           Aktien mit einem <span class="parqet-badge">P</span> haben Einstandskurs und Stückzahl aus Parqet. Werden die Werte manuell geändert, verschwindet das P — bis der nächste Parqet-Sync sie wieder überschreibt.
@@ -1358,7 +1416,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-refresh" data-kw="Kurse aktualisieren neu laden Yahoo Intervall">
         <summary class="help-summary">↺ Alle aktualisieren</summary>
         <div class="help-body">
           Ruft sofort aktuelle Kurse von Yahoo Finance ab — für alle Aktien im aktiven Depot
@@ -1366,7 +1424,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-athcheck" data-kw="Allzeithoch prüfen korrigieren Abweichung">
         <summary class="help-summary">🔍 ATH prüfen</summary>
         <div class="help-body">
           Vergleicht den gespeicherten Allzeithoch-Wert jeder Aktie mit den aktuellen Yahoo-Daten.
@@ -1375,7 +1433,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-nachkauf" data-kw="Kandidat untergewichtet Schieberegler 20 Prozent günstig kaufen">
         <summary class="help-summary">🛒 Nachkauf</summary>
         <div class="help-body">
           Hebt Aktien hervor die gleichzeitig zwei Bedingungen erfüllen:
@@ -1396,7 +1454,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-diversifikation" data-kw="Sektor Lücke Streuung unterrepräsentiert Verteilung">
         <summary class="help-summary">⚖️ Diversifikations-Lücke</summary>
         <div class="help-body">
           Markiert Aktien aus Sektoren, die im Bestand unterrepräsentiert sind — als
@@ -1414,7 +1472,23 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-rebalancing" data-kw="Gleichgewichtung Gewichtung Kauf Verkauf Empfehlung Budget Abweichung Toleranz Zielgewicht">
+        <summary class="help-summary">⚖️ Rebalancing</summary>
+        <div class="help-body">
+          Die Kachel „⚖️ Rebalancing“ zeigt, wie viele Positionen um mehr als 2&nbsp;Prozentpunkte
+          von einer <b>Gleichgewichtung</b> abweichen (Ziel je Position = 100&nbsp;% ÷ Anzahl
+          Positionen im Bestand). Antippen öffnet die Details:
+          <ul style="margin:8px 0 8px 16px;padding:0;line-height:1.8">
+            <li><b>Kauf-/Verkaufsempfehlung</b> je abweichender Position (Stückzahl und ≈-Betrag)</li>
+            <li><b>Kaufbudget-Modus:</b> verteilt dein hinterlegtes Kaufbudget proportional auf die unterrepräsentierten Positionen. Reicht der Anteil nicht für ein ganzes Stück, steht „Anteil X € reicht nicht für 1 Stk.“ statt der Position</li>
+          </ul>
+          Positionen innerhalb der Toleranz werden zusammengefasst ausgeblendet. Nur im Bestand
+          verfügbar, nicht in Watchlists. Die Berechnung läuft live — es gibt keine eigenen
+          Zielgewichte pro Aktie. Reine Orientierung, keine Anlageempfehlung.
+        </div>
+      </details>
+
+      <details class="help-section" id="help-suchfeld" data-kw="Filter suchen Ticker Name">
         <summary class="help-summary">🔍 Suchfeld</summary>
         <div class="help-body">
           Filtert die Tabelle live nach Name oder Ticker. Kombinierbar mit allen anderen Filtern.
@@ -1422,7 +1496,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-kaufbudget" data-kw="Budget monatlich Sparrate Stückzahl Multiplikator">
         <summary class="help-summary">💰 Kaufbudget</summary>
         <div class="help-body">
           Pro Depot kannst du ein monatliches Kaufbudget hinterlegen — Tippen auf das ⚙-Icon im
@@ -1451,7 +1525,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-watchlists" data-kw="Beobachtungsliste Wunschliste verschieben">
         <summary class="help-summary">📋 Watchlists</summary>
         <div class="help-body">
           Pro Depot kannst du beliebig viele Watchlists anlegen — z.B. „Wunschliste" oder
@@ -1462,13 +1536,30 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-ansichten" data-kw="Tabelle Karten Kompakt Treemap Ansicht Menü Nur Auffällige einklappen Sortierung Aktionsleiste">
+        <summary class="help-summary">🗂 Ansichten &amp; Werkzeuge</summary>
+        <div class="help-body">
+          Das <b>Ansicht</b>-Menü in der Aktionsleiste schaltet zwischen vier Darstellungen um:
+          <b>☰ Tabelle</b>, <b>🗂 Karten</b>, <b>⊞ Treemap</b> (nur Bestand, siehe nächster
+          Abschnitt) und <b>▤ Kompakt</b>.<br><br>
+          <b>Kompakt:</b> eine Zeile pro Aktie mit Ticker, Kurs, Tagesperformance und
+          Discount-Farbe. Der Schalter <b>Nur Auffällige</b> lässt nur Positionen übrig, bei denen
+          ein Discount-Alarm ausgelöst ist, ein neues Allzeithoch vorliegt, eine
+          Diversifikations-Lücke besteht oder die Nachkauf-Kandidat sind (das ⓘ neben dem Schalter
+          erklärt das). Aktive Suche und Filter bleiben dabei erhalten. Antippen einer Zeile öffnet
+          das Aktien-Detail.<br><br>
+          <b>Werkzeuge einklappen:</b> Der Handle „Werkzeuge“ (Aktionsleiste und Sortierung) lässt
+          sich per Tippen ein- und ausklappen — in allen Ansichten. Eingeklappt zeigt er die aktive
+          Ansicht und Sortierung an.
+        </div>
+      </details>
+
+      <details class="help-section" id="help-treemap" data-kw="Kacheln Ansicht Größe Farbe">
         <summary class="help-summary">⊞ Treemap-Ansicht</summary>
         <div class="help-body">
-          Mit dem Toggle-Button <b>⊞ Treemap / ☰ Tabelle</b> in der Aktionsleiste kann zwischen
-          der klassischen Tabellendarstellung und einer Treemap gewechselt werden. Die Treemap
-          steht nur für den Bestand zur Verfügung (nicht für Watchlists) und erscheint ab
-          mindestens 2 Positionen.<br><br>
+          Im <b>Ansicht</b>-Menü der Aktionsleiste lässt sich die Treemap als Alternative zu
+          Tabelle, Karten und Kompakt wählen. Die Treemap steht nur für den Bestand zur
+          Verfügung (nicht für Watchlists) und erscheint ab mindestens 2 Positionen.<br><br>
           In der Treemap entspricht die <b>Kachelgröße</b> dem aktuellen Positionswert — die
           größte Position belegt den meisten Platz. Die <b>Farbe</b> folgt dem gleichen Schema
           wie die ATH-Discount-Badges: grün (&lt;20%), gelb (20–39%), orange (40–59%),
@@ -1477,7 +1568,46 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-detail" data-kw="Kursverlauf Chart Zeitraum Einstandskurs Gesamtwert Anzahl Kachel Detailansicht Modal SMA Trend">
+        <summary class="help-summary">📄 Aktien-Detail</summary>
+        <div class="help-body">
+          Ein Tipp auf den Namen einer Aktie (Tabelle, Karten), auf die Zeile (Kompakt) oder auf die
+          Kachel (Treemap) öffnet das Detail:
+          <ul style="margin:8px 0 0 16px;padding:0;line-height:1.8">
+            <li><b>Kursverlauf-Chart</b> mit denselben Zeiträumen wie der Portfolio-Verlauf (1W bis Max = 5 Jahre). Die Veränderung im Zeitraum steht oben, Antippen oder Darüberfahren zeigt Datum und Kurs. Angezeigt wird die Originalwährung der Aktie; bei EUR-Aktien mit Einstandskurs markiert eine gestrichelte Linie zusätzlich deinen EK</li>
+            <li><b>SMA50 / SMA200</b> lassen sich per Schalter als Linien einblenden, Kreuzungen sind markiert (siehe Abschnitt „Trend“)</li>
+            <li><b>Kacheln</b> u.&nbsp;a. mit Gesamtwert (Kurs × Stückzahl), Anzahl, Kurs-Zeitstempel, SMA50, SMA200 und Trend — jeweils nur, wenn die Daten vorhanden sind</li>
+            <li><b>Status-Zeile</b> „🛒 Nachkauf-Kandidat“ und/oder „⚖️ Sektor unterrepräsentiert“, wenn zutreffend</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="help-section" id="help-trend" data-kw="SMA 50 200 gleitender Durchschnitt Kreuz Kreuzung Trendwechsel Golden Death Cross Aufwärtstrend Abwärtstrend Benachrichtigung bestätigt Handelstage">
+        <summary class="help-summary">📐 Trend: SMA50 &amp; Golden/Death Cross</summary>
+        <div class="help-body">
+          <b>SMA50 / SMA200</b> sind gleitende Durchschnitte der Schlusskurse der letzten 50 bzw.
+          200 Handelstage. Neben den Performance-Badges steht, wie weit der Kurs über oder unter dem
+          SMA50 liegt.<br><br>
+          Hat der SMA50 den SMA200 in den letzten 30 Tagen gekreuzt, erscheint ein Badge
+          <b style="color:var(--green)">Golden Cross</b> (SMA50 steigt über den SMA200) bzw.
+          <b style="color:var(--red)">Death Cross</b> (SMA50 fällt unter den SMA200). Antippen zeigt
+          eine kurze Erklärung. „Noch nicht bestätigt“ heißt: Die Kreuzung besteht noch nicht lange
+          genug, um gemeldet zu werden. Die Begriffe stehen auch im Glossar.<br><br>
+          <b>Benachrichtigung:</b> Benutzer-Chip oben rechts → Bearbeiten → Zusammenfassungen →
+          Trendwechsel (SMA50/SMA200). Eine Einstellung gilt für drei Wege:
+          <ul style="margin:8px 0 8px 16px;padding:0;line-height:1.8">
+            <li>Abschnitt in der Tageszusammenfassung (Depot und Watchlists) — Standard: an</li>
+            <li>Push-Meldung, sobald der Cross bestätigt ist — Standard: aus</li>
+            <li>Zusatzzeile im Discount-Alarm (nur bestätigte Crosses der letzten 30 Tage) — Standard: an</li>
+          </ul>
+          Gemeldet wird erst, wenn der Cross 1, 2 oder 3 Handelstage (Standard: 2) Bestand hat, damit
+          kurzes Hin und Her keine Meldung auslöst. Jeder Cross wird nur einmal gemeldet; im Verlauf
+          erscheint er als „🔀 Trendwechsel“.<br><br>
+          <i>Reiner Trendhinweis mit Verzögerung, keine Anlageempfehlung.</i>
+        </div>
+      </details>
+
+      <details class="help-section" id="help-buttons" data-kw="Symbole Icons bearbeiten löschen verschieben Handelsplatz Börse XETRA">
         <summary class="help-summary">Buttons an jeder Aktie</summary>
         <div class="help-body">
           <div style="display:flex;flex-direction:column;gap:0">
@@ -1505,7 +1635,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-kaufmarkierung" data-kw="K Level markieren gekauft ATH-Level">
         <summary class="help-summary">Kaufmarkierung <span style="display:inline-flex;align-items:center;justify-content:center;background:#185FA5;color:#fff;font-size:10px;font-weight:500;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle">K</span> an ATH-Levels</summary>
         <div class="help-body">
           Die ATH-Level-Kacheln (−20%, −30% etc.) der einzelnen Aktien sind antippbar. Ein Tippen setzt eine
@@ -1519,7 +1649,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-athalarm" data-kw="Glocke Benachrichtigung neues Allzeithoch Push">
         <summary class="help-summary">🔔 ATH-Alarm pro Aktie</summary>
         <div class="help-body">
           Neben dem ATH-Wert jeder Aktie sitzt ein kleines Glocken-Symbol — danach musst du Ausschau halten:<br><br>
@@ -1536,7 +1666,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-tageszusammenfassung" data-kw="Digest täglich Zusammenfassung Uhrzeit abends">
         <summary class="help-summary">🌙 Tägliche Depot-Zusammenfassung</summary>
         <div class="help-body">
           Pro Depot aktivierbar (Depot-Einstellungen → ⚙) — fasst jeden Tag (Mo–Fr) per
@@ -1550,11 +1680,13 @@ select</style>
           Nutzt die gleichen Apprise-URLs wie die normalen Alarme (Benutzer-Chip oben rechts)
           und respektiert ebenfalls den Benachrichtigungs-Schalter des Depots — ist dieser
           deaktiviert, bleibt auch die Tageszusammenfassung still. Im Verlauf erscheint sie
-          mit dem Typ „🌙 Tageszusammenfassung".
+          mit dem Typ „🌙 Tageszusammenfassung".<br><br>
+          Ist der Trendwechsel-Block aktiv (siehe Abschnitt „Trend“), enthält
+          sie zusätzlich einen Abschnitt „Trendwechsel“ — er zählt nicht als Alarm.
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-wochenbericht" data-kw="Digest wöchentlich Wochenperformance Bericht Sonntag">
         <summary class="help-summary">📊 Wöchentliche Zusammenfassung</summary>
         <div class="help-body">
           Pro Depot aktivierbar (Depot-Einstellungen → ⚙ → Apprise-Bereich) — Wochentag und
@@ -1566,6 +1698,7 @@ select</style>
           <ul style="margin:8px 0 0 16px;padding:0;line-height:1.8">
             <li>ATH-Verteilung — wie viele Positionen in welcher Discount-Stufe liegen</li>
             <li>Aktuelle Nachkauf-Kandidaten</li>
+            <li>Portfolio-Wochenperformance — Gesamtwert gegenüber dem Stand vor etwa 7 Tagen</li>
             <li>Beste und schlechteste Wochenperformance im Depot</li>
             <li>Aktien, die kurz vor dem nächsten Discount-Level stehen</li>
           </ul><br>
@@ -1574,25 +1707,34 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-parqet" data-kw="Sync Synchronisation automatisch OAuth Broker Trade Republic verbinden Token Zugang abgelaufen neu verbinden Rückgängig Backup verkauft">
         <summary class="help-summary">🔗 Parqet — nach der Ersteinrichtung</summary>
         <div class="help-body">
-          Nach der einmaligen OAuth-Verbindung genügt ein Tippen auf „↺ Sync starten" im Depot-Tab.<br><br>
+          Nach der einmaligen OAuth-Verbindung gibt es zwei Wege, den Bestand abzugleichen:<br><br>
           <div style="background:rgba(78,124,246,.08);border-left:3px solid var(--accent);
                       padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:10px;font-size:12px">
-            ⚠️ Der Sync läuft <b>nicht automatisch</b>. Bitte nach jeder Änderung im
-            Parqet-Portfolio manuell ausführen — z.B. nach einem Kauf, Verkauf oder Split.
+            🔄 <b>Automatisch:</b> pro Depot unter Depot-Einstellungen → Parqet-Sektion einschalten
+            (Intervall in Stunden, Zeitraum von/bis). Der Sync läuft dann Mo–Fr zur vollen Stunde.<br>
+            👆 <b>Manuell:</b> jederzeit über „🔗 Parqet Sync“ in der Werkzeugleiste (nur bei
+            verbundenem Depot) oder „↺ Sync starten“ in den Depot-Einstellungen — z.B. nach einem
+            Kauf, Verkauf oder Split, wenn du die Änderung sofort brauchst.
           </div>
           Der Sync:
           <ul style="margin:8px 0 0 16px;padding:0;line-height:1.8">
             <li>Aktualisiert Einstandskurse und Stückzahlen aller bekannten Aktien</li>
             <li>Importiert neue Positionen automatisch — bei unbekannten Handelsplätzen wirst du kurz gefragt</li>
-            <li>Legt vor jeder Änderung ein Backup an — „Rückgängig" stellt den vorherigen Stand wieder her</li>
-          </ul>
+            <li>Erkennt komplett verkaufte Positionen: Beim automatischen Sync bleiben sie als Bestätigungs-Hinweis (Badge neben „Parqet: zuletzt …“) erhalten, das Bestätigungs-Fenster öffnet sich beim nächsten Besuch</li>
+            <li>Legt vor jeder Änderung ein Backup an — „Rückgängig“ stellt den vorherigen Stand wieder her</li>
+            <li>Liefert die Daten für die Erträge-Auswertung</li>
+          </ul><br>
+          <b>Verbindung abgelaufen?</b> Gelingt die automatische Erneuerung des Zugangs nicht mehr,
+          erscheint in der Hauptansicht ein roter Hinweis „🔒 Parqet: neu verbinden“, dazu gibt es
+          eine Push-Benachrichtigung und einen Verlauf-Eintrag. Der Zugang wird sonst täglich um
+          04:00 Uhr automatisch erneuert.
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-apprise" data-kw="Push Discord ntfy E-Mail mailto Alarm Meldung URL Benachrichtigung">
         <summary class="help-summary">🔔 Apprise Benachrichtigungen</summary>
         <div class="help-body">
           Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.
@@ -1631,7 +1773,26 @@ http://depotradar.example.lan</div>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-einstellungen" data-kw="global Refresh Intervall Zeitzone Handelstage Handelszeiten Verlauf aufbewahren Aufbewahrung Split Faktor Reverse Split Aktiensplit">
+        <summary class="help-summary">⚙️ Einstellungen &amp; Aktiensplits</summary>
+        <div class="help-body">
+          Über <b>⚙ Einstellungen</b> im Header; die Werte gelten <b>global für alle Benutzer</b>:
+          <ul style="margin:8px 0 8px 16px;padding:0;line-height:1.8">
+            <li><b>Automatischer Refresh</b> — Intervall von alle 5 Minuten bis täglich</li>
+            <li><b>Zeitzone</b>, <b>Handelstage</b> und <b>Handelszeiten</b> — außerhalb dieser Zeiten findet kein automatischer Refresh statt</li>
+            <li><b>Verlauf aufbewahren</b> — Anzahl Tage; ältere Einträge werden täglich gelöscht</li>
+            <li><b>Aktiensplits</b> — siehe unten</li>
+          </ul>
+          <b>Aktiensplits:</b> Beim Parqet-Sync werden Käufe vor dem Split-Datum mit dem Faktor
+          multipliziert (splitbereinigte Stückzahl). Mit „+ Split hinzufügen“ suchst du die Aktie
+          aus deinem Depot (sie braucht eine ISIN — die kommt automatisch aus dem Parqet-Sync). Von
+          Yahoo Finance gefundene Splits werden zur Auswahl vorgeschlagen; alternativ trägst du Datum
+          und Faktor manuell ein, z.B. 10 für 10:1. Bei einer Zusammenlegung (Reverse Split) ist der
+          Faktor kleiner als 1, z.B. 0,1667 für 1:6. Die Liste ist nach Aktie gruppiert.
+        </div>
+      </details>
+
+      <details class="help-section" id="help-systemstatus" data-kw="Gesundheit Dashboard Scheduler Datenquellen Ausfall Yahoo Frankfurter Fehler Log">
         <summary class="help-summary">🩺 System-Status</summary>
         <div class="help-body">
           Der Link „System-Status" im Footer öffnet ein Gesundheits-Dashboard mit Informationen
@@ -1660,7 +1821,7 @@ http://depotradar.example.lan</div>
         </div>
       </details>
 
-      <details class="help-section">
+      <details class="help-section" id="help-benutzer" data-kw="User Profil PIN Login Anmeldung Multi-User Verlauf Protokoll">
         <summary class="help-summary">👤 Benutzer & Multi-User</summary>
         <div class="help-body">
           DepotRadar setzt mindestens ein Benutzerprofil voraus — ideal auch wenn nur eine Person die App nutzt, und unterstützt zusätzlich mehrere Profile wenn mehrere Personen sie gemeinsam verwenden.<br><br>
@@ -1674,6 +1835,30 @@ http://depotradar.example.lan</div>
           Apprise-URLs und Benachrichtigungseinstellungen werden ausschließlich pro Benutzer hinterlegt (in der Benutzerverwaltung) — es gibt keine separate Depot-Ebene dafür mehr.<br><br>
           <b>Verlauf:</b><br>
           Der Verlauf zeigt standardmäßig nur Einträge des eingeloggten Benutzers. Mit dem User-Filter kann auf alle Benutzer oder einen bestimmten Benutzer gewechselt werden. System-Einträge (Auto-Refresh etc.) erscheinen nur unter „Alle".
+        </div>
+      </details>
+
+      <details class="help-section" id="help-glossar" data-kw="Begriffe Erklärung Lexikon Fachbegriffe Was bedeutet Golden Cross Death Cross SMA ATH Discount Split ISIN Rebalancing">
+        <summary class="help-summary">📖 Glossar</summary>
+        <div class="help-body">
+          <dl class="help-gloss">
+            <dt>ATH (Allzeithoch)</dt><dd>Der höchste Kurs, den eine Aktie je erreicht hat. Grundlage für Discount, Nachkauf-Kandidaten und die Alarme.</dd>
+            <dt>Death Cross</dt><dd>Der SMA50 fällt von oben unter den SMA200. Gilt als Hinweis auf einen entstehenden Abwärtstrend — verzögert, da er auf Durchschnitten der Vergangenheit beruht, und Fehlsignale sind möglich. Keine Anlageempfehlung.</dd>
+            <dt>Discount</dt><dd>Abstand des aktuellen Kurses zum ATH in Prozent. Farben: grün unter 20&nbsp;%, gelb 20–39&nbsp;%, orange 40–59&nbsp;%, rot ab 60&nbsp;%.</dd>
+            <dt>Diversifikations-Lücke (⚖️)</dt><dd>Die Aktie gehört zu einem Sektor, der im Bestand weniger als die Hälfte des durchschnittlichen Werts an Positionen pro Sektor erreicht.</dd>
+            <dt>Eingesetztes Kapital (Invested Capital)</dt><dd>Summe der Einstandswerte aller Positionen — die gestrichelte Linie im Portfolio-Verlauf.</dd>
+            <dt>Einstandskurs (EK)</dt><dd>Dein Kaufkurs je Stück — aus Parqet oder manuell erfasst. Basis für Gewinn und Verlust.</dd>
+            <dt>Gewichtung / Positionswert</dt><dd>Der Positionswert ist aktueller Kurs × Stückzahl; die Gewichtung ist sein Anteil am Gesamtwert des Depots.</dd>
+            <dt>Golden Cross</dt><dd>Der SMA50 steigt von unten über den SMA200. Gilt als Hinweis auf einen entstehenden Aufwärtstrend — verzögert, Fehlsignale sind möglich. Keine Anlageempfehlung.</dd>
+            <dt>Handelsplatz</dt><dd>Die Börse, an der die Aktie gehandelt wird (z.B. NASDAQ oder XETRA). Jeder Handelsplatz hat einen eigenen Ticker, die Kursdaten können je nach Börse unterschiedlich gut sein. Wechseln geht über ✎ an der Aktie.</dd>
+            <dt>ISIN</dt><dd>Die internationale, 12-stellige Wertpapierkennnummer. Die App nutzt sie u.&nbsp;a. für Parqet-Sync, Aktiensplits und Erträge.</dd>
+            <dt>Nachkauf-Kandidat (🛒)</dt><dd>Mindestens 20&nbsp;% unter dem ATH und im Depot untergewichtet (Schwelle per Schieberegler).</dd>
+            <dt>Realisierter Gewinn</dt><dd>Gewinn oder Verlust aus bereits verkauften Positionen — im Gegensatz zum Buchgewinn offener Positionen. In den Erträgen netto nach Steuer und Gebühren.</dd>
+            <dt>Rebalancing</dt><dd>Positionsgewichte wieder angleichen. DepotRadar vergleicht dafür mit einer Gleichgewichtung (100&nbsp;% ÷ Anzahl Positionen) und zeigt Abweichungen über 2&nbsp;Prozentpunkte.</dd>
+            <dt>SMA50 / SMA200 (Simple Moving Average)</dt><dd>Einfacher gleitender Durchschnitt der Schlusskurse der letzten 50 bzw. 200 Handelstage. Der SMA50 zeigt den mittelfristigen, der SMA200 den langfristigen Trend.</dd>
+            <dt>Split (Aktiensplit)</dt><dd>Eine Aktie wird geteilt, z.B. 10:1: Die Stückzahl steigt, der Kurs sinkt entsprechend, der Gesamtwert bleibt gleich. Bei einer Zusammenlegung (Reverse Split) ist es umgekehrt.</dd>
+            <dt>Trendwechsel</dt><dd>Die Meldung der App über einen bestätigten Golden oder Death Cross — erst, wenn die Kreuzung 1–3 Handelstage (Standard: 2) Bestand hat.</dd>
+          </dl>
         </div>
       </details>
 
@@ -2695,9 +2880,64 @@ function scrollUserModal()      { scrollModalBody("userModal"); }
 // ── Hilfe-Modal ───────────────────────────────────────────────────
 function openHelpModal(){
   openModal("helpModal");
+  helpSearchReset();
   localStorage.setItem("help_seen","1");
   const h=document.getElementById("helpHint");
   if(h) h.style.display="none";
+}
+
+// ── Hilfe-Suche & Abschnitts-Sprung (seit v2.13.79) ─────────────────
+// Jeder Abschnitt hat eine ID (help-<name>) und optionale Schlagwörter (data-kw). Durchsucht werden
+// der sichtbare Text plus Schlagwörter — ohne Groß-/Kleinschreibung und umlaut-tolerant; mehrere
+// Suchwörter müssen alle vorkommen. Bei höchstens 3 Treffern werden diese gleich aufgeklappt.
+// Neue Hilfe-Abschnitte brauchen nur id="help-…" (und optional data-kw) — kein Index mehr.
+let _helpIdx = null;
+function _helpNorm(s){
+  // Kleinschreibung, Akzente/Umlaut-Punkte weg, ß→ss; „ae/oe/ue“ zählt wie „ä/ö/ü“ (Text und Suche gleich normalisiert)
+  return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ß/g,"ss")
+    .replace(/ae/g,"a").replace(/oe/g,"o").replace(/ue/g,"u");
+}
+function helpSearch(q){
+  if(!_helpIdx){
+    _helpIdx = [...document.querySelectorAll("#helpModal details.help-section")]
+      .map(d => ({d, t:_helpNorm(d.textContent + " " + (d.dataset.kw||""))}));
+  }
+  const terms = _helpNorm(q).split(/\s+/).filter(Boolean);
+  const hits  = new Set(_helpIdx.filter(x => !terms.length || terms.every(w => x.t.includes(w))).map(x => x.d));
+  _helpIdx.forEach(({d}) => {
+    d.style.display = hits.has(d) ? "" : "none";
+    d.open = terms.length > 0 && hits.size <= 3 && hits.has(d);
+  });
+  const clr  = document.querySelector("#helpModal .hs-clear");
+  if(clr) clr.style.display = terms.length ? "block" : "none";
+  const info = document.getElementById("helpSearchInfo");
+  if(info){
+    info.style.display = terms.length ? "block" : "none";
+    info.textContent = !terms.length ? ""
+      : !hits.size ? "Keine Treffer — anderen Begriff oder eine andere Schreibweise versuchen."
+      : hits.size === 1 ? "1 Treffer"
+      : hits.size + " Treffer" + (hits.size > 3 ? " — Abschnitt antippen zum Aufklappen" : "");
+  }
+}
+function helpSearchReset(){
+  const i = document.getElementById("helpSearch");
+  if(i) i.value = "";
+  helpSearch("");
+}
+function helpSearchClear(){
+  helpSearchReset();
+  document.getElementById("helpSearch")?.focus();
+}
+function helpSearchKey(ev){
+  if(ev.key === "Escape" && ev.target.value){ ev.preventDefault(); ev.stopPropagation(); helpSearchClear(); }
+}
+// Öffnet die Hilfe direkt an einem Abschnitt (ID ohne Präfix "help-", z.B. "parqet")
+function openHelpSection(id){
+  openHelpModal();
+  const d = document.getElementById("help-" + id);
+  if(!d) return;
+  d.open = true;
+  setTimeout(() => d.scrollIntoView({block:"start", behavior:"smooth"}), 60);
 }
 
 function initHelpHint(){
