@@ -1,6 +1,13 @@
 {
-  "frontend_version": "2.13.76",
+  "frontend_version": "2.13.77",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.77 · Backend v2.8.45",
+      "changes": [
+        "Neuer Trendindikator SMA50 (50-Tage-Durchschnitt): Neben den Performance-Badges steht jetzt, wie weit der Kurs über oder unter dem SMA50 liegt. Hat der SMA50 in den letzten 30 Tagen den SMA200 gekreuzt, erscheint zusätzlich ein Badge „Golden Cross“ bzw. „Death Cross“ – antippen oder anklicken zeigt eine kurze Erklärung. Im Aktien-Detail lassen sich SMA50 und SMA200 als Linien im Kursverlauf ein- und ausblenden (mit Markierung der Kreuzungen), dazu gibt es neue Kacheln für SMA50, SMA200 und Trend. Reiner Trendhinweis, keine Anlageempfehlung."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.76 · Backend v2.8.44",
