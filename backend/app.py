@@ -33,7 +33,7 @@ REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.45"
+VERSION           = "2.8.46"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -338,6 +338,7 @@ def _public_user(u):
     """Benutzer-Objekt für API-Antworten: ohne PIN-Daten und ohne Apprise-URLs im Klartext
     (die enthalten Tokens/Passwörter) — stattdessen maskierte Anzeigeform in gleicher Reihenfolge."""
     out = {k: v for k, v in u.items() if k not in ("pin_hash", "pin_salt", "apprise_urls")}
+    out.update(get_cross_prefs(u))   # Trendwechsel-Einstellungen inkl. Defaults für Altbestand
     out["has_pin"]             = bool(u.get("pin_hash"))
     out["is_admin"]            = is_admin_user(u)
     out["apprise_urls_masked"] = [mask_apprise_url(x) for x in (u.get("apprise_urls") or [])]
@@ -581,6 +582,33 @@ def resolve_watchlist_notification_settings(wl_id):
             user.get("notification_mention", ""),
             user.get("notification_confirm", False))
 
+# ── Trendwechsel (Golden/Death Cross) – Benutzer-Einstellungen (seit v2.8.46) ──
+_CROSS_CONFIRM_DEFAULT = 2   # Handelstage, die ein Cross bestehen muss, bevor er gemeldet wird
+_CROSS_NOTIFY_WINDOW   = 5   # Meldefenster: nur Crosses mit Alter N … N+5 Handelstage (kein Burst bei Erstaktivierung)
+_CROSS_DISCOUNT_DAYS   = 30  # Zusatzzeile im Discount-Alarm nur für Crosses, die höchstens so viele Kalendertage alt sind
+
+def get_cross_prefs(user):
+    """Trendwechsel-Einstellungen eines Users inkl. Defaults (Digest an, Push aus, Discount-
+    Zusatzzeile an, Bestätigung nach 2 Handelstagen). Eine Einstellung gilt für Zusammenfassung,
+    Push und Discount-Zeile gleichermaßen. Ohne User (defensiv) → alles aus."""
+    if not user:
+        return {"cross_digest": False, "cross_push": False, "cross_in_discount": False,
+                "cross_confirm_days": _CROSS_CONFIRM_DEFAULT}
+    try: days = int(user.get("cross_confirm_days", _CROSS_CONFIRM_DEFAULT))
+    except (TypeError, ValueError): days = _CROSS_CONFIRM_DEFAULT
+    if days not in (1, 2, 3): days = _CROSS_CONFIRM_DEFAULT
+    return {"cross_digest":       bool(user.get("cross_digest", True)),
+            "cross_push":         bool(user.get("cross_push", False)),
+            "cross_in_discount":  bool(user.get("cross_in_discount", True)),
+            "cross_confirm_days": days}
+
+def _validate_cross_confirm_days(v):
+    """Bestätigung 1, 2 oder 3 Handelstage; ValueError bei ungültigem Wert."""
+    try: d = int(v)
+    except (TypeError, ValueError): raise ValueError("Ungültige Bestätigungsdauer")
+    if d not in (1, 2, 3): raise ValueError("Ungültige Bestätigungsdauer")
+    return d
+
 def load_settings():
     """Einstellungen mit Priorität: settings.json > _CFG_DEF"""
     s = {
@@ -611,12 +639,15 @@ def save_settings(s):     _save_json(SETTINGS_FILE, s)
 
 def save_notifications(n): _save_json(NOTIF_FILE, n)
 
-def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, user_id=None, user_name=None, kind=None):
+def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, user_id=None, user_name=None, kind=None,
+            extra=None):
     n = load_notifications()
     entry = {"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
              "type": etype, "title": title, "body": body, "success": success}
     if kind:
         entry["kind"] = kind
+    if extra:
+        entry.update(extra)   # strukturierte Zusatzfelder (z.B. cross_type/cross_age beim Trendwechsel)
     if depot_id:
         entry["depot_id"] = depot_id
         user = get_depot_user(depot_id)
@@ -831,7 +862,7 @@ def get_multiplier(d):       return 3 if d >= 60 else (2 if d >= 40 else 1)
 def initial_block(cur, ath): return 0 if ath <= 0 else get_block((ath - cur) / ath * 100)
 
 def build_alert_html(stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
-                     multiplier=1, is_nachkauf=False, is_sector_gap=False):
+                     multiplier=1, is_nachkauf=False, is_sector_gap=False, cross_line=""):
     """Baut eine HTML-Version des Discount-Block-Alarms für E-Mail-Versand (analog zum Wochenbericht)."""
     nk_badge = ('<span style="display:inline-block;padding:2px 8px;background:#fef3c7;'
                 'color:#92400e;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
@@ -839,6 +870,8 @@ def build_alert_html(stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
     gap_badge = ('<span style="display:inline-block;padding:2px 8px;background:#e0e7ff;'
                  'color:#3730a3;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
                  '⚖️ Sektor unterrepräsentiert</span>') if is_sector_gap else ""
+    cross_badge = ('<span style="display:inline-block;padding:2px 8px;background:#dbeafe;'
+                   f'color:#1e40af;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">{cross_line}</span>') if cross_line else ""
 
     buy_html = ""
     if buy_budget:
@@ -859,7 +892,7 @@ def build_alert_html(stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
       <div style="opacity:.85;font-size:13px;margin-top:4px">-{cb}%-Block erreicht</div>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
-      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span>{nk_badge}{gap_badge}</h3>
+      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span>{nk_badge}{gap_badge}{cross_badge}</h3>
       <table style="width:100%;border-collapse:collapse;margin-top:12px">
         <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{new_cur:.2f} €</td></tr>
         <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">ATH</td><td style="padding:4px 8px;font-weight:600">{new_ath:.2f} €</td></tr>
@@ -873,7 +906,7 @@ def build_alert_html(stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
-def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None, watchlist_id=None, is_sector_gap=False):
+def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=None, is_nachkauf=False, mention="", confirm=False, depot_id=None, watchlist_id=None, is_sector_gap=False, cross_line=""):
     if new_ath <= 0: return stock.get("last_notified_block", 0)
     d  = (new_ath - new_cur) / new_ath * 100
     cb = get_block(d)
@@ -916,6 +949,8 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
             extra_lines.append("🛒 Nachkauf-Kandidat")
         if is_sector_gap:
             extra_lines.append("⚖️ Sektor unterrepräsentiert")
+        if cross_line:
+            extra_lines.append(cross_line)
         extra_block = ("\n".join(extra_lines) + "\n\n") if extra_lines else ""
         body = (f"{extra_block}"
                 f"Aktueller Kurs:  {new_cur:.2f} EUR\n"
@@ -925,7 +960,7 @@ def check_and_notify(stock, new_cur, new_ath, label="", urls=None, buy_budget=No
                 f"Kursstand:       {stock.get('market_time', '—')}{link}")
         html_body = build_alert_html(stock, label, new_cur, new_ath, d, cb, lp,
                                      buy_budget=buy_budget, multiplier=multiplier, is_nachkauf=is_nachkauf,
-                                     is_sector_gap=is_sector_gap)
+                                     is_sector_gap=is_sector_gap, cross_line=cross_line)
         send_apprise(title, body, urls or [], mention=mention, html_body=html_body,
                      depot_id=depot_id, watchlist_id=watchlist_id, kind="discount")
         # Bestätigung abgeschlossen — alle Flags <= cb löschen + Verlauf-Eintrag
@@ -1330,6 +1365,7 @@ def fetch_performance(ticker, current_eur, eur_rate):
         result["sma200"] = round(s200[-1], 2) if s200 and s200[-1] is not None else None
         result["sma_cross_type"] = None
         result["sma_cross_date"] = None
+        result["sma_cross_age"]  = None   # Handelstage seit der Kreuzung (Basis der Bestätigung, seit v2.8.46)
         sma_tz = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
         for i in range(len(closes_all) - 1, max(0, len(closes_all) - 252) - 1, -1):
             if i < 1 or None in (s50[i], s200[i], s50[i-1], s200[i-1]):
@@ -1342,6 +1378,7 @@ def fetch_performance(ticker, current_eur, eur_rate):
             else:
                 continue
             result["sma_cross_date"] = datetime.fromtimestamp(int(valid_points[i][0]), tz=sma_tz).strftime("%Y-%m-%d")
+            result["sma_cross_age"]  = len(closes_all) - 1 - i
             break
 
         return result
@@ -1349,7 +1386,7 @@ def fetch_performance(ticker, current_eur, eur_rate):
         log.warning(f"Performance {ticker}: {e}")
         return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
                 "week52_high": None, "week52_low": None,
-                "sma50": None, "sma200": None, "sma_cross_type": None, "sma_cross_date": None}
+                "sma50": None, "sma200": None, "sma_cross_type": None, "sma_cross_date": None, "sma_cross_age": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
 EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "postmark://", "ses://")
@@ -1358,7 +1395,7 @@ def _is_email_url(u):
     return u.lower().startswith(EMAIL_PREFIXES)
 
 def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, watchlist_id=None, kind=None,
-                 log_type="alert"):
+                 log_type="alert", log_extra=None):
     """log_type steuert den Verlauf-Typ des add_log-Eintrags (Default "alert").
     Testnachrichtigungen übergeben "test", damit sie im Verlauf als ✅ Test erscheinen
     statt wie ein echter Alarm auszusehen — vorher wurde jeder Versand pauschal als
@@ -1387,11 +1424,11 @@ def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, w
             else:
                 if not ap.notify(title=title, body=msg):
                     ok = False
-        add_log(log_type, title, body, ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
+        add_log(log_type, title, body, ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind, extra=log_extra)
         return ok
     except Exception as e:
         log.error(f"Apprise: {e}")
-        add_log(log_type, title, body, False, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind)
+        add_log(log_type, title, body, False, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind, extra=log_extra)
         return False
 
 # ── Stock helpers ─────────────────────────────────────────────────
@@ -1420,6 +1457,7 @@ def _make_stock(data, old=None):
         "sma200":         data.get("sma200"),
         "sma_cross_type": data.get("sma_cross_type"),
         "sma_cross_date": data.get("sma_cross_date"),
+        "sma_cross_age":  data.get("sma_cross_age"),
         # Parqet-Felder explizit beibehalten (nicht durch **base überschreiben lassen)
         "isin":          base.get("isin"),
         "buy_price_eur": base.get("buy_price_eur"),
@@ -1564,9 +1602,103 @@ def send_ath_alerts(hits, label, urls, mention="", depot_id=None, watchlist_id=N
             log.error(f"ATH-Alarm {s.get('name','?')}: {e}")
 
 
-def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_gap_set=None, mention="", confirm=False, depot_id=None, watchlist_id=None):
+# ── Trendwechsel (Golden/Death Cross) ─────────────────────────────
+def _cross_confirmed(stock, prefs):
+    """True, wenn der Cross der Aktie die konfigurierte Bestätigungsdauer (Handelstage seit
+    Kreuzung) erreicht hat. Da sma_cross_* immer die JÜNGSTE Kreuzung beschreibt, ist ein Cross
+    mit Alter ≥ N automatisch seit N Tagen nicht wieder gekippt."""
+    age = stock.get("sma_cross_age")
+    return bool(stock.get("sma_cross_type") and stock.get("sma_cross_date") and age is not None
+                and age >= prefs["cross_confirm_days"])
+
+def _cross_discount_line(stock, prefs):
+    """Zusatzzeile für den Discount-Alarm ("🔀 Death Cross aktiv (seit 28.09.2026)") — nur wenn
+    aktiviert, der Cross bestätigt und höchstens _CROSS_DISCOUNT_DAYS Kalendertage alt ist."""
+    if not prefs["cross_in_discount"] or not _cross_confirmed(stock, prefs):
+        return ""
+    try:
+        d = datetime.strptime(stock["sma_cross_date"], "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return ""
+    if (datetime.now() - d).days > _CROSS_DISCOUNT_DAYS:
+        return ""
+    name = "Golden Cross" if stock["sma_cross_type"] == "golden" else "Death Cross"
+    return f"🔀 {name} aktiv (seit {d.strftime('%d.%m.%Y')})"
+
+def _cross_age_text(age):
+    return "1 Handelstag" if age == 1 else f"{age} Handelstagen"
+
+def build_cross_html(stock, label, ctype, age):
+    """HTML-Version der Trendwechsel-Meldung für E-Mail-Versand."""
+    golden = ctype == "golden"
+    color  = "#22c55e" if golden else "#ef4444"
+    name   = "Golden Cross" if golden else "Death Cross"
+    meaning = ("SMA50 hat den SMA200 von unten gekreuzt – ein Hinweis auf einen entstehenden Aufwärtstrend."
+               if golden else
+               "SMA50 hat den SMA200 von oben gekreuzt – ein Hinweis auf einen entstehenden Abwärtstrend.")
+    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
+                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+    s50  = stock.get("sma50");  s200 = stock.get("sma200")
+    sma_row = (f'<tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">SMA50 / SMA200</td>'
+               f'<td style="padding:4px 8px;font-weight:600">{s50:.2f} € / {s200:.2f} €</td></tr>') if s50 and s200 else ""
+    return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
+    <div style="background:{color};color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
+      <h2 style="margin:0;font-size:18px">🔀 {name} — {label}</h2>
+      <div style="opacity:.85;font-size:13px;margin-top:4px">bestätigt seit {_cross_age_text(age)}</div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
+      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span></h3>
+      <p style="margin:8px 0">{meaning}</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:12px">
+        <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{stock['current_eur']:.2f} €</td></tr>
+        {sma_row}
+      </table>
+      <p style="font-size:12px;color:#94a3b8;margin-top:16px">Trendindikator, keine Anlageempfehlung.</p>
+      {link_html}
+    </div>
+    <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
+    </body></html>"""
+
+def check_cross_notify(stock, label, urls, mention, prefs, depot_id=None, watchlist_id=None):
+    """Meldet einen frisch bestätigten Golden/Death Cross genau einmal je Kreuzung und gibt den
+    neuen Wert für stock["last_notified_cross"] ("typ:datum") zurück.
+    - Bestätigung: Alter (Handelstage seit Kreuzung) ≥ cross_confirm_days des Users.
+    - Meldefenster: nur bis N + _CROSS_NOTIFY_WINDOW Handelstage — ältere Crosses (z.B. beim
+      ersten Start nach dem Update) lösen nichts aus.
+    - Mit Push-Schalter: eigene Nachricht (Verlauf-Typ "cross"); schlägt der Versand fehl, bleibt
+      der Cross unmarkiert und wird im Fenster erneut versucht.
+    - Nur Zusammenfassung: Verlauf-Eintrag ohne Versand — die Tageszusammenfassung wertet
+      kind="cross" aus. Ohne Push und ohne Zusammenfassung passiert nichts."""
+    prev = stock.get("last_notified_cross")
+    if not urls or not (prefs["cross_push"] or prefs["cross_digest"]) or not _cross_confirmed(stock, prefs):
+        return prev
+    ctype, cdate, age = stock["sma_cross_type"], stock["sma_cross_date"], stock["sma_cross_age"]
+    key = f"{ctype}:{cdate}"
+    if key == prev or age > prefs["cross_confirm_days"] + _CROSS_NOTIFY_WINDOW:
+        return prev
+    golden  = ctype == "golden"
+    title   = f"🔀 {'Golden' if golden else 'Death'} Cross: {stock['name']} ({stock['ticker']})"
+    meaning = ("SMA50 hat den SMA200 von unten gekreuzt" if golden else "SMA50 hat den SMA200 von oben gekreuzt")
+    trend   = "Aufwärtstrend" if golden else "Abwärtstrend"
+    s50, s200 = stock.get("sma50"), stock.get("sma200")
+    sma_line = f"\nSMA50: {s50:.2f} EUR · SMA200: {s200:.2f} EUR" if s50 and s200 else ""
+    link     = f"\n\n{APP_URL}" if APP_URL else ""
+    body = (f"{label}\n\n"
+            f"{meaning} (bestätigt seit {_cross_age_text(age)}) – ein Hinweis auf einen entstehenden {trend}.\n\n"
+            f"Kurs: {stock['current_eur']:.2f} EUR{sma_line}\n"
+            f"Trendindikator, keine Anlageempfehlung.{link}")
+    extra = {"cross_type": ctype, "cross_age": age}
+    if prefs["cross_push"]:
+        ok = send_apprise(title, body, urls, mention=mention, html_body=build_cross_html(stock, label, ctype, age),
+                          depot_id=depot_id, watchlist_id=watchlist_id, kind="cross", log_type="cross", log_extra=extra)
+        return key if ok else prev
+    add_log("cross", title, body, True, depot_id=depot_id, watchlist_id=watchlist_id, kind="cross", extra=extra)
+    return key
+
+def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_gap_set=None, mention="", confirm=False, depot_id=None, watchlist_id=None, cross_prefs=None):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
     sector_gap_set = sector_gap_set or set()
+    cross_prefs = cross_prefs or get_cross_prefs(None)
     for i, s in enumerate(stocks):
         try:
             is_nk   = s["ticker"] in nachkauf_set
@@ -1574,11 +1706,19 @@ def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_ga
             new_blk = check_and_notify(
                 s, s["current_eur"], s["ath_eur"],
                 label, urls, buy_budget, is_nk, mention, confirm=confirm,
-                depot_id=depot_id, watchlist_id=watchlist_id, is_sector_gap=is_gap
+                depot_id=depot_id, watchlist_id=watchlist_id, is_sector_gap=is_gap,
+                cross_line=_cross_discount_line(s, cross_prefs)
             )
             stocks[i]["last_notified_block"] = new_blk
         except Exception as e:
             log.error(f"Notify {s.get('name','?')}: {e}")
+        try:
+            new_cross = check_cross_notify(s, label, urls, mention, cross_prefs,
+                                           depot_id=depot_id, watchlist_id=watchlist_id)
+            if new_cross is not None:
+                stocks[i]["last_notified_cross"] = new_cross
+        except Exception as e:
+            log.error(f"Cross-Notify {s.get('name','?')}: {e}")
     return stocks
 
 def _refresh_depot(depot, price_cache=None, progress_key=None):
@@ -1606,7 +1746,8 @@ def _refresh_depot(depot, price_cache=None, progress_key=None):
         # Benachrichtigungen — nur wenn für dieses Depot aktiviert
         if depot.get("notifications_enabled", True):
             stocks = _send_notifications(stocks, f"Bestand: {dname}", urls, budget, nachkauf_set,
-                                          sector_gap_set, mention, confirm, depot_id=did)
+                                          sector_gap_set, mention, confirm, depot_id=did,
+                                          cross_prefs=get_cross_prefs(get_depot_user(did)))
             send_ath_alerts(ath_hits, f"Bestand: {dname}", urls, mention, depot_id=did)
 
         save_stocks(did, stocks)
@@ -1630,7 +1771,8 @@ def _refresh_watchlist(wl, price_cache=None):
 
         if wl.get("notifications_enabled", True):
             wls = _send_notifications(wls, f"Beobachtung: {wl['name']}", urls, None, nachkauf_set,
-                                       None, mention, confirm, watchlist_id=wl_id)
+                                       None, mention, confirm, watchlist_id=wl_id,
+                                       cross_prefs=get_cross_prefs(get_watchlist_user(wl_id)))
             send_ath_alerts(ath_hits, f"Beobachtung: {wl['name']}", urls, mention, watchlist_id=wl_id)
 
         save_wl_stocks(wl_id, wls)
@@ -2283,6 +2425,7 @@ def build_digest_html(depot, stocks):
 
 _DAILY_DIGEST_ATH_RE      = re.compile(r"^🎉 Neues ATH: (.+)$")
 _DAILY_DIGEST_DISCOUNT_RE = re.compile(r"^📉 (.+)$")
+_DAILY_DIGEST_CROSS_RE    = re.compile(r"^🔀 (?:Golden|Death) Cross: (.+)$")
 
 def _daily_digest_line(entry):
     """Extrahiert eine kompakte, lesbare Zeile aus einem Verlauf-Eintrag für die
@@ -2290,6 +2433,8 @@ def _daily_digest_line(entry):
     title = entry.get("title", "")
     if entry.get("kind") == "ath":
         m = _DAILY_DIGEST_ATH_RE.match(title)
+    elif entry.get("kind") == "cross":
+        m = _DAILY_DIGEST_CROSS_RE.match(title)
     else:
         m = _DAILY_DIGEST_DISCOUNT_RE.match(title)
     return m.group(1) if m else title
@@ -2326,6 +2471,49 @@ def _dedupe_digest_lines(entries):
     return [grouped[k]["line"] + (f" ({grouped[k]['count']}×)" if grouped[k]["count"] > 1 else "")
             for k in order]
 
+def _cross_digest_rows(entries):
+    """Trendwechsel-Einträge (kind="cross") für die Tageszusammenfassung: eine Zeile je Aktie und
+    Cross-Typ (mehrfache Einträge am selben Tag, z.B. Push-Retry, werden zusammengeführt).
+    Liefert Dicts {"type", "line", "detail"} in Reihenfolge des ersten Auftretens."""
+    rows, seen = [], {}
+    for e in entries:
+        ctype = e.get("cross_type") or ("golden" if str(e.get("title", "")).startswith("🔀 Golden") else "death")
+        line  = _daily_digest_line(e)
+        key   = (ctype, line)
+        if key in seen: continue
+        age    = e.get("cross_age")
+        detail = ("SMA50 kreuzte SMA200 von unten" if ctype == "golden" else "SMA50 kreuzte SMA200 von oben")
+        if isinstance(age, int): detail += f" · bestätigt seit {_cross_age_text(age)}"
+        seen[key] = True
+        rows.append({"type": ctype, "line": line, "detail": detail})
+    return rows
+
+def _cross_text_lines(rows):
+    out = []
+    for r in rows:
+        out.append(f"  • {'Golden Cross' if r['type'] == 'golden' else 'Death Cross'}: {r['line']}")
+        out.append(f"      {r['detail']}")
+    return out
+
+def _cross_html_rows(rows):
+    out = ""
+    for r in rows:
+        color = "#22c55e" if r["type"] == "golden" else "#ef4444"
+        nm    = "Golden Cross" if r["type"] == "golden" else "Death Cross"
+        out += (f"<li style='padding:2px 0'><span style='color:{color};font-weight:600'>{nm}</span>: {r['line']}"
+                f"<div style='font-size:12px;color:#64748b'>{r['detail']}</div></li>")
+    return out
+
+_CROSS_DISCLAIMER = "Trendindikator, keine Anlageempfehlung."
+
+def _build_daily_cross_data(depot_id):
+    """Heute erfolgreich verbuchte Trendwechsel (kind="cross") eines Depots — separat von den
+    Alarmen, da sie nicht in "Alarm(e)" mitgezählt werden."""
+    today = datetime.now().strftime("%d.%m.%Y")
+    return [n for n in load_notifications()
+            if n.get("depot_id") == depot_id and n.get("success", True)
+            and n.get("kind") == "cross" and n.get("time", "").startswith(today)]
+
 def _build_daily_ath_digest_data(depot_id):
     """Sammelt alle heute für dieses Depot erfolgreich gesendeten Discount- und
     ATH-Alarme aus notifications.json (per kind-Feld, siehe send_apprise/add_log).
@@ -2339,28 +2527,36 @@ def _build_daily_ath_digest_data(depot_id):
     discount_hits = [e for e in entries if e["kind"] == "discount"]
     return ath_hits, discount_hits
 
-def build_daily_ath_digest_body(depot, ath_hits, discount_hits):
-    """Baut den Text für die tägliche 21-Uhr-Zusammenfassung."""
+def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None):
+    """Baut den Text für die tägliche 21-Uhr-Zusammenfassung. cross_hits (Trendwechsel) wird
+    nur übergeben, wenn der User sie in der Zusammenfassung sehen will; sie zählen nicht als Alarm."""
     name  = depot.get("name", "Depot")
     total = len(ath_hits) + len(discount_hits)
     title = f"🌙 DepotRadar Tageszusammenfassung — {name}"
-    if total == 0:
+    cross_rows = _cross_digest_rows(cross_hits or [])
+    if total == 0 and not cross_rows:
         return title, f"Depot: {name}\n\nHeute gab es keine Benachrichtigung für dein Depot."
-    lines = [f"Depot: {name}\n\nHeute gab es {total} Alarm(e):"]
+    lines = [f"Depot: {name}\n\nHeute gab es {total} Alarm(e):" if total
+             else f"Depot: {name}\n\nHeute gab es keine Discount- oder ATH-Alarme."]
     if ath_hits:
         lines.append(f"\n🎉 {len(ath_hits)} neue(s) Allzeithoch:")
         lines += [f"  • {ln}" for ln in _dedupe_digest_lines(ath_hits)]
     if discount_hits:
         lines.append(f"\n📉 {len(discount_hits)} Discount-Alarm(e):")
         lines += [f"  • {ln}" for ln in _dedupe_digest_lines(discount_hits)]
+    if cross_rows:
+        lines.append(f"\n🔀 Trendwechsel SMA50/SMA200 ({len(cross_rows)}):")
+        lines += _cross_text_lines(cross_rows)
+        lines.append(f"\n{_CROSS_DISCLAIMER}")
     link = f"\n\n{APP_URL}" if APP_URL else ""
     return title, "\n".join(lines) + link
 
-def build_daily_ath_digest_html(depot, ath_hits, discount_hits):
+def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None):
     """HTML-Version der Tageszusammenfassung für E-Mail-Versand."""
     name  = depot.get("name", "Depot")
     total = len(ath_hits) + len(discount_hits)
-    if total == 0:
+    cross_rows = _cross_digest_rows(cross_hits or [])
+    if total == 0 and not cross_rows:
         body_html = '<p style="color:#64748b;margin:0">Heute gab es keine Benachrichtigung für dein Depot.</p>'
     else:
         sections = []
@@ -2372,6 +2568,10 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits):
             rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(discount_hits))
             sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {len(discount_hits)} Discount-Alarm(e)</h3>"
                             f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
+        if cross_rows:
+            sections.append(f"<h3 style='color:#3b82f6;margin:16px 0 6px'>🔀 Trendwechsel SMA50/SMA200 ({len(cross_rows)})</h3>"
+                            f"<ul style='margin:0;padding-left:20px'>{_cross_html_rows(cross_rows)}</ul>"
+                            f"<p style='font-size:12px;color:#94a3b8;margin:8px 0 0'>{_CROSS_DISCLAIMER}</p>")
         body_html = "".join(sections)
     link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
@@ -2386,35 +2586,45 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits):
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
-def _build_daily_watchlist_digest_data(wl_ids):
+def _build_daily_watchlist_digest_data(wl_ids, include_cross=False):
     """Sammelt alle heute erfolgreich gesendeten Discount- und ATH-Alarme für die
     übergebenen Watchlist-IDs, gruppiert nach Watchlist-Name. Analog zu
     _build_daily_ath_digest_data, aber über mehrere Watchlists gebündelt — Watchlists
     haben (anders als Depots) keinen eigenen Digest-Schalter, sondern nehmen an einem
-    einzigen, gebündelten User-weiten Digest teil (siehe daily_watchlist_digest)."""
+    einzigen, gebündelten User-weiten Digest teil (siehe daily_watchlist_digest).
+    include_cross: zusätzlich Trendwechsel (kind="cross") unter dem Schlüssel "cross" sammeln."""
     today     = datetime.now().strftime("%d.%m.%Y")
     wl_lookup = {w["id"]: w["name"] for w in load_watchlists() if w["id"] in wl_ids}
+    kinds     = ("discount", "ath", "cross") if include_cross else ("discount", "ath")
     entries   = [n for n in load_notifications()
                  if n.get("watchlist_id") in wl_ids and n.get("success", True)
-                 and n.get("kind") in ("discount", "ath")
+                 and n.get("kind") in kinds
                  and n.get("time", "").startswith(today)]
     grouped = {}
     for e in entries:
         name = wl_lookup.get(e["watchlist_id"], e["watchlist_id"])
-        grouped.setdefault(name, {"ath": [], "discount": []})
+        grouped.setdefault(name, {"ath": [], "discount": [], "cross": []})
         grouped[name][e["kind"]].append(e)
     return grouped
+
+def _watchlist_digest_total(grouped):
+    """Anzahl Alarme (Discount + ATH) — Trendwechsel zählen bewusst nicht mit."""
+    return sum(len(g["ath"]) + len(g["discount"]) for g in grouped.values())
+
+def _watchlist_has_cross(grouped):
+    return any(g.get("cross") for g in grouped.values())
 
 def build_daily_watchlist_digest_body(grouped):
     """Baut den Text für die gebündelte tägliche Watchlist-Zusammenfassung eines Users —
     eine einzige Nachricht über alle seine Watchlists hinweg, pro Alarm-Typ nach
     Watchlist-Name gruppiert (erst alle Discount-, dann alle ATH-Gruppen)."""
-    total = sum(len(g["ath"]) + len(g["discount"]) for g in grouped.values())
+    total = _watchlist_digest_total(grouped)
     title = "🌙 DepotRadar Tageszusammenfassung — Watchlists"
-    if total == 0:
+    has_cross = _watchlist_has_cross(grouped)
+    if total == 0 and not has_cross:
         return title, "Heute gab es keine Benachrichtigung für deine Watchlists."
     names = sorted(grouped.keys())
-    lines = [f"Heute gab es {total} Alarm(e):"]
+    lines = [f"Heute gab es {total} Alarm(e):" if total else "Heute gab es keine Discount- oder ATH-Alarme."]
     for name in names:
         if grouped[name]["discount"]:
             lines.append(f"\n📉 {name}")
@@ -2423,13 +2633,21 @@ def build_daily_watchlist_digest_body(grouped):
         if grouped[name]["ath"]:
             lines.append(f"\n🎉 {name}")
             lines += [f"  • {ln}" for ln in _dedupe_digest_lines(grouped[name]["ath"])]
+    if has_cross:
+        for name in names:
+            rows = _cross_digest_rows(grouped[name].get("cross", []))
+            if rows:
+                lines.append(f"\n🔀 {name} — Trendwechsel SMA50/SMA200")
+                lines += _cross_text_lines(rows)
+        lines.append(f"\n{_CROSS_DISCLAIMER}")
     link = f"\n\n{APP_URL}" if APP_URL else ""
     return title, "\n".join(lines) + link
 
 def build_daily_watchlist_digest_html(grouped):
     """HTML-Version der gebündelten Watchlist-Tageszusammenfassung für E-Mail-Versand."""
-    total = sum(len(g["ath"]) + len(g["discount"]) for g in grouped.values())
-    if total == 0:
+    total = _watchlist_digest_total(grouped)
+    has_cross = _watchlist_has_cross(grouped)
+    if total == 0 and not has_cross:
         body_html = '<p style="color:#64748b;margin:0">Heute gab es keine Benachrichtigung für deine Watchlists.</p>'
     else:
         names = sorted(grouped.keys())
@@ -2444,6 +2662,13 @@ def build_daily_watchlist_digest_html(grouped):
                 rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(grouped[name]["ath"]))
                 sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {name}</h3>"
                                 f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
+        if has_cross:
+            for name in names:
+                rows = _cross_digest_rows(grouped[name].get("cross", []))
+                if rows:
+                    sections.append(f"<h3 style='color:#3b82f6;margin:16px 0 6px'>🔀 {name} — Trendwechsel SMA50/SMA200</h3>"
+                                    f"<ul style='margin:0;padding-left:20px'>{_cross_html_rows(rows)}</ul>")
+            sections.append(f"<p style='font-size:12px;color:#94a3b8;margin:8px 0 0'>{_CROSS_DISCLAIMER}</p>")
         body_html = "".join(sections)
     link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
@@ -2478,8 +2703,9 @@ def send_daily_ath_digests(user_id):
         urls, mention, _confirm = resolve_notification_settings(did)
         if not urls: continue
         ath_hits, discount_hits = _build_daily_ath_digest_data(did)
-        title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits)
-        html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits)
+        cross_hits  = _build_daily_cross_data(did) if get_cross_prefs(user)["cross_digest"] else []
+        title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits, cross_hits)
+        html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits, cross_hits)
         add_log("daily_ath_digest", f"🌙 Tageszusammenfassung [{dc['name']}]",
                 f"Gesendet an {len(urls)} URL(s). ({len(ath_hits) + len(discount_hits)} Alarm(e))",
                 success=True, depot_id=dc["id"])
@@ -2490,10 +2716,10 @@ def send_daily_ath_digests(user_id):
         urls   = user.get("apprise_urls", [])
         mention = user.get("notification_mention", "")
         if wl_ids and urls:
-            grouped     = _build_daily_watchlist_digest_data(wl_ids)
+            grouped     = _build_daily_watchlist_digest_data(wl_ids, include_cross=get_cross_prefs(user)["cross_digest"])
             title, body = build_daily_watchlist_digest_body(grouped)
             html_body   = build_daily_watchlist_digest_html(grouped)
-            total       = sum(len(g["ath"]) + len(g["discount"]) for g in grouped.values())
+            total       = _watchlist_digest_total(grouped)
             add_log("daily_watchlist_digest", "📋 Watchlist-Tageszusammenfassung",
                     f"Gesendet an {len(urls)} URL(s). ({total} Alarm(e))",
                     success=True, user_id=user["id"], user_name=user.get("name", ""))
@@ -4845,8 +5071,13 @@ def api_create_user():
         "digest_time":           _DIGEST_TIME_DEFAULT,
         "daily_digest_time":     _DAILY_DIGEST_TIME_DEFAULT,
         "daily_watchlist_digest": bool(body.get("daily_watchlist_digest", False)),
+        "cross_digest":          bool(body.get("cross_digest", True)),
+        "cross_push":            bool(body.get("cross_push", False)),
+        "cross_in_discount":     bool(body.get("cross_in_discount", True)),
+        "cross_confirm_days":    _CROSS_CONFIRM_DEFAULT,
     }
     try:
+        if "cross_confirm_days" in body: new_user["cross_confirm_days"] = _validate_cross_confirm_days(body["cross_confirm_days"])
         if "digest_day"        in body: new_user["digest_day"]        = _validate_digest_day(body["digest_day"])
         if "digest_time"       in body: new_user["digest_time"]       = _validate_hhmm(body["digest_time"])
         if "daily_digest_time" in body: new_user["daily_digest_time"] = _validate_hhmm(body["daily_digest_time"])
@@ -4888,6 +5119,7 @@ def api_update_user(user_id):
         new_day  = _validate_digest_day(body["digest_day"]) if "digest_day" in body else None
         new_dt   = _validate_hhmm(body["digest_time"]) if "digest_time" in body else None
         new_ddt  = _validate_hhmm(body["daily_digest_time"]) if "daily_digest_time" in body else None
+        new_ccd  = _validate_cross_confirm_days(body["cross_confirm_days"]) if "cross_confirm_days" in body else None
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     # Leerer Name bleibt erlaubt (Altbestand: der frühere Standard-User hatte keinen Namen)
@@ -4899,6 +5131,9 @@ def api_update_user(user_id):
     if "notification_mention" in body: user["notification_mention"]= _clean_text(body["notification_mention"], _MAX_MENTION)
     if "notification_confirm" in body: user["notification_confirm"]= bool(body["notification_confirm"])
     if "daily_watchlist_digest" in body: user["daily_watchlist_digest"] = bool(body["daily_watchlist_digest"])
+    for k in ("cross_digest", "cross_push", "cross_in_discount"):
+        if k in body: user[k] = bool(body[k])
+    if new_ccd is not None: user["cross_confirm_days"] = new_ccd
     digest_changed = False
     if new_day is not None: user["digest_day"] = new_day; digest_changed = True
     if new_dt  is not None: user["digest_time"] = new_dt; digest_changed = True

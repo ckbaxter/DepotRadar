@@ -1,6 +1,13 @@
 {
-  "frontend_version": "2.13.77",
+  "frontend_version": "2.13.78",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.78 · Backend v2.8.46",
+      "changes": [
+        "Benachrichtigungen für Golden und Death Cross (SMA50 kreuzt SMA200): Im Benutzerprofil unter „Zusammenfassungen“ gibt es einen neuen Block „Trendwechsel“. Eine Einstellung gilt für alles: Der Trendwechsel kann in die Tageszusammenfassung (Depot und Watchlists) aufgenommen, per Push gemeldet (sobald bestätigt) und als Zusatzzeile im Discount-Alarm angezeigt werden. Gemeldet wird erst, wenn der Cross 1, 2 oder 3 Handelstage (Standard: 2) Bestand hat, damit kurzes Hin und Her keine Meldung auslöst. Jeder Cross wird nur einmal gemeldet. Standard: Zusammenfassung und Discount-Zeile an, Push aus. Im Popover des Cross-Badges steht „Noch nicht bestätigt“, solange die Bestätigungsdauer nicht erreicht ist. Im Verlauf erscheinen die Meldungen als „🔀 Trendwechsel“. Reiner Trendhinweis, keine Anlageempfehlung."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.77 · Backend v2.8.45",
