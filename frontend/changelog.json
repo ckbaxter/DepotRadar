@@ -1,6 +1,13 @@
 {
-  "frontend_version": "2.13.79",
+  "frontend_version": "2.13.80",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.80",
+      "changes": [
+        "Die Einstellung „Trendwechsel“ ist verständlicher beschrieben: Der Hinweis unter „Bestätigung nach“ sagt jetzt klar, dass die Wartezeit für Zusammenfassung, Push und Zusatzzeile im Discount-Alarm gleichermaßen gilt (in Handelstagen) und den normalen Discount-Alarm nicht verzögert. Der Hinweis zur Tageszusammenfassung nennt die Bestätigung ebenfalls."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.79",
