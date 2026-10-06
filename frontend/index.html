@@ -5380,7 +5380,7 @@ async function editUser(userId){
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </label>
             <span style="font-size:13px">In Tageszusammenfassung aufnehmen
-              <span class="usr-hint" style="display:block;margin-top:2px">Depot- und Watchlist-Zusammenfassung zeigen eine Zeile je Cross.</span></span>
+              <span class="usr-hint" style="display:block;margin-top:2px">Depot- und Watchlist-Zusammenfassung zeigen eine Zeile je Cross – erst nach der Bestätigung.</span></span>
           </div>
           <div style="margin-top:10px;display:flex;align-items:flex-start;gap:10px">
             <label class="toggle-switch" style="margin-top:2px">
@@ -5406,7 +5406,7 @@ async function editUser(userId){
               <option value="3" ${crossDays===3?"selected":""}>3 Handelstagen</option>
             </select>
           </div>
-          <div class="usr-hint">Verhindert Meldungen, wenn sich die Linien nur kurz kreuzen und gleich wieder lösen.</div>
+          <div class="usr-hint">Gilt für alle drei Wege oben: Zusammenfassung, Push und Zusatzzeile erscheinen erst, wenn der Cross so viele Handelstage (ohne Wochenende und Feiertage) besteht. Das verhindert Meldungen, wenn sich die Linien nur kurz kreuzen und gleich wieder lösen. Der normale Discount-Alarm selbst wird dadurch nicht verzögert.</div>
         </div>
       </details>
 
