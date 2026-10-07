@@ -1,6 +1,14 @@
 {
-  "frontend_version": "2.13.82",
+  "frontend_version": "2.13.83",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.83 · Backend v2.8.49",
+      "changes": [
+        "Fehlgeschlagene Benachrichtigungen werden bei vorübergehenden Problemen (z. B. Zeitüberschreitung oder nicht erreichbarer Server) automatisch nach 5 und nochmals nach 10 Minuten erneut gesendet – nur an die betroffene URL. Erst wenn auch der dritte Versuch scheitert, erscheint die orange Warnung im Hinweis-Center. Falsche oder abgelaufene Zugangsdaten werden weiterhin nicht wiederholt, sondern sofort als roter Fehler mit Banner gemeldet; Testnachrichten werden nicht wiederholt.",
+        "Im Verlauf steht beim ersten Fehlschlag „neuer Versuch in 5 Min.“; klappt eine Wiederholung, erscheint ein Eintrag mit „Wiederholung erfolgreich“, sonst „Endgültig fehlgeschlagen“. Die Hilfe zum Hinweis-Center erklärt die Wiederholung."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.82",

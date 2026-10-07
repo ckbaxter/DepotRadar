@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.48"
+VERSION           = "2.8.49"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1412,6 +1412,10 @@ def _is_email_url(u):
 #     verloren) und die zuletzt aktiven/aufgelösten Hinweise ("issues", 24 Std. "Kürzlich behoben").
 # Stufen: error (Fehler), warning (Warnung), action (Aktion nötig, z.B. Parqet-Bestätigung).
 _NOTIFY_TRANSIENT_THRESHOLD = 2          # vorübergehende Versandfehler in Folge bis zur Warnung
+# Wiederholung bei vorübergehenden Versandfehlern (seit v2.8.49): Sekunden bis zum 2. bzw. 3. Versuch.
+# Die drei Versuche gelten als EIN Ausfall — der Hinweis erscheint erst nach dem letzten Fehlschlag.
+_NOTIFY_RETRY_DELAYS = (300, 300)
+_NOTIFY_RETRY_WINDOW = sum(_NOTIFY_RETRY_DELAYS) + 240   # solange gilt eine Wiederholungsserie als "läuft"
 _OVERDUE_GRACE_SECONDS      = 30 * 60    # Karenzzeit nach dem Soll-Zeitpunkt eines Digests
 _ISSUE_RESOLVED_KEEP        = 24 * 3600  # aufgelöste Hinweise bleiben so lange als "Kürzlich behoben"
 _SEVERITY_ORDER             = {"error": 0, "warning": 1, "action": 2}
@@ -1501,6 +1505,11 @@ def _issues_update(fn):
 def _users_for_url(url):
     return [u["id"] for u in load_users() if url in (u.get("apprise_urls") or [])]
 
+def _channel_retrying(ch, now=None):
+    """True, solange für diesen Kanal noch Wiederholungsversuche laufen (Hinweis wird zurückgehalten)."""
+    ru = (ch or {}).get("retry_until")
+    return bool(ru) and (now or time_mod.time()) < ru
+
 def _channel_status(url, channels):
     """Versandstatus einer gespeicherten URL für die Anzeige. Auth-Fehler → error (rot),
     vorübergehende Fehler → warn (orange), letzter Versand ok → ok, sonst unknown."""
@@ -1515,13 +1524,16 @@ def _channel_status(url, channels):
     if cf > 0:
         base["state"] = "error" if ch.get("error_class") == "auth" else "warn"
         base["error"] = ch.get("last_error")
+        if _channel_retrying(ch): base["error"] = f"{base['error'] or 'Versand fehlgeschlagen'} (neuer Versuch folgt)"
     elif ch.get("last_ok"):
         base["state"] = "ok"
     return base
 
-def _issues_record_send(url, ok, reason=""):
+def _issues_record_send(url, ok, reason="", retrying=False):
     """Hält das Ergebnis eines Versands an eine gespeicherte URL fest. Nicht gespeicherte URLs
-    (z.B. Test mit neu eingetippter URL) haben keinen Besitzer und werden nicht erfasst."""
+    (z.B. Test mit neu eingetippter URL) haben keinen Besitzer und werden nicht erfasst.
+    retrying=True: ein weiterer Versuch ist geplant — der Fehlschlag wird gezählt, der Hinweis aber
+    erst nach dem letzten Versuch fällig (siehe _channel_retrying)."""
     try:
         owners = _users_for_url(url)
         if not owners: return
@@ -1531,15 +1543,22 @@ def _issues_record_send(url, ok, reason=""):
         def upd(d):
             ch = d["channels"].setdefault(h, {"user_ids": [], "last_ok": None, "last_fail": None,
                                               "consecutive_failures": 0, "error_class": None,
-                                              "last_error": None, "since": None})
+                                              "last_error": None, "since": None, "retry_until": None})
             was_failing = ch.get("consecutive_failures", 0) > 0
             ch["user_ids"] = owners
             if ok:
-                ch.update(last_ok=now, consecutive_failures=0, error_class=None, last_error=None, since=None)
+                ch.update(last_ok=now, consecutive_failures=0, error_class=None, last_error=None, since=None,
+                          retry_until=None)
             else:
                 if not was_failing: ch["since"] = now
                 ch.update(last_fail=now, consecutive_failures=ch.get("consecutive_failures", 0) + 1,
                           error_class=cls, last_error=_scrub_reason(reason))
+                # retry_until: solange läuft eine Wiederholungsserie, der Hinweis wird zurückgehalten.
+                # Nur bei einer frischen Serie setzen — war der Kanal schon gestört, bleibt sein Hinweis sichtbar.
+                if retrying:
+                    if not was_failing: ch["retry_until"] = now + _NOTIFY_RETRY_WINDOW
+                else:
+                    ch["retry_until"] = None
             return was_failing
         was_failing = _issues_update(upd)
         if ok and was_failing: _issues_refresh()   # Erholung sofort als "behoben" festhalten
@@ -1702,13 +1721,16 @@ def _collect_issues():
         ch = store["channels"].get(h)
         if not ch or ch.get("consecutive_failures", 0) < 1: continue
         auth = ch.get("error_class") == "auth"
-        if not auth and ch["consecutive_failures"] < _NOTIFY_TRANSIENT_THRESHOLD: continue
+        if not auth and _channel_retrying(ch): continue   # Wiederholungen laufen noch
+        # Eine abgelaufene retry_until-Marke = abgebrochene Serie (z.B. Neustart) → sofort melden
+        if not auth and ch["consecutive_failures"] < _NOTIFY_TRANSIENT_THRESHOLD and not ch.get("retry_until"): continue
         mk, reason = mask_apprise_url(url), ch.get("last_error") or ""
         if auth:
             msg = (f"{mk['masked']} – Zugangsdaten abgelehnt" + (f" ({reason})" if reason else "")
                    + ". Passwort bzw. Token ist vermutlich abgelaufen.")
         else:
-            msg = f"{mk['masked']} – {reason or 'Versand nicht möglich'}. Der nächste Versand versucht es erneut."
+            msg = (f"{mk['masked']} – {reason or 'Versand nicht möglich'}. "
+                   "Der Versand ist mehrfach fehlgeschlagen; der nächste Versand versucht es erneut.")
         add(f"notify_failed:{h}", "notify_failed", "error" if auth else "warning", "notification",
             f"{mk['service']}-Versand fehlgeschlagen", msg, owners=owners, admin=auth, since=ch.get("since"),
             affected=", ".join(uname.get(o, "?") for o in owners),
@@ -1718,6 +1740,7 @@ def _collect_issues():
         urls = [x for x in (u.get("apprise_urls") or []) if _apprise_scheme(x) in _APPRISE_ALLOWED_SCHEMES]
         bad  = [x for x in (u.get("apprise_urls") or []) if _apprise_scheme(x) not in _APPRISE_ALLOWED_SCHEMES]
         if len(urls) >= 2 and all((store["channels"].get(_url_hash(x)) or {}).get("consecutive_failures", 0) >= 1
+                                  and not _channel_retrying(store["channels"].get(_url_hash(x)))
                                   for x in urls):
             add(f"notify_all_failed:{u['id']}", "notify_all_failed", "error", "notification",
                 "Keine Benachrichtigung zustellbar",
@@ -1890,6 +1913,67 @@ def api_issue_dismiss(issue_id):
     _issues_refresh()
     return jsonify({"ok": True})
 
+def _send_one_url(u, title, body, mention="", html_body=None):
+    """Ein einzelner Versand an eine URL. Rückgabe: (ok, grund) — wirft nie."""
+    try:
+        ap = apprise_lib.Apprise()
+        ap.add(u)
+        is_discord = u.lower().startswith("discord")
+        msg = f"{mention}\n{body}" if (mention and is_discord) else body
+        if html_body and _is_email_url(u):
+            return _notify_capture(ap, title=title, body=html_body, body_format=apprise_lib.NotifyFormat.HTML)
+        return _notify_capture(ap, title=title, body=msg)
+    except Exception as e:
+        return False, _scrub_reason(f"{type(e).__name__}: {e}")
+
+def _is_retriable(reason):
+    """Wiederholen lohnt nur bei vorübergehenden Fehlern; abgelehnte Zugangsdaten bleiben abgelehnt."""
+    return not _AUTH_ERROR_RE.search(reason or "")
+
+def _schedule_apprise_retry(ctx):
+    """Plant den Versuch Nr. ctx['attempt'] (ab 2) als einmaligen Scheduler-Job. True, wenn geplant.
+    Die Jobs liegen im In-Memory-Jobstore — bei einem Neustart gehen offene Wiederholungen verloren;
+    der Hinweis erscheint dann nach Ablauf von retry_until trotzdem (siehe _collect_issues)."""
+    try:
+        idx = ctx["attempt"] - 2
+        if idx < 0 or idx >= len(_NOTIFY_RETRY_DELAYS): return False
+        run_at = datetime.now() + timedelta(seconds=_NOTIFY_RETRY_DELAYS[idx])
+        scheduler.add_job(_apprise_retry_job, "date", run_date=run_at, args=[ctx],
+                          id=f"apprise_retry_{_uuid.uuid4().hex[:12]}", misfire_grace_time=900)
+        return True
+    except Exception as e:
+        log.warning(f"Versand-Wiederholung nicht geplant: {e}")
+        return False
+
+def _apprise_retry_job(ctx):
+    """Wiederholt einen fehlgeschlagenen Versand an EINE URL (nur diese — die anderen URLs haben
+    die Nachricht schon bekommen). Verlauf: Erfolg → Eintrag mit demselben Titel (nur der erste
+    behält `kind`, damit die Tageszusammenfassung die Meldung genau einmal zählt); endgültiger
+    Fehlschlag → ein Fehler-Eintrag. Der Hinweis im Register wird erst nach dem letzten Versuch fällig."""
+    try:
+        u, n, ep = ctx["url"], ctx["attempt"], ctx["ep"]
+        if not _users_for_url(u): return   # URL wurde inzwischen entfernt
+        total = len(_NOTIFY_RETRY_DELAYS) + 1
+        u_ok, reason = _send_one_url(u, ctx["title"], ctx["body"], ctx["mention"], ctx["html_body"])
+        more = False
+        if not u_ok and _is_retriable(reason):
+            more = _schedule_apprise_retry({**ctx, "attempt": n + 1})
+        _issues_record_send(u, u_ok, reason, retrying=more)
+        if more: return
+        masked = mask_apprise_url(u)["masked"]
+        common = dict(depot_id=ctx["depot_id"], watchlist_id=ctx["watchlist_id"])
+        if u_ok:
+            first = not ep["logged"]; ep["logged"] = True
+            add_log(ctx["log_type"], ctx["title"], f"{ctx['body']}\n\n↻ Wiederholung erfolgreich (Versuch {n}/{total}) – {masked}",
+                    True, kind=ctx["kind"] if first else None, extra=ctx["log_extra"] if first else None, **common)
+        else:
+            log.warning(f"Apprise-Versand endgültig fehlgeschlagen ({masked}) nach {n} Versuchen: {reason or 'kein Grund bekannt'}")
+            add_log(ctx["log_type"], ctx["title"],
+                    f"{ctx['body']}\n\n↻ Endgültig fehlgeschlagen nach {n} Versuchen – {masked}: {reason or 'kein Grund bekannt'}",
+                    False, kind=ctx["kind"], extra=ctx["log_extra"], **common)
+    except Exception as e:
+        log.error(f"Versand-Wiederholung: {e}")
+
 def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, watchlist_id=None, kind=None,
                  log_type="alert", log_extra=None):
     """log_type steuert den Verlauf-Typ des add_log-Eintrags (Default "alert").
@@ -1907,27 +1991,33 @@ def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, w
     urls = allowed
     if not urls: return False
     try:
-        ok = True
+        ok, first_ok, pending = True, True, []
+        ep = {"logged": False}   # gemeinsamer Zustand der Wiederholungen dieses Versands (siehe _apprise_retry_job)
         for u in urls:
             # Pro URL festhalten, ob und warum der Versand scheitert (Hinweis-Center, seit v2.8.47);
             # eine kaputte URL bricht die übrigen nicht mehr ab.
-            try:
-                ap = apprise_lib.Apprise()
-                ap.add(u)
-                is_discord = u.lower().startswith("discord")
-                msg = f"{mention}\n{body}" if (mention and is_discord) else body
-                if html_body and _is_email_url(u):
-                    u_ok, reason = _notify_capture(ap, title=title, body=html_body,
-                                                   body_format=apprise_lib.NotifyFormat.HTML)
-                else:
-                    u_ok, reason = _notify_capture(ap, title=title, body=msg)
-            except Exception as e:
-                u_ok, reason = False, _scrub_reason(f"{type(e).__name__}: {e}")
+            u_ok, reason = _send_one_url(u, title, body, mention, html_body)
+            retrying = False
             if not u_ok:
-                ok = False
+                first_ok = False
                 log.warning(f"Apprise-Versand fehlgeschlagen ({mask_apprise_url(u)['masked']}): {reason or 'kein Grund bekannt'}")
-            _issues_record_send(u, u_ok, reason)
-        add_log(log_type, title, body, ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind, extra=log_extra)
+                # Vorübergehender Fehler (kein Auth-Fehler): später nochmal versuchen (seit v2.8.49).
+                # Testnachrichten nie — dort will der Nutzer sofort das echte Ergebnis sehen.
+                if log_type != "test" and _is_retriable(reason) and _users_for_url(u):
+                    retrying = _schedule_apprise_retry({
+                        "url": u, "title": title, "body": body, "mention": mention, "html_body": html_body,
+                        "depot_id": depot_id, "watchlist_id": watchlist_id, "kind": kind,
+                        "log_type": log_type, "log_extra": log_extra, "attempt": 2, "ep": ep})
+                if retrying: pending.append(mask_apprise_url(u)["masked"])
+                else: ok = False
+            _issues_record_send(u, u_ok, reason, retrying=retrying)
+        log_body = body
+        if pending:
+            mins = max(1, round(_NOTIFY_RETRY_DELAYS[0] / 60))
+            log_body = f"{body}\n\n↻ Versand an {', '.join(pending)} fehlgeschlagen – neuer Versuch in {mins} Min."
+        add_log(log_type, title, log_body, first_ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind, extra=log_extra)
+        # True auch, wenn nur Wiederholungen offen sind: die Zustellung ist übergeben, Aufrufer
+        # (z.B. Trendwechsel-Dedupe) sollen nicht zusätzlich selbst erneut senden.
         return ok
     except Exception as e:
         log.error(f"Apprise: {e}")
