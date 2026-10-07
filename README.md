@@ -89,12 +89,33 @@ docker compose up -d --build
 
 Erreichbar unter: **<http://localhost:8080>**
 
+### Fertiges Backend-Image statt lokalem Build
+
+Das Backend-Image wird bei jedem Release automatisch gebaut und in der GitHub Container Registry bereitgestellt: `ghcr.io/ckbaxter/depotradar-backend` (Tags: Versionsnummer, z. B. `2.8.46`, sowie `latest`). Frontend und nginx kommen weiterhin aus dem Repository (`git pull`).
+
+```bash
+# Optional: Version festschreiben (Standard: latest) — Datei .env neben docker-compose.yml
+echo "BACKEND_VERSION=2.8.46" > .env
+
+git pull
+docker compose pull backend
+docker compose up -d
+```
+
+Ein Rollback besteht darin, `BACKEND_VERSION` auf die frühere Version zu setzen und `docker compose up -d` auszuführen.
+
+**Release-Ablauf (Maintainer):** Version in `backend/app.py` und README-Badge erhöhen, nach `main` mergen, dann `git tag backend-v<VERSION> && git push origin backend-v<VERSION>`. Der Workflow prüft, ob Tag, `VERSION` und README-Badge übereinstimmen, validiert die Syntax und veröffentlicht das Image.
+
 -----
 
 ## Verzeichnisstruktur
 
 ```
 DepotRadar/
+├── .github/
+│   ├── dependabot.yml
+│   └── workflows/
+│       └── backend-image.yml  # Baut bei Tag backend-v* das Image nach ghcr.io
 ├── backend/
 │   ├── app.py
 │   ├── Dockerfile
