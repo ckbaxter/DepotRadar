@@ -20,3 +20,12 @@ updates:
       timezone: Europe/Berlin
     labels:
       - dependencies
+
+  # GitHub Actions (Workflow .github/workflows/backend-image.yml)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Europe/Berlin
+    labels:
+      - dependencies

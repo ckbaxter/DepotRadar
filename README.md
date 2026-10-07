@@ -84,10 +84,22 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 ```bash
 git clone https://github.com/ckbaxter/DepotRadar.git
 cd DepotRadar
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Erreichbar unter: **<http://localhost:8080>**
+
+### Aktualisieren
+
+```bash
+cd DepotRadar
+git pull
+docker compose pull
+docker compose up -d
+```
+
+Deine Daten liegen im Ordner `data/` und bleiben bei Updates erhalten.
 
 -----
 

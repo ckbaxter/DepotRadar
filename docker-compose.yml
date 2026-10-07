@@ -3,6 +3,8 @@ version: "3.8"
 services:
 # ⚠ Service-Name hier ändern? → Auch in nginx.conf: proxy_pass http://<name>:5000 anpassen!
   backend:
+    # Fertiges Image (docker compose pull). Aus dem Quellcode bauen statt pullen: docker compose up -d --build
+    image: ghcr.io/ckbaxter/depotradar-backend:latest
     build: ./backend
     container_name: depotradar-backend
     restart: unless-stopped
