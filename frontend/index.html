@@ -1843,7 +1843,13 @@ http://depotradar.example.lan</div>
           Hinweise lösen sich <b>von selbst auf</b>, sobald der nächste Versand bzw. Lauf klappt, und bleiben
           danach 24 Stunden unter „Kürzlich behoben“ sichtbar. Nur „nicht gelaufen“-Warnungen
           lassen sich mit „Gesehen“ ausblenden. In den Profil-Einstellungen zeigt jede gespeicherte
-          URL zusätzlich, ob der letzte Versand geklappt hat.
+          URL zusätzlich, ob der letzte Versand geklappt hat.<br><br>
+          <b>Automatische Wiederholung:</b> Scheitert ein Versand aus einem vorübergehenden Grund
+          (z.B. Zeitüberschreitung oder Server kurz nicht erreichbar), versucht DepotRadar es nach
+          5 und nochmals nach 10 Minuten erneut — nur für die betroffene URL. Erst wenn auch der
+          dritte Versuch scheitert, erscheint die orange Warnung. Abgelehnte Zugangsdaten
+          (falsches oder abgelaufenes Passwort) werden nicht wiederholt, sondern sofort als roter
+          Fehler gemeldet. Testnachrichten werden ebenfalls nicht wiederholt.
         </div>
       </details>
 
