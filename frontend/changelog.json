@@ -3,6 +3,13 @@
   "entries": [
     {
       "label": "Oktober 2026",
+      "versions": "Backend v2.8.48",
+      "changes": [
+        "Hinweis-Center: Ein falsches oder abgelaufenes E-Mail-Passwort wird jetzt sofort als Fehler erkannt (rotes Badge und Banner) und nicht mehr erst nach zwei Fehlversuchen als Warnung. Grund: Das E-Mail-Plugin meldet den eigentlichen SMTP-Fehler nur in seinem Debug-Log, das jetzt mitgelesen wird."
+      ]
+    },
+    {
+      "label": "Oktober 2026",
       "versions": "Frontend v2.13.81 · Backend v2.8.47",
       "changes": [
         "Neues Hinweis-Center: Schlägt im Hintergrund etwas fehl (z. B. Versand an Discord/ntfy/E-Mail wegen abgelaufenem Passwort, abgelaufene Parqet-Verbindung, ausgefallene Zusammenfassung oder Datenquelle), zeigt die Kopfzeile jetzt ein ⚠️-Symbol mit Anzahl; bei abgelaufenem Zugang erscheint zusätzlich ein Banner. Hinweise lösen sich von selbst auf, sobald der nächste Versand bzw. Lauf klappt, und bleiben 24 Stunden unter „Kürzlich behoben“ sichtbar.",
