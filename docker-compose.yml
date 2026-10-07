@@ -3,8 +3,8 @@ version: "3.8"
 services:
 # ⚠ Service-Name hier ändern? → Auch in nginx.conf: proxy_pass http://<name>:5000 anpassen!
   backend:
-    # Fertiges Image aus der GitHub Container Registry; Version über BACKEND_VERSION in .env
-    # (Standard: latest). Lokaler Build weiterhin möglich: docker compose up -d --build
+    # Fertiges Image (docker compose pull); Version optional über BACKEND_VERSION in .env.
+    # Aus dem Quellcode bauen statt pullen: docker compose up -d --build
     image: ghcr.io/ckbaxter/depotradar-backend:${BACKEND_VERSION:-latest}
     build: ./backend
     container_name: depotradar-backend
