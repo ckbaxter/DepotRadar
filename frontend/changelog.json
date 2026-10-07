@@ -1,6 +1,13 @@
 {
-  "frontend_version": "2.13.81",
+  "frontend_version": "2.13.82",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.82",
+      "changes": [
+        "Beim Bearbeiten eines Benutzers ist jetzt klar erkennbar, was schon gespeichert ist und was nicht: Neue Apprise-URLs sind als „Noch nicht gespeichert“ markiert, entfernte URLs bleiben durchgestrichen stehen und lassen sich per „Rückgängig“ zurückholen. Der Speichern-Button zeigt die Anzahl offener Änderungen, und beim Schließen mit offenen Änderungen kommt eine Rückfrage. Steht noch Text im Feld „Neue Apprise-URL“, ohne dass „+ Hinzufügen“ getippt wurde, bricht Speichern mit einem Hinweis ab, statt die URL still zu verlieren."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Backend v2.8.48",
