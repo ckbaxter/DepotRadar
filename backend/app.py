@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.47"
+VERSION           = "2.8.48"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1450,18 +1450,23 @@ def _scrub_reason(text):
 
 def _capture_reason(log_text):
     """Warn-/Fehlerzeilen aus dem mitgeschnittenen Apprise-Log → ein kurzer Fehlergrund."""
-    msgs = []
+    msgs, details = [], []
     for line in str(log_text or "").splitlines():
         m = re.match(r"^.+? - (?:WARNING|ERROR|CRITICAL) - (.*)$", line)
         if m: msgs.append(m.group(1))
-    return _scrub_reason("; ".join(msgs))
+        # Das E-Mail-Plugin meldet bei SMTP-Fehlern nur "Connection error while submitting email"
+        # als Warnung; den eigentlichen Grund (z.B. 535 Username and Password not accepted) loggt
+        # es ausschließlich auf DEBUG-Ebene — ohne ihn ließe sich ein Auth-Fehler nicht erkennen.
+        d = re.match(r"^.+? - DEBUG - Socket Exception: (.*)$", line)
+        if d: details.append(d.group(1))
+    return _scrub_reason("; ".join(msgs + details))
 
 def _notify_capture(ap, **kw):
     """ap.notify(**kw) plus Fehlergrund aus dem Apprise-Log. Rückgabe: (ok, grund)."""
     ok, text = None, ""
     with _apprise_notify_lock:
         try:
-            with apprise_lib.LogCapture(level=logging.INFO) as cap:
+            with apprise_lib.LogCapture(level=logging.DEBUG) as cap:
                 ok   = bool(ap.notify(**kw))
                 text = cap.getvalue()
         except Exception as e:
