@@ -405,6 +405,16 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .url-row{display:flex;flex-direction:column;gap:3px}
 .url-status{font-size:11px;line-height:1.35;padding:0 4px;color:var(--muted)}
 .url-status.ok{color:var(--green)}.url-status.warn{color:var(--orange)}.url-status.error{color:var(--red)}
+/* Ungespeichert-Anzeige im Benutzer-Formular (Frontend v2.13.82) */
+.url-status.pend{color:var(--orange)}
+.url-item.is-new{border-style:dashed}
+.url-item.is-removed{background:transparent;border-style:dashed}
+.url-item.is-removed .url-svc,.url-item.is-removed .url-mask{text-decoration:line-through;opacity:.55}
+.url-item .url-undo{font-size:12px;color:var(--accent);white-space:nowrap;padding:0 6px;min-width:0}
+.url-item .url-undo:hover{color:var(--accent2)}
+.usr-dirty{display:none;font-size:12px;line-height:1.5;color:var(--orange);margin-top:14px}
+.usr-save{opacity:.65}
+.usr-save.is-dirty{opacity:1;box-shadow:0 0 0 3px rgba(78,124,246,.35)}
 /* Hinweis-Center (Frontend v2.13.81) */
 .issue-badge{position:relative;display:none;align-items:center;gap:5px;font-weight:700}
 .issue-badge .ib-count{min-width:18px;height:18px;border-radius:9px;padding:0 5px;font-size:11px;line-height:18px;text-align:center;color:#fff;background:var(--muted)}
@@ -1762,7 +1772,9 @@ select</style>
         <div class="help-body">
           Benachrichtigungen werden pro <b>Benutzer</b> konfiguriert — über den Benutzer-Chip oben rechts im Header → Bearbeiten → Apprise-URLs eintragen.
           Erlaubt sind Discord (<code>discord://</code>), ntfy (<code>ntfy://</code>, <code>ntfys://</code>) und E-Mail (<code>mailtos://</code>).
-          Gespeicherte URLs enthalten Zugangsdaten und werden deshalb nur maskiert angezeigt — zum Ändern die URL entfernen und neu hinzufügen.<br><br>
+          Gespeicherte URLs enthalten Zugangsdaten und werden deshalb nur maskiert angezeigt — zum Ändern die URL entfernen und neu hinzufügen.
+          Änderungen an der Liste gelten erst nach <b>Speichern</b>: neue URLs sind bis dahin mit „Noch nicht gespeichert“ markiert,
+          entfernte durchgestrichen (mit „Rückgängig“), und der Speichern-Button zeigt die Anzahl der offenen Änderungen.<br><br>
           Ob überhaupt Benachrichtigungen für ein Depot verschickt werden, entscheidet zusätzlich
           ein Ein/Aus-Schalter <b>pro Depot</b> (Depot-Einstellungen → ⚙) — nur wenn dieser aktiv
           ist, gehen Alarme, die tägliche und die wöchentliche Zusammenfassung für dieses Depot
@@ -2278,6 +2290,7 @@ let stocksCache   = [];
 let selectedCompany = null;
 let userUrls      = [];
 let _editUserId   = null;   // User, dessen Bearbeiten-Formular gerade offen ist (für den serverseitigen URL-Test)
+let _userEditBaseline = null; // Feldwerte direkt nach dem Rendern des Bearbeiten-Formulars (Basis für „ungespeicherte Änderungen“)
 let editingDepot  = null;
 let editingWl     = null;
 let sortKey = "discount", sortDir = 1;
@@ -4119,6 +4132,8 @@ function openDepotSettings(depot){
 // kommen nur noch maskiert vom Server (apprise_urls_masked). userUrls-Einträge sind entweder
 //   {kind:"stored", idx, service, masked, allowed}  — bereits gespeichert, idx = Position beim Server
 //   {kind:"new", url}                               — neu eingetippt, noch nicht gespeichert
+// Ein entfernter gespeicherter Eintrag bleibt bis zum Speichern mit removed:true in der Liste (durchgestrichen,
+// „Rückgängig“ möglich) und wird beim Speichern nicht mitgeschickt.
 // Beim Speichern gehen gespeicherte Einträge als {keep: idx} raus (die URL selbst verlässt den Server nie).
 const APPRISE_SCHEMES = ["discord","ntfy","ntfys","mailtos"];
 const APPRISE_HINT    = "Möglich sind discord://, ntfy://, ntfys:// und mailtos://.";
@@ -4147,9 +4162,14 @@ function renderUserUrlList(){
     ? '<div style="color:var(--muted);font-size:12px;padding:4px 0">Noch keine URLs</div>'
     : userUrls.map((u,i)=>{
         const rm = `<button aria-label="URL entfernen" onclick="removeUserUrl(${i})">&#215;</button>`;
+        if(u.removed)
+          return `<div class="url-row"><div class="url-item is-removed"><span class="url-svc">${esc(u.service)}</span><span class="url-mask">${esc(u.masked)}</span>`
+               + `<button class="url-undo" onclick="restoreUserUrl(${i})">↶ Rückgängig</button></div>`
+               + `<div class="url-status pend">Wird beim Speichern entfernt</div></div>`;
         if(u.kind==="new")
-          return `<div class="url-item is-new"><span class="url-svc new">Neu</span><span class="url-mask">${esc(u.url)}</span>`
-               + `<button class="url-ico" aria-label="Diese URL testen" onclick="testUserNotification(${i})">${_BELL_SVG}</button>${rm}</div>`;
+          return `<div class="url-row"><div class="url-item is-new"><span class="url-svc new">Neu</span><span class="url-mask">${esc(u.url)}</span>`
+               + `<button class="url-ico" aria-label="Diese URL testen" onclick="testUserNotification(${i})">${_BELL_SVG}</button>${rm}</div>`
+               + `<div class="url-status pend">● Noch nicht gespeichert – wird erst mit „Speichern“ übernommen</div></div>`;
         const test = u.allowed
           ? `<button class="url-ico" aria-label="Diese URL testen" onclick="testUserNotification(${i})">${_BELL_SVG}</button>` : "";
         const st = u.allowed ? _urlStatusLine(u) : "";
@@ -4159,8 +4179,8 @@ function renderUserUrlList(){
         return `<div class="url-row"><div class="url-item">${chip}<span class="url-mask">${esc(u.masked)}</span>${test}${rm}</div>${st}</div>`;
       }).join("");
   const hint = document.getElementById("userUrlHint");
-  if(hint) hint.textContent = userUrls.some(u=>u.kind==="new")
-    ? "Neue URLs sind bis zum Speichern im Klartext sichtbar, danach maskiert."
+  if(hint) hint.textContent = userUrls.some(u=>u.kind==="new" || u.removed)
+    ? "Änderungen an der URL-Liste gelten erst nach „Speichern“ (ganz unten). Neue URLs sind bis dahin im Klartext sichtbar, danach maskiert."
     : (userUrls.length ? "Gespeicherte URLs enthalten Zugangsdaten und werden nicht mehr im Klartext angezeigt. Zum Ändern entfernen und neu hinzufügen." : "");
   if(typeof updateUserSectionStates === "function") updateUserSectionStates();
 }
@@ -4177,14 +4197,28 @@ function addUserUrl(){
   if(!APPRISE_SCHEMES.includes(m[1].toLowerCase())){
     _setUserUrlError(`Dieser Dienst (${m[1].toLowerCase()}://) ist nicht erlaubt. `+APPRISE_HINT); return;
   }
-  if(userUrls.length >= 10){ _setUserUrlError("Maximal 10 URLs pro Benutzer."); return; }
+  if(userUrls.filter(u=>!u.removed).length >= 10){ _setUserUrlError("Maximal 10 URLs pro Benutzer."); return; }
   _setUserUrlError("");
   userUrls.push({kind:"new", url:v});
   document.getElementById("newUserUrlInput").value="";
   const btn=document.getElementById("addUserUrlBtn"); if(btn) btn.style.display="none";
   renderUserUrlList();
 }
-function removeUserUrl(i){ userUrls.splice(i,1); renderUserUrlList(); }
+// Gespeicherte URLs werden nur markiert (Rückgängig bis zum Speichern möglich — eine maskierte URL
+// lässt sich sonst nicht wiederherstellen); neue, noch nie gespeicherte fallen sofort weg.
+function removeUserUrl(i){
+  const u = userUrls[i]; if(!u) return;
+  if(u.kind==="stored") u.removed = true; else userUrls.splice(i,1);
+  _setUserUrlError("");
+  renderUserUrlList();
+}
+function restoreUserUrl(i){
+  const u = userUrls[i]; if(!u) return;
+  if(userUrls.filter(x=>!x.removed).length >= 10){ _setUserUrlError("Maximal 10 URLs pro Benutzer."); return; }
+  delete u.removed;
+  _setUserUrlError("");
+  renderUserUrlList();
+}
 function toggleUserAddUrlBtn(input){
   const btn=document.getElementById("addUserUrlBtn");
   if(btn) btn.style.display=input.value.trim()?"block":"none";
@@ -4230,7 +4264,7 @@ async function deleteCurrentDepot(){
 // Testet alle URLs im Formular (ohne Argument) oder nur die Zeile `only`. Gespeicherte URLs
 // werden per Index serverseitig aufgelöst, neue URLs als Text mitgeschickt.
 async function testUserNotification(only){
-  const entries = only===undefined ? userUrls : [userUrls[only]].filter(Boolean);
+  const entries = (only===undefined ? userUrls : [userUrls[only]]).filter(e=>e && !e.removed);
   const stored  = entries.filter(e=>e.kind==="stored" && e.allowed).map(e=>e.idx);
   const urls    = entries.filter(e=>e.kind==="new").map(e=>e.url);
   if(!stored.length && !urls.length){toast("Keine URLs konfiguriert",false);return;}
@@ -5153,6 +5187,7 @@ function loginUser(user){
 function logoutUser(){
   activeUser = null;
   localStorage.removeItem("activeUserId");
+  _userEditBaseline = null;   // Abmelden ist eine bewusste Aktion — keine Verwerfen-Rückfrage mitten im Logout
   closeModal("userModal");
   showLoginScreen();
 }
@@ -5179,6 +5214,7 @@ async function setupWithUser(){
 
 // User-Management-Modal
 async function openUserModal(isSetup=false){
+  _userEditBaseline = null;   // Liste wird neu aufgebaut — ein evtl. offenes Bearbeiten-Formular ist damit beendet
   _usersCache = await fetch(`${API}/users`).then(r=>r.json());
   const body = document.getElementById("userModalBody");
   const named = _usersCache.filter(u => u.name);
@@ -5234,7 +5270,7 @@ async function renderAddUserForm(isFirst=false){
     </div>`;
 }
 
-function addUserForm(){ renderAddUserForm(false); }
+function addUserForm(){ if(!_confirmDiscardUserEdits()) return; _userEditBaseline = null; renderAddUserForm(false); }
 
 async function saveNewUser(isFirst=false){
   const name = document.getElementById("newUserName")?.value.trim();
@@ -5261,6 +5297,8 @@ async function saveNewUser(isFirst=false){
 async function confirmDeleteUser(userId){
   const user = _usersCache.find(u=>u.id===userId);
   if(!user) return;
+  if(!_confirmDiscardUserEdits()) return;
+  _userEditBaseline = null;
   // Alle Depots/Watchlists frisch laden — depotsCache/watchlistsCache sind auf den
   // eingeloggten User gefiltert und taugen nicht als Basis für fremde Zuordnungen
   const [allDepots, allWls] = await Promise.all([
@@ -5310,6 +5348,7 @@ async function deleteUserConfirmed(userId){
 async function editUser(userId){
   const user = _usersCache.find(u=>u.id===userId);
   if(!user) return;
+  if(!_confirmDiscardUserEdits()) return;   // „Bearbeiten“ erneut angetippt, während Änderungen offen sind
   _editUserId = userId;
   userUrls = (user.apprise_urls_masked||[]).map((m,i)=>({kind:"stored", idx:i, ...m}));
   const mention      = user.notification_mention || "";
@@ -5474,17 +5513,66 @@ async function editUser(userId){
         </div>
       </details>
 
+      <div class="usr-dirty" id="userDirtyNote" role="status">● Ungespeicherte Änderungen – sie werden erst mit „Speichern“ übernommen.</div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="saveEditUser(${jsArg(userId)})" style="flex:1">Speichern</button>
+        <button class="btn btn-primary btn-sm usr-save" id="userSaveBtn" onclick="saveEditUser(${jsArg(userId)})" style="flex:1">Speichern</button>
         <button class="btn btn-ghost btn-sm" onclick="testUserNotification()">Alle testen</button>
-        <button class="btn btn-ghost btn-sm" onclick="openUserModal()">Abbrechen</button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelEditUser()">Abbrechen</button>
       </div>
     </div>`;
 
+  _userEditBaseline = _userFormSnapshot();
+  const _area = document.getElementById("userFormArea");
+  if(!_area._dirtyBound){   // userFormArea wird pro openUserModal neu erzeugt — Listener nur einmal je Element
+    _area.addEventListener("input", updateUserDirty);
+    _area.addEventListener("change", updateUserDirty);
+    _area._dirtyBound = true;
+  }
   _editUserHasPin = hasPin;
   renderUserUrlList();
   updateUserSectionStates();
   setTimeout(initUserScrollBtn, 150);
+}
+
+// ── Ungespeicherte Änderungen im Benutzer-Formular (seit v2.13.82) ─────────────
+// Baseline = Feldwerte direkt nach dem Rendern; geändert = Feld weicht ab, plus jede neu hinzugefügte
+// und jede entfernte (noch nicht gespeicherte) URL. Das Eingabefeld „Neue Apprise-URL“ zählt nicht
+// mit — ein dort stehengebliebener Text wird beim Speichern bzw. Schließen gesondert abgefangen.
+function _userFormSnapshot(){
+  const snap = {};
+  document.querySelectorAll("#userFormArea input[id], #userFormArea select[id]").forEach(el=>{
+    if(el.id==="newUserUrlInput") return;
+    snap[el.id] = el.type==="checkbox" ? el.checked : el.value;
+  });
+  return snap;
+}
+function _userEditChangeCount(){
+  // Nur gültig, solange das Bearbeiten-Formular tatsächlich angezeigt wird (Speichern-Button als Marker)
+  if(!_userEditBaseline || !document.getElementById("userSaveBtn")) return 0;
+  const now = _userFormSnapshot();
+  let n = Object.keys(now).filter(k => now[k] !== _userEditBaseline[k]).length;
+  n += userUrls.filter(u => u.kind==="new" || u.removed).length;
+  return n;
+}
+function _userEditHasUnsaved(){
+  if(!_userEditBaseline || !document.getElementById("userSaveBtn")) return false;
+  return _userEditChangeCount() > 0 || !!document.getElementById("newUserUrlInput")?.value.trim();
+}
+function _confirmDiscardUserEdits(){
+  if(!_userEditHasUnsaved()) return true;
+  return confirm("Es gibt ungespeicherte Änderungen. Wirklich verwerfen?");
+}
+function updateUserDirty(){
+  const btn = document.getElementById("userSaveBtn"); if(!btn) return;
+  const n = _userEditChangeCount();
+  btn.classList.toggle("is-dirty", n>0);
+  btn.textContent = n>0 ? `Speichern · ${n} Änderung${n===1?"":"en"}` : "Speichern";
+  const note = document.getElementById("userDirtyNote");
+  if(note) note.style.display = n>0 ? "block" : "none";
+}
+function cancelEditUser(){
+  if(!_confirmDiscardUserEdits()) return;
+  openUserModal();
 }
 
 // Merkt sich für die Zustands-Anzeige, ob der bearbeitete User einen PIN hat
@@ -5503,7 +5591,9 @@ function updateUserSectionStates(){
   const notif = document.getElementById("usrStateNotif");
   if(notif){
     const conf = document.getElementById("editUserConfirm")?.checked;
-    notif.textContent = `${userUrls.length} URL${userUrls.length===1?"":"s"} · Bestätigung ${conf?"an":"aus"}`;
+    const nUrls = userUrls.filter(u=>!u.removed).length;
+    const pendingUrls = userUrls.some(u=>u.kind==="new" || u.removed);
+    notif.textContent = `${nUrls} URL${nUrls===1?"":"s"} · Bestätigung ${conf?"an":"aus"}${pendingUrls?" · ● ungespeichert":""}`;
   }
   const dig = document.getElementById("usrStateDigest");
   if(dig){
@@ -5514,9 +5604,19 @@ function updateUserSectionStates(){
     const cx = document.getElementById("editUserCrossDigest")?.checked || document.getElementById("editUserCrossPush")?.checked;
     dig.textContent = `📊 ${d} ${wt} · 🌙 ${dt}${wl?" · 📋":""}${cx?" · 🔀":""}`;
   }
+  updateUserDirty();
 }
 
 async function saveEditUser(userId){
+  // Text im „Neue Apprise-URL“-Feld, der nie über „+ Hinzufügen“ in die Liste kam, würde sonst still verloren gehen
+  const typed = document.getElementById("newUserUrlInput");
+  if(typed && typed.value.trim()){
+    const sec = typed.closest("details"); if(sec) sec.open = true;
+    _setUserUrlError("Diese URL ist noch nicht hinzugefügt – erst auf „+ Hinzufügen“ tippen (oder das Feld leeren).");
+    typed.focus();
+    toast("URL noch nicht hinzugefügt", false);
+    return;
+  }
   const name       = document.getElementById("editUserName")?.value.trim();
   const pin        = document.getElementById("editUserPin")?.value.trim();
   const mention    = document.getElementById("editUserMention")?.value.trim()||"";
@@ -5525,7 +5625,7 @@ async function saveEditUser(userId){
   const digestTime = document.getElementById("editUserDigestTime")?.value || "20:00";
   const dailyDigestTime = document.getElementById("editUserDailyDigestTime")?.value || "21:00";
   const wlDigest   = document.getElementById("editUserWlDigest")?.checked||false;
-  const body    = {name, apprise_urls:userUrls.map(u=>u.kind==="stored" ? {keep:u.idx} : u.url),
+  const body    = {name, apprise_urls:userUrls.filter(u=>!u.removed).map(u=>u.kind==="stored" ? {keep:u.idx} : u.url),
                    notification_mention:mention, notification_confirm:confirm,
                    digest_day:digestDay, digest_time:digestTime, daily_digest_time:dailyDigestTime,
                    daily_watchlist_digest:wlDigest,
@@ -6406,6 +6506,8 @@ function openModal(id){
   }
 }
 function closeModal(id){
+  // Benutzer-Modal: bei ungespeicherten Änderungen im Bearbeiten-Formular erst nachfragen (X, Overlay-Klick)
+  if(id==="userModal"){ if(!_confirmDiscardUserEdits()) return; _userEditBaseline = null; }
   document.getElementById(id).style.display = "none";
   // Body-Fix zurücksetzen wenn kein Modal mehr offen
   if(!document.querySelector(".overlay[style*='flex']")){
