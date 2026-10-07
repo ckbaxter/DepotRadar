@@ -101,14 +101,6 @@ docker compose up -d
 
 Deine Daten liegen im Ordner `data/` und bleiben bei Updates erhalten.
 
-### Bestimmte Version verwenden (optional)
-
-Standardmäßig wird immer die neueste Version geladen. Um eine bestimmte Version festzulegen, z. B. für ein Rollback, lege neben der `docker-compose.yml` eine Datei `.env` an und führe danach die Update-Befehle von oben aus:
-
-```
-BACKEND_VERSION=2.8.46
-```
-
 -----
 
 ## Verzeichnisstruktur
