@@ -3,9 +3,13 @@ name: Backend-Image
 # Baut das Backend-Image und veröffentlicht es in der GitHub Container Registry
 # (ghcr.io/ckbaxter/depotradar-backend). Ausgelöst wird nur durch ein Tag
 # `backend-v<VERSION>`, z. B. `backend-v2.8.47` — nicht durch normale Pushes.
+# Zusätzlich manuell startbar (Actions → Backend-Image → Run workflow), entweder
+# auf einem Tag `backend-v*` oder auf `main` (baut dann die VERSION aus app.py neu).
+# Plattformen: linux/amd64 und linux/arm64.
 on:
   push:
     tags: ["backend-v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,13 +25,18 @@ jobs:
         with:
           python-version: "3.14"
 
-      # Tag, VERSION in app.py und README-Badge müssen übereinstimmen
+      # Tag, VERSION in app.py und README-Badge müssen übereinstimmen.
+      # Manueller Start ist nur auf einem Tag oder auf main erlaubt.
       - name: Version prüfen
         id: ver
         run: |
           V=$(sed -nE 's/^VERSION\s*=\s*"([^"]+)".*/\1/p' backend/app.py)
           [ -n "$V" ] || { echo "::error::VERSION in backend/app.py nicht gefunden"; exit 1; }
-          [ "backend-v$V" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME passt nicht zu VERSION $V in app.py"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            [ "backend-v$V" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME passt nicht zu VERSION $V in app.py"; exit 1; }
+          else
+            [ "$GITHUB_REF_NAME" = "main" ] || { echo "::error::Manueller Start nur auf main oder einem Tag backend-v* (gewählt: $GITHUB_REF_NAME)"; exit 1; }
+          fi
           grep -q "Backend-v$V" README.md || { echo "::error::README-Badge ist nicht auf v$V aktualisiert"; exit 1; }
           echo "v=$V" >> "$GITHUB_OUTPUT"
 
@@ -36,6 +45,8 @@ jobs:
           python -m pip install pyflakes
           python -c "import ast; ast.parse(open('backend/app.py').read())"
           python -m pyflakes backend/app.py
+
+      - uses: docker/setup-qemu-action@v4
 
       - uses: docker/setup-buildx-action@v4
 
@@ -49,7 +60,7 @@ jobs:
         with:
           context: ./backend
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/ckbaxter/depotradar-backend:${{ steps.ver.outputs.v }}
             ghcr.io/ckbaxter/depotradar-backend:latest
