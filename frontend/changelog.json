@@ -1,6 +1,15 @@
 {
-  "frontend_version": "2.13.80",
+  "frontend_version": "2.13.81",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.81 · Backend v2.8.47",
+      "changes": [
+        "Neues Hinweis-Center: Schlägt im Hintergrund etwas fehl (z. B. Versand an Discord/ntfy/E-Mail wegen abgelaufenem Passwort, abgelaufene Parqet-Verbindung, ausgefallene Zusammenfassung oder Datenquelle), zeigt die Kopfzeile jetzt ein ⚠️-Symbol mit Anzahl; bei abgelaufenem Zugang erscheint zusätzlich ein Banner. Hinweise lösen sich von selbst auf, sobald der nächste Versand bzw. Lauf klappt, und bleiben 24 Stunden unter „Kürzlich behoben“ sichtbar.",
+        "Im Benutzerprofil zeigt jede gespeicherte URL, ob der letzte Versand geklappt hat; das System-Status-Fenster zeigt offene Hinweise, den Status der Jobs („Überfällig“/„Fehler“) und für Admins alle Benachrichtigungskanäle. Der Footer-Punkt wird bei offenen Fehlern rot.",
+        "Die beiden Parqet-Badges („neu verbinden“ und „zu bestätigen“) sind im Hinweis-Center aufgegangen; das Bestätigungsfenster für komplett verkaufte Positionen öffnet sich weiterhin automatisch beim ersten Besuch."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.80",
