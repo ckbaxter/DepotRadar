@@ -1,4 +1,4 @@
-import json, re, time as time_mod, hashlib, hmac, base64, secrets, logging, os, math, shutil, uuid as _uuid, threading
+import json, re, time as time_mod, hashlib, hmac, base64, secrets, logging, os, math, shutil, uuid as _uuid, threading, functools
 from contextlib import contextmanager
 from collections import Counter
 from datetime import datetime, timedelta
@@ -31,9 +31,10 @@ HEALTH_FILE     = os.path.join(DATA_DIR, "health.json")
 EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
+ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.46"
+VERSION           = "2.8.47"
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -334,14 +335,19 @@ def resolve_apprise_url_list(stored, items):
             out.append(url)
     return out, None
 
-def _public_user(u):
+def _public_user(u, channels=None):
     """Benutzer-Objekt für API-Antworten: ohne PIN-Daten und ohne Apprise-URLs im Klartext
-    (die enthalten Tokens/Passwörter) — stattdessen maskierte Anzeigeform in gleicher Reihenfolge."""
+    (die enthalten Tokens/Passwörter) — stattdessen maskierte Anzeigeform in gleicher Reihenfolge.
+    Seit v2.8.47 trägt jede maskierte URL zusätzlich ihren Versandstatus (Hinweis-Center):
+    url_hash, state (ok/warn/error/unknown), last_ok, last_fail, error, consecutive."""
+    if channels is None:
+        channels = _issues_load()["channels"]
     out = {k: v for k, v in u.items() if k not in ("pin_hash", "pin_salt", "apprise_urls")}
     out.update(get_cross_prefs(u))   # Trendwechsel-Einstellungen inkl. Defaults für Altbestand
     out["has_pin"]             = bool(u.get("pin_hash"))
     out["is_admin"]            = is_admin_user(u)
-    out["apprise_urls_masked"] = [mask_apprise_url(x) for x in (u.get("apprise_urls") or [])]
+    out["apprise_urls_masked"] = [{**mask_apprise_url(x), **_channel_status(x, channels)}
+                                  for x in (u.get("apprise_urls") or [])]
     return out
 
 # Einheitliche JSON-Fehlerantworten (statt HTML-Fehlerseiten bzw. Stacktrace-losem 500 ohne Body)
@@ -1394,6 +1400,491 @@ EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "pos
 def _is_email_url(u):
     return u.lower().startswith(EMAIL_PREFIXES)
 
+# ── Hinweis-Center (seit v2.8.47) ─────────────────────────────────────────────────
+# Macht Fehler und verpasste Läufe in der App sichtbar (Header-Badge, Hinweis-Modal, Banner,
+# Statuszeilen im Benutzerprofil, System-Status). Zwei Arten von Hinweisen:
+#   • ABGELEITET — keine eigene Buchführung: _collect_issues() berechnet sie bei jedem Aufruf aus
+#     Zustand, der ohnehin existiert (needs_reconnect, pending_removed, _outage_state,
+#     _stall_state, scheduler.running). Sie lösen sich automatisch auf, sobald der Zustand weg ist.
+#   • PERSISTIERT — data/issues.json: pro Apprise-URL der Versandstatus ("channels", nur als Hash
+#     der URL, nie im Klartext), pro Job der letzte Erfolg ("jobs", die Scheduler-Jobs liegen im
+#     In-Memory-Jobstore, ein während eines Neustarts verpasster Lauf geht sonst unbemerkt
+#     verloren) und die zuletzt aktiven/aufgelösten Hinweise ("issues", 24 Std. "Kürzlich behoben").
+# Stufen: error (Fehler), warning (Warnung), action (Aktion nötig, z.B. Parqet-Bestätigung).
+_NOTIFY_TRANSIENT_THRESHOLD = 2          # vorübergehende Versandfehler in Folge bis zur Warnung
+_OVERDUE_GRACE_SECONDS      = 30 * 60    # Karenzzeit nach dem Soll-Zeitpunkt eines Digests
+_ISSUE_RESOLVED_KEEP        = 24 * 3600  # aufgelöste Hinweise bleiben so lange als "Kürzlich behoben"
+_SEVERITY_ORDER             = {"error": 0, "warning": 1, "action": 2}
+# Auth-Fehler = Zugangsdaten werden abgelehnt (Passwort/Token abgelaufen) → sofort Fehler, ohne
+# Schwelle. Heuristik über den Apprise-Log-Text; im Zweifel gilt ein Fehler als vorübergehend.
+_AUTH_ERROR_RE = re.compile(
+    r"\b(401|403|530|534|535)\b|authenticat|unauthori[sz]ed|forbidden|credential|"
+    r"username and password|app[- ]?specific password|password", re.I)
+_JOB_LABEL    = {"daily_ath_digest": "Tageszusammenfassung", "weekly_digest": "Wochenbericht",
+                 "parqet_sync": "Automatischer Parqet-Sync"}
+_JOB_VIEW_KEY = {"daily_ath_digest": "tages_digest", "weekly_digest": "wochen_digest",
+                 "parqet_sync": "parqet_sync"}
+# Apprise-LogCapture hängt einen Handler an den globalen Apprise-Logger — gleichzeitige Versände
+# würden sich sonst gegenseitig Fehlermeldungen unterschieben. Versände sind selten und kurz.
+_apprise_notify_lock = threading.Lock()
+
+def _app_tz():
+    try: return pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+    except Exception: return pytz.timezone("Europe/Berlin")
+
+def _ts_iso(ts, tz=None):
+    """Epoch-Sekunden → ISO-Zeitstempel in der App-Zeitzone (oder None)."""
+    if not ts: return None
+    try: return datetime.fromtimestamp(float(ts), tz or _app_tz()).isoformat(timespec="seconds")
+    except Exception: return None
+
+def _url_hash(url):
+    """Kurzer Hash einer Apprise-URL als Schlüssel im Register — die URL selbst enthält
+    Zugangsdaten und wird nie gespeichert oder ausgeliefert."""
+    return hashlib.sha1(str(url).encode("utf-8")).hexdigest()[:10]
+
+def _scrub_reason(text):
+    """Fehlergrund für Anzeige/Speicherung: URLs entfernen, Whitespace glätten, kürzen."""
+    t = re.sub(r"[a-z][a-z0-9+.\-]*://\S+", "<URL>", str(text or ""), flags=re.I)
+    return re.sub(r"\s+", " ", t).strip()[:200]
+
+def _capture_reason(log_text):
+    """Warn-/Fehlerzeilen aus dem mitgeschnittenen Apprise-Log → ein kurzer Fehlergrund."""
+    msgs = []
+    for line in str(log_text or "").splitlines():
+        m = re.match(r"^.+? - (?:WARNING|ERROR|CRITICAL) - (.*)$", line)
+        if m: msgs.append(m.group(1))
+    return _scrub_reason("; ".join(msgs))
+
+def _notify_capture(ap, **kw):
+    """ap.notify(**kw) plus Fehlergrund aus dem Apprise-Log. Rückgabe: (ok, grund)."""
+    ok, text = None, ""
+    with _apprise_notify_lock:
+        try:
+            with apprise_lib.LogCapture(level=logging.INFO) as cap:
+                ok   = bool(ap.notify(**kw))
+                text = cap.getvalue()
+        except Exception as e:
+            if ok is None:   # Fehler beim Senden selbst → Fehlschlag mit Grund (kein zweiter Versand)
+                return False, _scrub_reason(f"{type(e).__name__}: {e}")
+    return ok, ("" if ok else _capture_reason(text))
+
+def _issues_load():
+    try: d = _load_json(ISSUES_FILE, None)
+    except Exception: d = None
+    if not isinstance(d, dict): d = {}
+    for k in ("channels", "jobs", "issues"):
+        if not isinstance(d.get(k), dict): d[k] = {}
+    return d
+
+def _issues_update(fn):
+    """load-modify-save von issues.json unter Lock (fn(d) bekommt das geladene Dict und darf
+    d["_dirty"] = False setzen, wenn nichts geändert wurde). Fehler im Register dürfen nie den
+    Versand oder einen Job kippen — sie werden nur geloggt."""
+    try:
+        with file_lock(ISSUES_FILE):
+            d = _issues_load()
+            d["_dirty"] = True
+            res = fn(d)
+            if d.pop("_dirty", True):
+                _save_json(ISSUES_FILE, d)
+            return res
+    except Exception as e:
+        log.warning(f"Hinweis-Register: Aktualisierung fehlgeschlagen: {e}")
+        return None
+
+def _users_for_url(url):
+    return [u["id"] for u in load_users() if url in (u.get("apprise_urls") or [])]
+
+def _channel_status(url, channels):
+    """Versandstatus einer gespeicherten URL für die Anzeige. Auth-Fehler → error (rot),
+    vorübergehende Fehler → warn (orange), letzter Versand ok → ok, sonst unknown."""
+    h    = _url_hash(url)
+    base = {"url_hash": h, "state": "unknown", "last_ok": None, "last_fail": None,
+            "error": None, "consecutive": 0}
+    if _apprise_scheme(url) not in _APPRISE_ALLOWED_SCHEMES: return base
+    ch = (channels or {}).get(h)
+    if not ch: return base
+    cf = ch.get("consecutive_failures", 0)
+    base.update(last_ok=_ts_iso(ch.get("last_ok")), last_fail=_ts_iso(ch.get("last_fail")), consecutive=cf)
+    if cf > 0:
+        base["state"] = "error" if ch.get("error_class") == "auth" else "warn"
+        base["error"] = ch.get("last_error")
+    elif ch.get("last_ok"):
+        base["state"] = "ok"
+    return base
+
+def _issues_record_send(url, ok, reason=""):
+    """Hält das Ergebnis eines Versands an eine gespeicherte URL fest. Nicht gespeicherte URLs
+    (z.B. Test mit neu eingetippter URL) haben keinen Besitzer und werden nicht erfasst."""
+    try:
+        owners = _users_for_url(url)
+        if not owners: return
+        h, now = _url_hash(url), time_mod.time()
+        cls = None if ok else ("auth" if _AUTH_ERROR_RE.search(reason or "") else
+                               ("transient" if reason else "unknown"))
+        def upd(d):
+            ch = d["channels"].setdefault(h, {"user_ids": [], "last_ok": None, "last_fail": None,
+                                              "consecutive_failures": 0, "error_class": None,
+                                              "last_error": None, "since": None})
+            was_failing = ch.get("consecutive_failures", 0) > 0
+            ch["user_ids"] = owners
+            if ok:
+                ch.update(last_ok=now, consecutive_failures=0, error_class=None, last_error=None, since=None)
+            else:
+                if not was_failing: ch["since"] = now
+                ch.update(last_fail=now, consecutive_failures=ch.get("consecutive_failures", 0) + 1,
+                          error_class=cls, last_error=_scrub_reason(reason))
+            return was_failing
+        was_failing = _issues_update(upd)
+        if ok and was_failing: _issues_refresh()   # Erholung sofort als "behoben" festhalten
+    except Exception as e:
+        log.warning(f"Hinweis-Register: Versandstatus nicht erfasst: {e}")
+
+def _job_default():
+    return {"last_success": None, "last_attempt": None, "last_error": None, "since_fail": None,
+            "watch_since": None, "seen_overdue_for": None}
+
+def _job_record(key, ok, error=None):
+    """Hält einen Joblauf fest. key: 'daily_ath_digest:<user_id>', 'weekly_digest:<user_id>' oder 'parqet_sync'."""
+    try:
+        now = time_mod.time()
+        def upd(d):
+            j = d["jobs"].setdefault(key, _job_default())
+            was_failing = bool(j.get("last_error"))
+            j["last_attempt"] = now
+            if ok:
+                j.update(last_success=now, last_error=None, since_fail=None)
+            else:
+                if not was_failing: j["since_fail"] = now
+                j["last_error"] = _scrub_reason(error or "Fehler")
+            return was_failing
+        was_failing = _issues_update(upd)
+        if ok and was_failing: _issues_refresh()
+    except Exception as e:
+        log.warning(f"Hinweis-Register: Joblauf nicht erfasst: {e}")
+
+def _tracked_job(prefix, per_user=False):
+    """Decorator für Scheduler-Jobs: hält Erfolg bzw. Fehler im Register fest. Rückgabewert False
+    = Versand fehlgeschlagen; None/True = Lauf in Ordnung (auch wenn nichts zu senden war).
+    Exceptions werden festgehalten und weitergereicht (APScheduler loggt sie wie bisher)."""
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*a, **kw):
+            key = f"{prefix}:{a[0]}" if (per_user and a) else prefix
+            try:
+                res = fn(*a, **kw)
+            except Exception as e:
+                _job_record(key, False, f"{type(e).__name__}: {e}")
+                raise
+            ok = res is not False
+            _job_record(key, ok, None if ok else "Versand fehlgeschlagen")
+            return res
+        return wrapper
+    return deco
+
+def _user_digest_expectations(user, depots):
+    """Welche Digests soll dieser User bekommen? [(job-präfix, label, art)]. Nur wenn mindestens
+    ein Digest aktiviert ist UND eine gültige Apprise-URL existiert (sonst nichts zu erwarten)."""
+    urls = [x for x in (user.get("apprise_urls") or []) if _apprise_scheme(x) in _APPRISE_ALLOWED_SCHEMES]
+    if not urls: return []
+    mine = [d for d in depots if d["id"] in user.get("depots", [])]
+    out = []
+    if user.get("daily_watchlist_digest") or any(d.get("daily_ath_digest") for d in mine):
+        out.append(("daily_ath_digest", _JOB_LABEL["daily_ath_digest"], "daily"))
+    if any(d.get("weekly_digest") for d in mine):
+        out.append(("weekly_digest", _JOB_LABEL["weekly_digest"], "weekly"))
+    return out
+
+def _expected_last_fire(kind, user, now, tz):
+    """Letzter Soll-Zeitpunkt (aware datetime <= now) des Tages- (Mo–Fr) bzw. Wochen-Digests."""
+    day, wtime, dtime = get_user_digest_settings(user)
+    if kind == "daily":
+        h, m = _parse_hhmm(dtime, _DAILY_DIGEST_TIME_DEFAULT); days = {0, 1, 2, 3, 4}
+    else:
+        h, m = _parse_hhmm(wtime, _DIGEST_TIME_DEFAULT); days = {day}
+    for back in range(0, 8):
+        d = (now - timedelta(days=back)).date()
+        if d.weekday() not in days: continue
+        cand = tz.localize(datetime(d.year, d.month, d.day, h, m))
+        if cand <= now: return cand
+    return None
+
+def _compute_overdue(users, depots, store):
+    """Überfällige Digests, rein berechnet: Soll-Zeitpunkt + Karenzzeit überschritten, kein
+    Erfolg seit dann, und der Lauf wurde erst nach der ersten Beobachtung erwartet (watch_since,
+    gesetzt von _overdue_pass — so löst weder eine frische Installation noch das nachträgliche
+    Aktivieren eines Digests einen Fehlalarm für einen Zeitpunkt aus, der vor der Beobachtung lag).
+    Am Wochenende entstehen keine neuen Hinweise, weil dann kein Tages-Lauf erwartet wird."""
+    tz = _app_tz(); now = datetime.now(tz); now_ts = now.timestamp()
+    out = {}
+    for u in users:
+        for prefix, label, kind in _user_digest_expectations(u, depots):
+            exp = _expected_last_fire(kind, u, now, tz)
+            if not exp: continue
+            exp_ts = exp.timestamp()
+            if now_ts < exp_ts + _OVERDUE_GRACE_SECONDS: continue
+            key = f"{prefix}:{u['id']}"
+            j   = store["jobs"].get(key) or {}
+            ws  = j.get("watch_since")
+            if ws is None or exp_ts < ws: continue
+            if (j.get("last_success") or 0) >= exp_ts - 60: continue
+            if j.get("seen_overdue_for") == exp_ts: continue
+            out[f"job_overdue:{key}"] = {"key": key, "prefix": prefix, "label": label, "uid": u["id"],
+                                          "exp_ts": exp_ts, "exp_text": exp.strftime("%d.%m. %H:%M")}
+    return out
+
+def _overdue_pass():
+    """Alle 15 Min. (und einmal beim Start): setzt die Beobachtungsbasis (watch_since) für alle
+    erwarteten Digests, räumt Register-Einträge gelöschter Benutzer/URLs auf und gleicht die
+    Hinweise ab (erkennt aufgelöste Hinweise auch ohne geöffnete App)."""
+    try:
+        users, depots = load_users(), load_depots()
+        now_ts   = time_mod.time()
+        expected = {f"{p}:{u['id']}" for u in users for p, _l, _k in _user_digest_expectations(u, depots)}
+        uids     = {u["id"] for u in users}
+        hashes   = {_url_hash(x) for u in users for x in (u.get("apprise_urls") or [])}
+        def upd(d):
+            d["_dirty"] = False
+            for key in expected:
+                j = d["jobs"].setdefault(key, _job_default())
+                if j.get("watch_since") is None:
+                    j["watch_since"] = now_ts; d["_dirty"] = True
+            for key, j in list(d["jobs"].items()):
+                prefix, _, uid = key.partition(":")
+                if uid and uid not in uids:                       # Benutzer gelöscht
+                    del d["jobs"][key]; d["_dirty"] = True
+                elif prefix in ("daily_ath_digest", "weekly_digest") and key not in expected \
+                        and j.get("watch_since") is not None:     # Digest inzwischen aus → Basis zurücksetzen
+                    j["watch_since"] = None; d["_dirty"] = True
+            for h in [h for h in d["channels"] if h not in hashes]:   # URL entfernt
+                del d["channels"][h]; d["_dirty"] = True
+        _issues_update(upd)
+        _issues_refresh()
+    except Exception as e:
+        log.warning(f"Überfällig-Prüfung fehlgeschlagen: {e}")
+
+def _issue_scope_text(affected, names, admin):
+    parts = []
+    if affected: parts.append(f"Betrifft: {affected}")
+    aud = list(names) + (["Admins"] if admin else [])
+    if aud: parts.append("sichtbar für " + " und ".join(aud))
+    t = " · ".join(parts)
+    return (t[:1].upper() + t[1:]) if t else ""
+
+def _collect_issues():
+    """Alle aktuell aktiven Hinweise (id → dict), abgeleitet bzw. aus dem Register berechnet.
+    Sichtbarkeit steckt je Hinweis in scope = {"user_ids": [...], "admin": bool}."""
+    users, depots, store = load_users(), load_depots(), _issues_load()
+    uname = {u["id"]: u.get("name", "?") for u in users}
+    out = {}
+
+    def add(iid, kind, sev, cat, title, msg, owners=(), admin=False, since=None, affected="",
+            actions=(), banner=False, dismissible=False, **extra):
+        owners = [o for o in owners if o in uname]
+        out[iid] = {"id": iid, "kind": kind, "severity": sev, "category": cat, "title": title,
+                    "message": msg, "since": since, "banner": banner, "dismissible": dismissible,
+                    "actions": list(actions), "scope": {"user_ids": owners, "admin": bool(admin)},
+                    "scope_text": _issue_scope_text(affected, [uname[o] for o in owners], admin), **extra}
+
+    # ── Benachrichtigungen (pro gespeicherter URL, Hash als Schlüssel) ────────────────
+    by_hash = {}
+    for u in users:
+        for url in (u.get("apprise_urls") or []):
+            if _apprise_scheme(url) in _APPRISE_ALLOWED_SCHEMES:
+                by_hash.setdefault(_url_hash(url), (url, []))[1].append(u["id"])
+    for h, (url, owners) in by_hash.items():
+        ch = store["channels"].get(h)
+        if not ch or ch.get("consecutive_failures", 0) < 1: continue
+        auth = ch.get("error_class") == "auth"
+        if not auth and ch["consecutive_failures"] < _NOTIFY_TRANSIENT_THRESHOLD: continue
+        mk, reason = mask_apprise_url(url), ch.get("last_error") or ""
+        if auth:
+            msg = (f"{mk['masked']} – Zugangsdaten abgelehnt" + (f" ({reason})" if reason else "")
+                   + ". Passwort bzw. Token ist vermutlich abgelaufen.")
+        else:
+            msg = f"{mk['masked']} – {reason or 'Versand nicht möglich'}. Der nächste Versand versucht es erneut."
+        add(f"notify_failed:{h}", "notify_failed", "error" if auth else "warning", "notification",
+            f"{mk['service']}-Versand fehlgeschlagen", msg, owners=owners, admin=auth, since=ch.get("since"),
+            affected=", ".join(uname.get(o, "?") for o in owners),
+            actions=[{"type": "profile"}, {"type": "test"}], banner=auth,
+            meta={"consecutive": ch["consecutive_failures"], "last_event": ch.get("last_fail")})
+    for u in users:
+        urls = [x for x in (u.get("apprise_urls") or []) if _apprise_scheme(x) in _APPRISE_ALLOWED_SCHEMES]
+        bad  = [x for x in (u.get("apprise_urls") or []) if _apprise_scheme(x) not in _APPRISE_ALLOWED_SCHEMES]
+        if len(urls) >= 2 and all((store["channels"].get(_url_hash(x)) or {}).get("consecutive_failures", 0) >= 1
+                                  for x in urls):
+            add(f"notify_all_failed:{u['id']}", "notify_all_failed", "error", "notification",
+                "Keine Benachrichtigung zustellbar",
+                f"Alle {len(urls)} Benachrichtigungskanäle von {u.get('name','?')} schlagen fehl – aktuell kommt nichts an.",
+                owners=[u["id"]], admin=True, affected=u.get("name", "?"), actions=[{"type": "profile"}])
+        if bad:
+            add(f"url_not_allowed:{u['id']}", "url_not_allowed", "warning", "notification",
+                "Nicht mehr unterstützte Benachrichtigungs-URL",
+                ", ".join(mask_apprise_url(x)["masked"] for x in bad)
+                + " – dieser Dienst wird nicht mehr bedient. URL entfernen und eine erlaubte hinzufügen.",
+                owners=[u["id"]], affected=u.get("name", "?"), actions=[{"type": "profile"}])
+        if not urls:
+            mine = [d for d in depots if d["id"] in u.get("depots", [])]
+            if u.get("daily_watchlist_digest") or any(d.get("daily_ath_digest") or d.get("weekly_digest") for d in mine):
+                add(f"no_url:{u['id']}", "no_url", "warning", "notification",
+                    "Keine Benachrichtigungs-URL hinterlegt",
+                    "Zusammenfassungen sind aktiviert, aber es ist keine gültige Apprise-URL hinterlegt – es wird nichts versendet.",
+                    owners=[u["id"]], affected=u.get("name", "?"), actions=[{"type": "profile"}])
+
+    # ── Parqet (abgeleitet aus dem Depot-Zustand) ─────────────────────────────────────
+    for d in depots:
+        pq = d.get("parqet") or {}
+        if not pq.get("connected"): continue
+        did, dname = d["id"], d.get("name", d["id"])
+        owners = [u["id"] for u in users if did in u.get("depots", [])]
+        if pq.get("needs_reconnect"):
+            add(f"parqet_token:{did}", "parqet_token", "error", "parqet", "Parqet: Verbindung abgelaufen",
+                f"Depot „{dname}“ – Token ungültig. Der automatische Sync pausiert, bis neu verbunden wird.",
+                owners=owners, admin=True, affected=f"Depot „{dname}“", banner=True, depot_id=did,
+                actions=[{"type": "reconnect", "depot_id": did}], job="parqet_sync")
+        n_rem, n_mis = len(pq.get("pending_removed") or []), len(pq.get("pending_mismatches") or [])
+        if n_rem or n_mis:
+            names = ", ".join(r.get("name", "?") for r in (pq.get("pending_removed") or []))
+            parts = []
+            if n_rem: parts.append(f"Bei Parqet komplett verkauft, noch im ATH-Tracker: {names}.")
+            if n_mis: parts.append(f"{n_mis} Abweichung(en) zwischen Parqet und Bestand zu prüfen.")
+            add(f"parqet_pending:{did}", "parqet_pending", "action", "parqet",
+                f"Parqet: {n_rem + n_mis} {'Eintrag' if n_rem + n_mis == 1 else 'Einträge'} zu bestätigen", " ".join(parts),
+                owners=owners, affected=f"Depot „{dname}“", depot_id=did,
+                actions=[{"type": "pending", "depot_id": did}])
+
+    # ── Datenquellen, Stillstand, Scheduler (abgeleitet aus dem In-Memory-Zustand) ────
+    for src, cfg in _OUTAGE_SOURCES.items():
+        s = _outage_state[src]
+        if not s["alerted"]: continue
+        err = (_health_stats["sources"].get(src) or {}).get("last_error")
+        add(f"source_outage:{src}", "source_outage", "error" if src in ("yahoo", "parqet") else "warning",
+            "source", f"{cfg['label']}: Abfragen gestört",
+            f"In {s['streak']} Refresh-Zyklen in Folge überwiegend fehlgeschlagen. {cfg['impact']}"
+            + (f" Letzter Fehler: {err}" if err else ""),
+            admin=True, since=s["since"], actions=[{"type": "status"}])
+    if _stall_state["alerted"]:
+        add("refresh_stall", "refresh_stall", "error", "job", "Kurs-Refresh steht still",
+            "In der Handelszeit läuft kein automatischer Refresh mehr durch. Möglicherweise hängt der Scheduler oder ein Datei-Lock.",
+            admin=True, since=_stall_state["since_ts"], actions=[{"type": "status"}], job="kurs_refresh")
+    if not scheduler.running:
+        add("scheduler_stopped", "scheduler_stopped", "error", "job", "Scheduler läuft nicht",
+            "Kurs-Refresh und Zusammenfassungen laufen aktuell nicht.", admin=True, actions=[{"type": "status"}])
+
+    # ── Jobs: Fehler und überfällige Läufe (aus dem Register) ─────────────────────────
+    for key, j in store["jobs"].items():
+        prefix, _, uid = key.partition(":")
+        if not j.get("last_error") or prefix not in _JOB_LABEL: continue
+        if uid and uid not in uname: continue
+        who = f" ({uname[uid]})" if uid else ""
+        add(f"job_failed:{key}", "job_failed", "error", "job", f"{_JOB_LABEL[prefix]} fehlgeschlagen",
+            f"{_JOB_LABEL[prefix]}{who}: {j['last_error']}", admin=True, since=j.get("since_fail"),
+            actions=[{"type": "status"}], job=_JOB_VIEW_KEY[prefix])
+    for iid, ov in _compute_overdue(users, depots, store).items():
+        add(iid, "job_overdue", "warning", "job", f"{ov['label']} nicht gelaufen",
+            f"Geplant für {ov['exp_text']} Uhr ({uname.get(ov['uid'], '?')}) – kein Lauf registriert. "
+            "Löst sich beim nächsten erfolgreichen Lauf auf.",
+            owners=[ov["uid"]], admin=True, since=ov["exp_ts"], affected=uname.get(ov["uid"], "?"),
+            actions=[{"type": "status"}, {"type": "dismiss"}], dismissible=True, job=_JOB_VIEW_KEY[ov["prefix"]])
+    return out
+
+def _reconcile_issues(active):
+    """Gleicht die aktiven Hinweise mit dem Register ab: neue werden angelegt (first_seen),
+    verschwundene als aufgelöst markiert (resolved_at), Aufgelöstes nach 24 Std. entfernt.
+    Geschrieben wird nur bei einer Änderung. Rückgabe: {id: Register-Eintrag}."""
+    now = time_mod.time()
+    def upd(d):
+        d["_dirty"] = False
+        st = d["issues"]
+        for iid, it in active.items():
+            fields = {k: v for k, v in it.items() if k != "since"}
+            cur = st.get(iid)
+            if cur and not cur.get("resolved_at"):
+                if any(cur.get(k) != v for k, v in fields.items()):
+                    cur.update(fields); d["_dirty"] = True
+            else:
+                st[iid] = {**fields, "first_seen": it.get("since") or now, "resolved_at": None}
+                d["_dirty"] = True
+        for iid, cur in st.items():
+            if iid not in active and not cur.get("resolved_at"):
+                cur["resolved_at"] = now; d["_dirty"] = True
+        for iid in [i for i, c in st.items() if c.get("resolved_at") and now - c["resolved_at"] > _ISSUE_RESOLVED_KEEP]:
+            del st[iid]; d["_dirty"] = True
+        return {i: dict(c) for i, c in st.items()}
+    return _issues_update(upd) or {}
+
+def _issues_refresh():
+    try: _reconcile_issues(_collect_issues())
+    except Exception as e: log.warning(f"Hinweis-Abgleich fehlgeschlagen: {e}")
+
+def _issue_public(it):
+    now = time_mod.time()
+    fs, ra = it.get("first_seen"), it.get("resolved_at")
+    return {"id": it["id"], "kind": it["kind"], "severity": it["severity"], "category": it["category"],
+            "title": it["title"], "message": it["message"], "scope_text": it.get("scope_text", ""),
+            "first_seen": _ts_iso(fs), "resolved_at": _ts_iso(ra),
+            "duration_seconds": int((ra or now) - fs) if fs else None,
+            "actions": it.get("actions", []), "banner": bool(it.get("banner")),
+            "dismissible": bool(it.get("dismissible")), "job": it.get("job"),
+            "depot_id": it.get("depot_id"), "meta": it.get("meta")}
+
+def _issue_visible(it, user, admin):
+    sc = it.get("scope") or {}
+    return user["id"] in sc.get("user_ids", []) or (admin and bool(sc.get("admin")))
+
+@app.route("/api/issues", methods=["GET"])
+def api_issues():
+    """Hinweis-Center: aktive und kürzlich behobene Hinweise für den anfragenden Benutzer
+    (user_id als Parameter — gleiches Vertrauensmodell wie /api/notifications). Admins sehen
+    zusätzlich die Admin-Hinweise sowie die Übersicht der Benachrichtigungskanäle."""
+    users = load_users()
+    user  = next((u for u in users if u["id"] == request.args.get("user_id", "")), None)
+    empty = {"active": [], "resolved": [], "counts": {"error": 0, "warning": 0, "action": 0, "total": 0},
+             "channels": []}
+    if not user: return jsonify(empty)
+    admin  = is_admin_user(user)
+    active = _collect_issues()
+    view   = _reconcile_issues(active)
+    if not view and active:   # Register nicht schreibbar → Anzeige trotzdem aus dem Live-Zustand
+        view = {i: {**it, "first_seen": it.get("since") or time_mod.time(), "resolved_at": None}
+                for i, it in active.items()}
+    act = sorted([view[i] for i in active if i in view and _issue_visible(view[i], user, admin)],
+                 key=lambda it: (_SEVERITY_ORDER.get(it["severity"], 9), -(it.get("first_seen") or 0)))
+    res = sorted([c for i, c in view.items() if i not in active and c.get("resolved_at") and _issue_visible(c, user, admin)],
+                 key=lambda it: -(it.get("resolved_at") or 0))
+    counts = {s: sum(1 for it in act if it["severity"] == s) for s in ("error", "warning", "action")}
+    counts["total"] = len(act)
+    channels = []
+    if admin:
+        chs = _issues_load()["channels"]
+        for u in users:
+            for url in (u.get("apprise_urls") or []):
+                mk = mask_apprise_url(url)
+                channels.append({"user": u.get("name", "?"), "service": mk["service"], "masked": mk["masked"],
+                                 **_channel_status(url, chs)})
+    return jsonify({"active": [_issue_public(i) for i in act], "resolved": [_issue_public(i) for i in res],
+                    "counts": counts, "channels": channels})
+
+@app.route("/api/issues/<path:issue_id>/dismiss", methods=["POST"])
+def api_issue_dismiss(issue_id):
+    """„Gesehen“ — nur für überfällige Läufe (die sich nicht nachholen lassen). Alle anderen
+    Hinweise lösen sich von selbst auf, sobald das Problem behoben ist."""
+    if not issue_id.startswith("job_overdue:"):
+        return jsonify({"error": "Dieser Hinweis lässt sich nicht ausblenden – er löst sich von selbst auf"}), 400
+    users = load_users()
+    user  = next((u for u in users if u["id"] == str(_body().get("user_id") or "")), None)
+    if not user: return jsonify({"error": "Benutzer nicht gefunden"}), 404
+    ov = _compute_overdue(users, load_depots(), _issues_load()).get(issue_id)
+    if not ov: return jsonify({"ok": True})   # inzwischen erledigt
+    if not (user["id"] == ov["uid"] or is_admin_user(user)):
+        return jsonify({"error": "Nicht erlaubt"}), 403
+    def upd(d):
+        d["jobs"].setdefault(ov["key"], _job_default())["seen_overdue_for"] = ov["exp_ts"]
+    _issues_update(upd)
+    _issues_refresh()
+    return jsonify({"ok": True})
+
 def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, watchlist_id=None, kind=None,
                  log_type="alert", log_extra=None):
     """log_type steuert den Verlauf-Typ des add_log-Eintrags (Default "alert").
@@ -1413,17 +1904,24 @@ def send_apprise(title, body, urls, mention="", html_body=None, depot_id=None, w
     try:
         ok = True
         for u in urls:
-            ap = apprise_lib.Apprise()
-            ap.add(u)
-            is_discord = u.lower().startswith("discord")
-            msg = f"{mention}\n{body}" if (mention and is_discord) else body
-            if html_body and _is_email_url(u):
-                if not ap.notify(title=title, body=html_body,
-                                 body_format=apprise_lib.NotifyFormat.HTML):
-                    ok = False
-            else:
-                if not ap.notify(title=title, body=msg):
-                    ok = False
+            # Pro URL festhalten, ob und warum der Versand scheitert (Hinweis-Center, seit v2.8.47);
+            # eine kaputte URL bricht die übrigen nicht mehr ab.
+            try:
+                ap = apprise_lib.Apprise()
+                ap.add(u)
+                is_discord = u.lower().startswith("discord")
+                msg = f"{mention}\n{body}" if (mention and is_discord) else body
+                if html_body and _is_email_url(u):
+                    u_ok, reason = _notify_capture(ap, title=title, body=html_body,
+                                                   body_format=apprise_lib.NotifyFormat.HTML)
+                else:
+                    u_ok, reason = _notify_capture(ap, title=title, body=msg)
+            except Exception as e:
+                u_ok, reason = False, _scrub_reason(f"{type(e).__name__}: {e}")
+            if not u_ok:
+                ok = False
+                log.warning(f"Apprise-Versand fehlgeschlagen ({mask_apprise_url(u)['masked']}): {reason or 'kein Grund bekannt'}")
+            _issues_record_send(u, u_ok, reason)
         add_log(log_type, title, body, ok, depot_id=depot_id, watchlist_id=watchlist_id, kind=kind, extra=log_extra)
         return ok
     except Exception as e:
@@ -2683,6 +3181,7 @@ def build_daily_watchlist_digest_html(grouped):
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
 
+@_tracked_job("daily_ath_digest", per_user=True)
 def send_daily_ath_digests(user_id):
     """Sendet die tägliche Depot-Zusammenfassung (Discount- + ATH-Alarme, auch bei null
     Treffern) für alle Depots eines einzelnen Users, die daily_ath_digest aktiviert haben.
@@ -2695,6 +3194,7 @@ def send_daily_ath_digests(user_id):
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return
     log.info(f"Tägliche Depot-Zusammenfassung wird versendet (User '{user.get('name','?')}')…")
+    all_ok = True   # False, sobald ein Versand scheitert — steuert Job-Status und Hinweis-Center
     depots = load_depots()
     for dc in depots:
         if dc["id"] not in user.get("depots", []): continue
@@ -2709,7 +3209,8 @@ def send_daily_ath_digests(user_id):
         add_log("daily_ath_digest", f"🌙 Tageszusammenfassung [{dc['name']}]",
                 f"Gesendet an {len(urls)} URL(s). ({len(ath_hits) + len(discount_hits)} Alarm(e))",
                 success=True, depot_id=dc["id"])
-        send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc["id"])
+        if not send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc["id"]):
+            all_ok = False
 
     if user.get("daily_watchlist_digest", False):
         wl_ids = user.get("watchlists", [])
@@ -2723,18 +3224,21 @@ def send_daily_ath_digests(user_id):
             add_log("daily_watchlist_digest", "📋 Watchlist-Tageszusammenfassung",
                     f"Gesendet an {len(urls)} URL(s). ({total} Alarm(e))",
                     success=True, user_id=user["id"], user_name=user.get("name", ""))
-            send_apprise(title, body, urls, mention=mention, html_body=html_body)
+            if not send_apprise(title, body, urls, mention=mention, html_body=html_body):
+                all_ok = False
 
     # Job-Statistik fürs System-Status-Dashboard. Läuft pro User (siehe Docstring), die
     # Job-Zeile zeigt daher den zuletzt ausgeführten User-Lauf, nicht "alle User gesammelt".
     _job_stats["tages_digest"] = {
         "last_run":    datetime.now().isoformat(timespec="seconds"),
         "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
-        "success":     True,
+        "success":     all_ok,
         "detail":      f"User „{user.get('name','?')}\"",
     }
+    return all_ok
 
 
+@_tracked_job("weekly_digest", per_user=True)
 def send_weekly_digests(user_id):
     """Sendet den Wochenbericht für alle Depots eines einzelnen Users, die ihn aktiviert
     haben. Seit v2.7.21 ein Job pro User (Wochentag/Uhrzeit sind userbezogen konfigurierbar),
@@ -2744,6 +3248,7 @@ def send_weekly_digests(user_id):
     user  = next((u for u in users if u["id"] == user_id), None)
     if not user: return
     log.info(f"Wöchentlicher Digest wird versendet (User '{user.get('name','?')}')…")
+    all_ok = True   # False, sobald ein Versand scheitert — steuert Job-Status und Hinweis-Center
     depots = load_depots()
     for dc in depots:
         if dc["id"] not in user.get("depots", []): continue
@@ -2757,15 +3262,17 @@ def send_weekly_digests(user_id):
             html_body = build_digest_html(dc, stocks)
             add_log("digest", f"📊 Wochenbericht [{dc['name']}]",
                     f"Gesendet an {len(urls)} URL(s).", success=True, depot_id=dc['id'])
-            send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id'])
+            if not send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id']):
+                all_ok = False
 
     # Job-Statistik fürs System-Status-Dashboard — analog zu send_daily_ath_digests oben.
     _job_stats["wochen_digest"] = {
         "last_run":    datetime.now().isoformat(timespec="seconds"),
         "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
-        "success":     True,
+        "success":     all_ok,
         "detail":      f"User „{user.get('name','?')}\"",
     }
+    return all_ok
 
 
 # APScheduler day_of_week: 0=Mon … 6=Sun (gleiche Reihenfolge wie unser digest_day 0=Mo…6=So)
@@ -2829,7 +3336,7 @@ def auto_parqet_sync_check():
         # das ist der Zeitpunkt, der fürs System-Status-Dashboard als "Job-Lauf" gilt.
         _t0 = time_mod.monotonic()
         hour = now.hour
-        synced, failed = 0, 0
+        synced, failed, token_expired, last_err = 0, 0, 0, None
         for d in load_depots():
             pq = d.get("parqet", {})
             if not pq.get("connected") or not pq.get("auto_sync_enabled"):
@@ -2842,17 +3349,39 @@ def auto_parqet_sync_check():
             if (hour - start_h) % interval != 0:
                 continue
             try:
-                _parqet_sync_core(d["id"], auto=True)
-                synced += 1
+                # _parqet_sync_core meldet Fehler als (Antwort, Status) zurück statt zu werfen —
+                # seit v2.8.47 wird der Status ausgewertet (vorher zählte nur eine Exception als
+                # Fehler). 401 = Token abgelaufen: eigener Hinweis (parqet_token), weder Erfolg
+                # noch Fehlschlag des Jobs.
+                res    = _parqet_sync_core(d["id"], auto=True)
+                status = res[1] if isinstance(res, tuple) and len(res) > 1 else 200
+                if status == 401:
+                    token_expired += 1
+                elif status >= 400:
+                    failed += 1
+                    body_ = res[0] if isinstance(res[0], dict) else {}
+                    last_err = str(body_.get("error") or f"HTTP {status}")
+                    log.error(f"Automatischer Parqet-Sync fehlgeschlagen ({d['id']}): {last_err}")
+                else:
+                    synced += 1
             except Exception as e:
                 failed += 1
+                last_err = f"{type(e).__name__}: {e}"
                 log.error(f"Automatischer Parqet-Sync fehlgeschlagen ({d['id']}): {e}")
+        detail = f"{synced} synchronisiert, {failed} Fehler" if (synced or failed) else "kein Depot fällig"
+        if token_expired: detail += f", {token_expired} Token abgelaufen"
         _job_stats["parqet_sync"] = {
             "last_run":    datetime.now(tz).isoformat(timespec="seconds"),
             "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
             "success":     failed == 0,
-            "detail":      f"{synced} synchronisiert, {failed} Fehler" if (synced or failed) else "kein Depot fällig",
+            "detail":      detail,
         }
+        # Hinweis-Center: Fehler festhalten bzw. nach einem erfolgreichen Lauf auflösen. Läufe ohne
+        # fälliges Depot (oder nur mit abgelaufenem Token) ändern den Status nicht.
+        if failed:
+            _job_record("parqet_sync", False, last_err)
+        elif synced:
+            _job_record("parqet_sync", True)
     except Exception as e:
         log.warning(f"auto_parqet_sync_check fehlgeschlagen: {e}")
 
@@ -2866,8 +3395,12 @@ def start_scheduler():
                       replace_existing=True, misfire_grace_time=None)
     scheduler.add_job(stall_watchdog_check, "cron", minute="*/5", id="stall_watchdog",
                       replace_existing=True, misfire_grace_time=None)
+    # Hinweis-Center (seit v2.8.47): Beobachtungsbasis für überfällige Digests, Aufräumen, Abgleich
+    scheduler.add_job(_overdue_pass, "cron", minute="*/15", id="overdue_check",
+                      replace_existing=True, misfire_grace_time=None)
     schedule_all_user_digest_jobs()
     if not scheduler.running: scheduler.start()
+    _overdue_pass()   # einmal sofort: Basis setzen, bevor die erste 15-Minuten-Marke erreicht ist
     log.info("Scheduler gestartet")
 
 # ── Parqet OAuth (PKCE) ───────────────────────────────────────────
@@ -5045,7 +5578,8 @@ def test_notification():
 # ── User API ──────────────────────────────────────────────────────
 @app.route("/api/users", methods=["GET"])
 def api_get_users():
-    return jsonify([_public_user(u) for u in load_users()])
+    channels = _issues_load()["channels"]   # einmal laden statt pro Benutzer
+    return jsonify([_public_user(u, channels) for u in load_users()])
 
 @app.route("/api/users", methods=["POST"])
 def api_create_user():

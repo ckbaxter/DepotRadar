@@ -20,6 +20,7 @@ Die meisten Dateien werden beim ersten Start automatisch mit sinnvollen Defaults
 | `snapshots.json` | Tägliche Portfolio-Gesamtwert-Punkte für den Verlaufschart | Liste von Snapshot-Einträgen |
 | `notifications.json` | Benachrichtigungsverlauf | Liste von Log-Einträgen |
 | `health.json` | Kumulative Statistiken für den System-Status | Dict |
+| `issues.json` | Hinweis-Center: Versandstatus je Apprise-URL (nur Hash, keine URL im Klartext), Job-Register (`last_success`, `last_error`, …) und Hinweis-Verlauf (24 Std. „Kürzlich behoben“) | Dict mit `channels`, `jobs`, `issues` |
 | `eur_rates.json` | Gecachte EUR-Wechselkurse | `{Währung: Kurs}` |
 | `realized_gains.json` | Realisierte Gewinne/Verluste aus Parqet-Verkäufen | Liste von Einträgen |
 | `dividends.json` | Dividenden aus Parqet-Aktivitäten | Liste von Einträgen |
