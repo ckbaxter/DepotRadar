@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.50"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.51"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1688,6 +1688,113 @@ def _overdue_pass():
     except Exception as e:
         log.warning(f"Überfällig-Prüfung fehlgeschlagen: {e}")
 
+# ── Versionsprüfung (seit v2.8.51) ───────────────────────────────────────────────────
+# Vergleicht die installierten Versionen mit frontend/changelog.json auf main (GitHub). Das Ergebnis
+# erscheint als Hinweis (Kategorie "system", nur Admins) und verschwindet, sobald die Version
+# nachgezogen ist. Ein fehlgeschlagener Abruf bleibt stumm (Homelab ohne Internet) — es wird nichts
+# gemeldet und später erneut versucht. Es gibt bewusst kein Self-Update.
+UPDATE_SOURCE_URL    = "https://raw.githubusercontent.com/ckbaxter/DepotRadar/main/frontend/changelog.json"
+# Das Backend sieht den Frontend-Ordner nicht (nur nginx) — die installierte Frontend-Version holt es
+# deshalb über das Docker-Netzwerk von nginx (Service-Name wie in docker-compose.yml).
+FRONTEND_LOCAL_URL   = os.environ.get("FRONTEND_CHANGELOG_URL", "http://nginx/changelog.json")
+_UPDATE_INTERVAL_H   = 12          # regulärer Abstand zwischen zwei Prüfungen
+_UPDATE_RETRY_MIN    = 60          # nach einem Fehlschlag früher erneut versuchen
+_UPDATE_MAX_BYTES    = 2_000_000   # Schutz vor unerwartet großen Antworten
+_UPDATE_MAX_ENTRIES  = 40          # so viele neueste Einträge genügen für die Änderungsliste
+_UPDATE_MAX_SHOWN    = 3           # Änderungen je Hinweis (Rest als "+ N weitere")
+_UPDATE_LOCAL_TTL    = 60          # Sekunden, die die lokale Frontend-Version zwischengespeichert wird
+_UPDATE_CMD          = {"backend":  "docker compose pull backend && docker compose up -d backend",
+                        "frontend": "git pull"}
+_SEMVER_RE           = re.compile(r"^\d+\.\d+\.\d+$")
+_update_state        = {"remote": None, "local_fe": None, "local_fe_at": 0.0}
+_update_lock         = threading.Lock()
+
+def _semver(v):
+    """'2.8.51' → (2, 8, 51); alles andere → None."""
+    if not isinstance(v, str) or not _SEMVER_RE.match(v): return None
+    return tuple(int(x) for x in v.split("."))
+
+def _update_get_json(url, timeout):
+    """JSON-Dokument per GET holen (Größe begrenzt). Wirft bei jedem Problem."""
+    with requests.get(url, timeout=timeout, stream=True,
+                      headers={"User-Agent": f"DepotRadar/{VERSION} (Versionsprüfung)"}) as r:
+        r.raise_for_status()
+        raw = b""
+        for chunk in r.iter_content(65536):
+            raw += chunk
+            if len(raw) > _UPDATE_MAX_BYTES: raise ValueError("Antwort zu groß")
+    return json.loads(raw.decode("utf-8"))
+
+def _update_clean_text(s, limit):
+    s = re.sub(r"\s+", " ", str(s)).strip()
+    return s if len(s) <= limit else s[:limit - 1].rstrip() + "…"
+
+def _update_parse_remote(data):
+    """Prüft das Remote-Dokument und reduziert es auf das Nötige. Die Datei gilt als nicht
+    vertrauenswürdig: nur Versionen im Format x.y.z, Texte werden gekürzt (das Frontend escaped sie)."""
+    if not isinstance(data, dict): raise ValueError("Unerwartetes Format")
+    fe, be = data.get("frontend_version"), data.get("backend_version")
+    if not (_semver(fe) and _semver(be)): raise ValueError("Versionen fehlen oder sind ungültig")
+    entries = []
+    for e in (data.get("entries") or [])[:_UPDATE_MAX_ENTRIES]:
+        if not isinstance(e, dict): continue
+        ch = e.get("changes") if isinstance(e.get("changes"), list) else e.get("items")
+        if not isinstance(ch, list): continue
+        entries.append({"versions": _update_clean_text(e.get("versions", ""), 120),
+                        "changes":  [_update_clean_text(c, 220) for c in ch if isinstance(c, str) and c.strip()]})
+    return {"frontend_version": fe, "backend_version": be, "entries": entries}
+
+def _update_check_job():
+    """Holt die Remote-Versionen (regulär alle _UPDATE_INTERVAL_H Stunden, siehe start_scheduler).
+    Nach einem Fehlschlag wird nach _UPDATE_RETRY_MIN Minuten ein weiterer Versuch geplant. Wirft nie."""
+    try:
+        remote = _update_parse_remote(_update_get_json(UPDATE_SOURCE_URL, timeout=8))
+        with _update_lock: _update_state["remote"] = remote
+        _issues_refresh()
+        log.info(f"Versionsprüfung: GitHub meldet Backend v{remote['backend_version']} · Frontend v{remote['frontend_version']}")
+    except Exception as e:
+        log.info(f"Versionsprüfung fehlgeschlagen (wird später wiederholt): {e}")
+        try:
+            scheduler.add_job(_update_check_job, "date", run_date=datetime.now() + timedelta(minutes=_UPDATE_RETRY_MIN),
+                              id="update_check_retry", replace_existing=True, misfire_grace_time=900)
+        except Exception as e2:
+            log.warning(f"Versionsprüfung: Wiederholung nicht geplant: {e2}")
+
+def _update_local_frontend():
+    """Installierte Frontend-Version (aus changelog.json, wie sie nginx ausliefert), kurz zwischen-
+    gespeichert. Schlägt der Abruf fehl, bleibt der letzte bekannte Wert — sonst würde ein offener
+    Hinweis bei einem kurzen nginx-Aussetzer fälschlich als erledigt gelten."""
+    now = time_mod.time()
+    with _update_lock:
+        if now - _update_state["local_fe_at"] < _UPDATE_LOCAL_TTL: return _update_state["local_fe"]
+        _update_state["local_fe_at"] = now   # auch bei Fehlschlag: höchstens ein Abruf je Minute
+    try:
+        v = _update_get_json(FRONTEND_LOCAL_URL, timeout=2).get("frontend_version")
+        if _semver(v):
+            with _update_lock: _update_state["local_fe"] = v
+    except Exception as e:
+        log.debug(f"Versionsprüfung: Frontend-Version nicht lesbar: {e}")
+    return _update_state["local_fe"]
+
+def _updates_available():
+    """Verfügbare Updates: [{key, label, installed, latest, changes, more, command}] — leer, wenn
+    die Prüfung noch nie gelungen ist oder alles aktuell ist. Ist die installierte Version neuer
+    als die auf main (Feature-Branch im Test), gibt es keinen Hinweis."""
+    remote = _update_state["remote"]
+    if not remote: return []
+    out = []
+    for key, label, installed in (("backend", "Backend", VERSION), ("frontend", "Frontend", _update_local_frontend())):
+        inst, latest = _semver(installed), _semver(remote.get(f"{key}_version"))
+        if not inst or not latest or latest <= inst: continue
+        marker, changes = re.compile(label + r" v(\d+\.\d+\.\d+)"), []
+        for e in remote["entries"]:
+            m = marker.search(e["versions"])
+            if m and _semver(m.group(1)) > inst: changes.extend(e["changes"])
+        out.append({"key": key, "label": label, "installed": installed, "latest": remote[f"{key}_version"],
+                    "changes": changes[:_UPDATE_MAX_SHOWN], "more": max(0, len(changes) - _UPDATE_MAX_SHOWN),
+                    "command": _UPDATE_CMD[key]})
+    return out
+
 def _issue_scope_text(affected, names, admin):
     parts = []
     if affected: parts.append(f"Betrifft: {affected}")
@@ -1815,6 +1922,13 @@ def _collect_issues():
             "Löst sich beim nächsten erfolgreichen Lauf auf.",
             owners=[ov["uid"]], admin=True, since=ov["exp_ts"], affected=uname.get(ov["uid"], "?"),
             actions=[{"type": "status"}, {"type": "dismiss"}], dismissible=True, job=_JOB_VIEW_KEY[ov["prefix"]])
+
+    # ── Updates (abgeleitet aus dem Versionsvergleich, nur Admins) ────────────────────
+    for up in _updates_available():
+        add(f"update:{up['key']}", "update_available", "action", "system",
+            f"Update verfügbar: {up['label']} v{up['latest']}", f"Installiert ist v{up['installed']}.",
+            admin=True, actions=[{"type": "copy"}],
+            meta={"latest": up["latest"], "changes": up["changes"], "more": up["more"], "command": up["command"]})
     return out
 
 def _reconcile_issues(active):
@@ -3493,6 +3607,10 @@ def start_scheduler():
     # Hinweis-Center (seit v2.8.47): Beobachtungsbasis für überfällige Digests, Aufräumen, Abgleich
     scheduler.add_job(_overdue_pass, "cron", minute="*/15", id="overdue_check",
                       replace_existing=True, misfire_grace_time=None)
+    # Versionsprüfung (seit v2.8.51): erste Prüfung kurz nach dem Start, danach alle 12 Stunden
+    scheduler.add_job(_update_check_job, "interval", hours=_UPDATE_INTERVAL_H, id="update_check",
+                      replace_existing=True, misfire_grace_time=3600,
+                      next_run_time=datetime.now() + timedelta(seconds=30))
     schedule_all_user_digest_jobs()
     if not scheduler.running: scheduler.start()
     _overdue_pass()   # einmal sofort: Basis setzen, bevor die erste 15-Minuten-Marke erreicht ist

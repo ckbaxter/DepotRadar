@@ -437,6 +437,13 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .issue-card .ic-scope{font-size:11px;color:var(--muted);margin-top:3px}
 .issue-card .ic-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .issue-sec{font-size:12px;font-weight:600;color:var(--muted);margin:14px 0 6px}
+/* Versionsprüfung (Frontend v2.13.85): Änderungsliste, Befehl und Footer-Chip */
+.issue-card .ic-list{margin:6px 0 0;padding-left:18px;font-size:12px}
+.issue-card .ic-list li{margin:2px 0;word-break:break-word}
+.issue-card .ic-more{font-size:11px;color:var(--muted);margin-top:3px}
+.issue-card .ic-cmd{margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font:11.5px/1.4 ui-monospace,Menlo,Consolas,monospace;overflow-x:auto;white-space:pre}
+.upd-chip{display:none;align-items:center;margin-left:6px;padding:1px 7px;border-radius:99px;border:1px solid var(--accent);color:var(--accent);font-size:10px;font-weight:700;cursor:pointer;background:rgba(78,124,246,.10);vertical-align:middle}
+.upd-chip:hover{background:var(--accent);color:#fff}
 .usr-err{display:none;font-size:12px;color:#f87171;line-height:1.5;margin-top:6px}
 /* Benutzer-Einstellungen: aufklappbare Themen-Sektionen (seit v2.12.13) */
 .usr-section{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg3);margin-bottom:10px;overflow:hidden}
@@ -5850,7 +5857,7 @@ async function openChangelog(){
 let _issues = {active:[], resolved:[], counts:{error:0,warning:0,action:0,total:0}, channels:[]};
 let _issueFilter = "all";
 let _issuesView  = [];   // aktuell gerenderte Karten (Index → Hinweis) für die Aktions-Buttons
-const ISSUE_CATS  = {all:"Alle", notification:"Benachrichtigungen", job:"Jobs", source:"Datenquellen", parqet:"Parqet"};
+const ISSUE_CATS  = {all:"Alle", notification:"Benachrichtigungen", job:"Jobs", source:"Datenquellen", parqet:"Parqet", system:"System"};
 const ISSUE_ICONS = {error:"⛔", warning:"⚠️", action:"🔵"};
 
 async function refreshIssues(){
@@ -5864,6 +5871,7 @@ async function refreshIssues(){
   } catch(e){ return; }   // Netzwerkfehler: letzten Stand stehen lassen
   renderIssueBadge();
   renderIssueBanner();
+  renderUpdateChips();
   if(document.getElementById("issuesModal")?.style.display === "flex") renderIssuesModal();
   updateHealthStatusDot();
 }
@@ -5894,6 +5902,30 @@ function renderIssueBanner(){
     + `<span class="ib-text"><b>${esc(top.title)}</b> – ${esc(top.message)}</span>`
     + (list.length > 1 ? `<span class="ib-more">+${list.length-1} weitere</span>` : "")
     + `<span class="ib-more">Details ›</span>`;
+}
+
+// Footer: kleiner Chip „↑ v…“ hinter der Version, für die ein Update bereitliegt (nur Admins erhalten den Hinweis)
+function renderUpdateChips(){
+  for(const [key, id] of [["backend","updChipBackend"], ["frontend","updChipFrontend"]]){
+    const el = document.getElementById(id); if(!el) continue;
+    const it = (_issues.active||[]).find(i => i.id === `update:${key}`);
+    if(!it){ el.style.display = "none"; continue; }
+    el.textContent = `↑ v${it.meta?.latest || ""}`;
+    el.title = "Update verfügbar – Klick für Details";
+    el.style.display = "inline-flex";
+  }
+}
+
+// Text in die Zwischenablage (HTTPS: Clipboard-API; sonst Fallback über ein temporäres Textfeld)
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch(e){
+    try {
+      const ta = document.createElement("textarea"); ta.value = t; ta.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy"); ta.remove(); return ok;
+    } catch(e2){ return false; }
+  }
 }
 
 function _fmtDuration(sec){
@@ -5935,7 +5967,8 @@ function renderIssuesModal(){
       : `seit ${esc(_fmtShortDT(it.first_seen))}`;
     const btns = resolved ? "" : (it.actions||[]).map((a,ai) => {
       const L = {profile:"👤 Profil öffnen", test:"🔔 Test senden", reconnect:"🔗 Neu verbinden",
-                 pending:"📋 Jetzt prüfen", status:"📈 System-Status", dismiss:"✓ Gesehen"}[a.type];
+                 pending:"📋 Jetzt prüfen", status:"📈 System-Status", dismiss:"✓ Gesehen",
+                 copy:"📋 Befehl kopieren"}[a.type];
       if(!L) return "";
       return `<button class="btn ${a.type==="dismiss"?"btn-ghost":"btn-primary"} btn-sm" onclick="issueAction(${idx},${ai})">${L}</button>`;
     }).join("");
@@ -5943,6 +5976,9 @@ function renderIssuesModal(){
       <div class="ic-head"><span>${resolved ? "✅" : (ISSUE_ICONS[it.severity]||"⚠️")}</span>
         <span class="ic-title">${esc(it.title)}</span><span class="ic-since">${since}</span></div>
       <div class="ic-msg">${esc(it.message)}</div>
+      ${(it.meta?.changes||[]).length ? `<ul class="ic-list">${it.meta.changes.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
+      ${it.meta?.more > 0 ? `<div class="ic-more">+ ${esc(it.meta.more)} weitere Änderung${it.meta.more===1?"":"en"}</div>` : ""}
+      ${!resolved && it.meta?.command ? `<div class="ic-cmd">${esc(it.meta.command)}</div>` : ""}
       ${it.scope_text ? `<div class="ic-scope">${esc(it.scope_text)}</div>` : ""}
       ${btns ? `<div class="ic-actions">${btns}</div>` : ""}
     </div>`;
@@ -5967,6 +6003,10 @@ async function issueAction(idx, ai){
         headers:{"Content-Type":"application/json"}, body:JSON.stringify({user_id: activeUser?.id||""})});
       if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || "Fehlgeschlagen");
       await refreshIssues();
+    } else if(a.type === "copy"){
+      const cmd = it.meta?.command || "";
+      const okc = cmd && await copyText(cmd);
+      toast(okc ? "Befehl kopiert" : "Kopieren nicht möglich – bitte den Befehl markieren und von Hand kopieren", !!okc);
     } else if(a.type === "status"){
       closeModal("issuesModal"); openHealthModal();
     } else if(a.type === "profile"){
@@ -8621,7 +8661,7 @@ setInterval(updateHealthStatusDot,60000);
 setInterval(refreshIssues,60000);
 </script>
 <div class="app-version">
-  <span>Frontend v<span id="frontendVersion">…</span> &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span></span>
+  <span>Frontend v<span id="frontendVersion">…</span><span class="upd-chip" id="updChipFrontend" onclick="openIssuesModal()"></span> &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span><span class="upd-chip" id="updChipBackend" onclick="openIssuesModal()"></span></span>
   <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
   <a href="javascript:void(0)" onclick="openChangelog()"
      style="color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:4px;vertical-align:middle;opacity:.7">
