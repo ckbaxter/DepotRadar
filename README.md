@@ -114,7 +114,7 @@ DepotRadar/
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html
-│   ├── changelog.json         # Änderungsverlauf + Frontend- und Backend-Version, einzige Stelle zum Pflegen der Versionen (nginx cached die Datei nie)
+│   ├── changelog.json         # Änderungsverlauf + aktuelle Frontend- und Backend-Version (nginx cached die Datei nie)
 │   └── icons/
 │       ├── favicon.svg
 │       ├── favicon.ico
@@ -123,11 +123,6 @@ DepotRadar/
 │       └── apple-touch-icon.png
 ├── nginx/
 │   └── nginx.conf
-├── scripts/
-│   └── sync-version.py        # übernimmt die Versionen aus changelog.json nach app.py und in die README-Badges (--check prüft nur)
-├── .github/workflows/
-│   ├── backend-image.yml      # baut das Backend-Image bei einem Tag backend-v<VERSION>
-│   └── version-check.yml      # prüft bei Pull Requests, dass die Versionen synchron sind
 ├── data/
 │   ├── README.md              # Übersicht aller Dateien: Zweck, Struktur, Schreiber/Leser
 │   ├── xetra_map.json         # XETRA-Ticker-Mapping (im Repo, selbst-erweiternd via OpenFIGI)
