@@ -1,6 +1,14 @@
 {
   "frontend_version": "2.13.84",
+  "backend_version": "2.8.50",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Backend v2.8.50",
+      "changes": [
+        "Versionsverwaltung: Backend- und Frontend-Version werden jetzt zentral in dieser Datei gepflegt; die Version im Backend und die Badges der README werden daraus per Skript übernommen und bei Pull Requests sowie Releases automatisch geprüft."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.84",

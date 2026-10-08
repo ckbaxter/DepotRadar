@@ -4,7 +4,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.49-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.50-blue)
 ![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.84-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
@@ -114,7 +114,7 @@ DepotRadar/
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html
-│   ├── changelog.json         # Änderungsverlauf + aktuelle Frontend-Version (nginx cached die Datei nie)
+│   ├── changelog.json         # Änderungsverlauf + aktuelle Frontend- und Backend-Version (nginx cached die Datei nie)
 │   └── icons/
 │       ├── favicon.svg
 │       ├── favicon.ico

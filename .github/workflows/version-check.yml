@@ -1,0 +1,22 @@
+name: Versions-Check
+
+# Prüft bei jedem Pull Request, dass die Versionen synchron sind: frontend/changelog.json ist
+# die einzige Stelle, an der sie von Hand geändert werden. VERSION in backend/app.py und die
+# README-Badges werden daraus mit `python3 scripts/sync-version.py` übernommen; der jüngste
+# Changelog-Eintrag muss zur Version passen. Schlägt der Check fehl, steht in der Ausgabe,
+# welche Stelle abweicht.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Versionen prüfen
+        run: python3 scripts/sync-version.py --check

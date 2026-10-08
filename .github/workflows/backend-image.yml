@@ -4,7 +4,8 @@ name: Backend-Image
 # (ghcr.io/ckbaxter/depotradar-backend). Ausgelöst wird nur durch ein Tag
 # `backend-v<VERSION>`, z. B. `backend-v2.8.47` — nicht durch normale Pushes.
 # Zusätzlich manuell startbar (Actions → Backend-Image → Run workflow), entweder
-# auf einem Tag `backend-v*` oder auf `main` (baut dann die VERSION aus app.py neu).
+# auf einem Tag `backend-v*` oder auf `main` (baut dann die backend_version aus
+# frontend/changelog.json neu).
 # Plattformen: linux/amd64 und linux/arm64.
 on:
   push:
@@ -25,19 +26,19 @@ jobs:
         with:
           python-version: "3.14"
 
-      # Tag, VERSION in app.py und README-Badge müssen übereinstimmen.
-      # Manueller Start ist nur auf einem Tag oder auf main erlaubt.
+      # Die Version kommt aus frontend/changelog.json (backend_version). Das Skript prüft, dass
+      # VERSION in app.py, die README-Badges und der jüngste Changelog-Eintrag dazu passen,
+      # beim Tag-Build zusätzlich den Tag. Manueller Start ist nur auf einem Tag oder auf main erlaubt.
       - name: Version prüfen
         id: ver
         run: |
-          V=$(sed -nE 's/^VERSION\s*=\s*"([^"]+)".*/\1/p' backend/app.py)
-          [ -n "$V" ] || { echo "::error::VERSION in backend/app.py nicht gefunden"; exit 1; }
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            [ "backend-v$V" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME passt nicht zu VERSION $V in app.py"; exit 1; }
+            python scripts/sync-version.py --check --tag "$GITHUB_REF_NAME"
           else
             [ "$GITHUB_REF_NAME" = "main" ] || { echo "::error::Manueller Start nur auf main oder einem Tag backend-v* (gewählt: $GITHUB_REF_NAME)"; exit 1; }
+            python scripts/sync-version.py --check
           fi
-          grep -q "Backend-v$V" README.md || { echo "::error::README-Badge ist nicht auf v$V aktualisiert"; exit 1; }
+          V=$(python -c "import json; print(json.load(open('frontend/changelog.json', encoding='utf-8'))['backend_version'])")
           echo "v=$V" >> "$GITHUB_OUTPUT"
 
       - name: Syntax prüfen
