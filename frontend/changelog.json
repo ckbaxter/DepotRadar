@@ -1,7 +1,14 @@
 {
-  "frontend_version": "2.13.84",
-  "backend_version": "2.8.50",
+  "frontend_version": "2.13.85",
+  "backend_version": "2.8.51",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.85 · Backend v2.8.51",
+      "changes": [
+        "Versionsprüfung: Administratoren sehen im Hinweis-Center (Kategorie „System“) und als Chip „↑ v…“ im Footer, wenn auf GitHub eine neuere Backend- oder Frontend-Version vorliegt – samt den neuen Änderungen und dem passenden Update-Befehl zum Kopieren. Der Hinweis verschwindet von selbst, sobald die Version nachgezogen ist; geprüft wird beim Start und danach alle 12 Stunden, ein Fehlschlag bleibt stumm."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Backend v2.8.50",
