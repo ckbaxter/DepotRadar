@@ -1,6 +1,13 @@
 {
-  "frontend_version": "2.13.83",
+  "frontend_version": "2.13.84",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.84",
+      "changes": [
+        "Erträge: Hinter der Dividenden-Jahressumme zeigt ein Chip jetzt die Veränderung zum Vorjahr in Prozent (▲ grün = mehr, ▼ rot = weniger). Im laufenden Jahr wird mit dem gleichen Zeitraum des Vorjahres verglichen, bei früheren Jahren Jahr gegen Jahr; Antippen wechselt zwischen Prozent und Euro-Differenz. Gab es im Vorjahr keine Dividenden, steht „neu“."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.83 · Backend v2.8.49",
