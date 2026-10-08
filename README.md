@@ -4,7 +4,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.49-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.50-blue)
 ![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.84-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
@@ -114,7 +114,7 @@ DepotRadar/
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html
-│   ├── changelog.json         # Änderungsverlauf + aktuelle Frontend-Version (nginx cached die Datei nie)
+│   ├── changelog.json         # Änderungsverlauf + Frontend- und Backend-Version, einzige Stelle zum Pflegen der Versionen (nginx cached die Datei nie)
 │   └── icons/
 │       ├── favicon.svg
 │       ├── favicon.ico
@@ -123,6 +123,11 @@ DepotRadar/
 │       └── apple-touch-icon.png
 ├── nginx/
 │   └── nginx.conf
+├── scripts/
+│   └── sync-version.py        # übernimmt die Versionen aus changelog.json nach app.py und in die README-Badges (--check prüft nur)
+├── .github/workflows/
+│   ├── backend-image.yml      # baut das Backend-Image bei einem Tag backend-v<VERSION>
+│   └── version-check.yml      # prüft bei Pull Requests, dass die Versionen synchron sind
 ├── data/
 │   ├── README.md              # Übersicht aller Dateien: Zweck, Struktur, Schreiber/Leser
 │   ├── xetra_map.json         # XETRA-Ticker-Mapping (im Repo, selbst-erweiternd via OpenFIGI)
