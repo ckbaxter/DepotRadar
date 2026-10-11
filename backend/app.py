@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.52"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.53"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2927,12 +2927,22 @@ def _weekly_portfolio_perf(depot_id, current_total):
     target = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     return _portfolio_perf_vs_snapshot(depot_id, current_total, target)
 
-def _daily_portfolio_perf(depot_id, current_total):
+def _daily_portfolio_perf(depot_id, current_total, day=None):
     """Tageszusammenfassung: Vergleich mit dem letzten Snapshot VOR heute. Snapshots entstehen
     nur an den konfigurierten Handelstagen, daher ist die Basis z.B. montags der Freitag —
-    der Aufrufer zeigt deshalb das konkrete Datum (ref_date) statt „Vortag“ an."""
-    target = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    der Aufrufer zeigt deshalb das konkrete Datum (ref_date) statt „Vortag“ an.
+    day (date/datetime, optional): Bezugstag statt heute — die Berichts-Ansicht nutzt am
+    Wochenende den letzten Handelstag, die Basis ist dann der Snapshot vor diesem Tag."""
+    target = ((day or datetime.now()) - timedelta(days=1)).strftime("%Y-%m-%d")
     return _portfolio_perf_vs_snapshot(depot_id, current_total, target)
+
+def _last_trading_day(now=None):
+    """Letzter Handelstag im Sinne der Digest-Scheduler (Mo–Fr): werktags der aktuelle Tag,
+    am Wochenende der Freitag davor. Börsenfeiertage werden bewusst nicht berücksichtigt."""
+    d = (now or datetime.now()).date()
+    while d.weekday() > 4:
+        d -= timedelta(days=1)
+    return d
 
 def _depot_total_value(stocks):
     """Aktueller Gesamtwert eines Depots in € (Summe current_eur × shares)."""
@@ -3236,19 +3246,21 @@ def _cross_html_rows(rows):
 
 _CROSS_DISCLAIMER = "Trendindikator, keine Anlageempfehlung."
 
-def _build_daily_cross_data(depot_id):
+def _build_daily_cross_data(depot_id, day=None):
     """Heute erfolgreich verbuchte Trendwechsel (kind="cross") eines Depots — separat von den
-    Alarmen, da sie nicht in "Alarm(e)" mitgezählt werden."""
-    today = datetime.now().strftime("%d.%m.%Y")
+    Alarmen, da sie nicht in "Alarm(e)" mitgezählt werden. day (date/datetime, optional):
+    Bezugstag statt heute (Berichts-Ansicht am Wochenende)."""
+    today = (day or datetime.now()).strftime("%d.%m.%Y")
     return [n for n in load_notifications()
             if n.get("depot_id") == depot_id and n.get("success", True)
             and n.get("kind") == "cross" and n.get("time", "").startswith(today)]
 
-def _build_daily_ath_digest_data(depot_id):
+def _build_daily_ath_digest_data(depot_id, day=None):
     """Sammelt alle heute für dieses Depot erfolgreich gesendeten Discount- und
     ATH-Alarme aus notifications.json (per kind-Feld, siehe send_apprise/add_log).
-    Kein neues Datenfeld nötig — reine Auswertung des bestehenden Verlaufs."""
-    today   = datetime.now().strftime("%d.%m.%Y")
+    Kein neues Datenfeld nötig — reine Auswertung des bestehenden Verlaufs.
+    day (date/datetime, optional): Bezugstag statt heute (Berichts-Ansicht am Wochenende)."""
+    today   = (day or datetime.now()).strftime("%d.%m.%Y")
     entries = [n for n in load_notifications()
                if n.get("depot_id") == depot_id and n.get("success", True)
                and n.get("kind") in ("discount", "ath")
@@ -3429,6 +3441,61 @@ def build_daily_watchlist_digest_html(grouped):
     </div>
     <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
     </body></html>"""
+
+# ── Berichts-Ansicht (Tages-/Wochenbericht direkt in der App) ─────────────────────────────
+# Rechnet dieselben Daten wie die versendeten Digests (_build_digest_data bzw. die
+# _build_daily_*-Helfer), liefert sie aber strukturiert als JSON — ohne Versand, ohne Log-Eintrag.
+
+def _report_perf(pp):
+    """Portfolio-Performance (aus _portfolio_perf_vs_snapshot) als JSON-Dict; None bleibt None."""
+    if not pp: return None
+    return {"delta_pct": round(pp["delta_pct"], 2), "delta_eur": round(pp["delta_eur"], 2),
+            "ref_date": pp["ref_date"], "ref_label": _ref_date_label(pp["ref_date"])}
+
+def build_weekly_report(depot, stocks):
+    """Wochenbericht als JSON-Dict (Datenbasis: _build_digest_data, wie der versendete Digest)."""
+    d = _build_digest_data(depot, stocks)
+    nachkauf = [{"name": it["stock"]["name"], "discount": round(it["discount"], 1), "qty": it["qty"],
+                 "est_eur": round(it["qty"] * it["cur"]) if it["qty"] else None}
+                for it in d["nk_items"]]
+    def _perf_item(pair):
+        return {"name": pair[0]["name"], "perf": round(pair[1], 1)} if pair else None
+    return {"type": "weekly", "depot_name": d["name"], "total": d["total"], "kw": d["kw"],
+            "port_perf": _report_perf(d["port_perf"]), "buckets": d["buckets"],
+            "nachkauf": nachkauf,
+            "perf_best": _perf_item(d["perf_best"]), "perf_worst": _perf_item(d["perf_worst"]),
+            "near": [{"name": it["name"], "discount": round(it["discount"], 1),
+                      "lvl": it["lvl"], "next_price": it["next_price"]} for it in d["near_items"]],
+            "sectors": [{"name": k, "count": v}
+                        for k, v in sorted(d["sector_counts"].items(), key=lambda x: -x[1])],
+            "updated": datetime.now().strftime("%H:%M")}
+
+def build_daily_report(depot, stocks, user):
+    """Tagesbericht als JSON-Dict. Bezugstag ist heute, am Wochenende der letzte Handelstag
+    (Freitag). interim: heute und vor der Versandzeit der Tageszusammenfassung des Users —
+    es können noch Alarme dazukommen. Trendwechsel nur, wenn der User sie in der
+    Zusammenfassung sehen will (cross_digest), wie im versendeten Digest."""
+    now      = datetime.now()
+    day      = _last_trading_day(now)
+    is_today = day == now.date()
+    did      = depot["id"]
+    ath_hits, discount_hits = _build_daily_ath_digest_data(did, day)
+    cross_rows = (_cross_digest_rows(_build_daily_cross_data(did, day))
+                  if get_cross_prefs(user)["cross_digest"] else [])
+    port_perf  = _daily_portfolio_perf(did, _depot_total_value(stocks), day)
+    _wd, _wt, dtime = get_user_digest_settings(user or {})
+    dh, dm = _parse_hhmm(dtime, _DAILY_DIGEST_TIME_DEFAULT)
+    return {"type": "daily", "depot_name": depot.get("name", "Depot"), "total": len(stocks),
+            "day": {"date": day.isoformat(), "label": _ref_date_label(day.isoformat()),
+                    "is_today": is_today},
+            "interim": is_today and (now.hour, now.minute) < (dh, dm),
+            "digest_time": f"{dh:02d}:{dm:02d}",
+            "digest_enabled": bool(depot.get("daily_ath_digest", False)),
+            "port_perf": _report_perf(port_perf),
+            "ath": _dedupe_digest_lines(ath_hits),
+            "discount": _dedupe_digest_lines(discount_hits),
+            "cross": cross_rows, "cross_disclaimer": _CROSS_DISCLAIMER,
+            "updated": now.strftime("%H:%M")}
 
 @_tracked_job("daily_ath_digest", per_user=True)
 def send_daily_ath_digests(user_id):
@@ -4746,6 +4813,24 @@ def get_depot_earnings(depot_id):
         "total_dividends_eur":          round(sum(e.get("amount_eur") or 0 for e in dividends), 2),
         "total_dividends_net_eur":      round(sum(e.get("amount_net_eur") or 0 for e in dividends), 2),
     })
+
+@app.route("/api/depots/<depot_id>/report", methods=["GET"])
+def get_depot_report(depot_id):
+    """Berichts-Ansicht: ?type=daily|weekly (Default daily). Reine Leseroute — kein Versand,
+    kein Verlauf-Eintrag, unabhängig davon, ob der Digest für das Depot aktiviert ist.
+    Nur für Depots; Watchlist-IDs liefern 404."""
+    kind = request.args.get("type", "daily")
+    if kind not in ("daily", "weekly"):
+        return jsonify({"error": "type muss daily oder weekly sein"}), 400
+    depot = get_depot(depot_id)
+    if not depot: return jsonify({"error": "Depot nicht gefunden"}), 404
+    stocks = load_stocks(depot_id)
+    if kind == "weekly":
+        if not stocks:
+            return jsonify({"type": "weekly", "depot_name": depot.get("name", "Depot"),
+                            "total": 0, "empty": True})
+        return jsonify(build_weekly_report(depot, stocks))
+    return jsonify(build_daily_report(depot, stocks, get_depot_user(depot_id)))
 
 def _patch_earning_name(depot_id, entry_id, load_fn, save_fn):
     """Gemeinsame Logik für die beiden Namens-PATCH-Routen unten. Setzt name manuell und

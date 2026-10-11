@@ -491,6 +491,28 @@ details[open] .usr-arrow{transform:rotate(90deg)}
 .sd-item .v{font-size:13px;font-weight:600}
 .sd-divider{border-top:1px solid var(--border);margin:16px 0}
 .sd-section-lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+/* Berichte-Modal (Frontend v2.13.87) */
+.rp-depot{font-size:12px;color:var(--muted)}
+.rp-meta{font-size:11px;color:var(--muted);margin-bottom:12px}
+.rp-note{padding:9px 12px;border-radius:8px;background:rgba(78,124,246,.10);border:1px solid rgba(78,124,246,.45);font-size:12px;line-height:1.4;margin-bottom:16px}
+.rp-sec{margin-bottom:16px}
+.rp-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.rp-card .rp-lbl{font-size:11px;color:var(--muted);margin-bottom:4px}
+.rp-card .rp-big{font-size:17px;font-weight:700}
+.rp-card .rp-big span{font-size:14px;font-weight:600}
+.rp-list{background:var(--bg3);border:1px solid var(--border);border-radius:10px}
+.rp-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;font-size:13px}
+.rp-row+.rp-row{border-top:1px solid var(--border)}
+.rp-row .rp-sub{color:var(--muted);text-align:right;flex-shrink:0}
+.rp-row .rp-detail{font-size:11px;color:var(--muted);margin-top:2px}
+.rp-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;gap:2px;margin-bottom:10px}
+.rp-dist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px;font-size:13px}
+.rp-dist>div{display:flex;justify-content:space-between}
+.rp-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.rp-chips{display:flex;flex-wrap:wrap;gap:6px}
+.rp-chip{padding:4px 10px;border-radius:12px;background:var(--bg3);border:1px solid var(--border);font-size:12px}
+.rp-disc{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4}
+.rp-empty{padding:18px 14px;text-align:center;font-size:13px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:10px}
 .sd-summary{font-size:13px;line-height:1.55;color:var(--text)}
 .sd-summary.loading{color:var(--muted);display:flex;align-items:center;gap:8px}
 .sd-summary.empty{color:var(--muted);font-style:italic}
@@ -758,6 +780,19 @@ select</style>
       <div class="snapshot-body">
         <div id="snapshotModeHint" style="font-size:10px;color:var(--muted);padding:0 0 6px;display:none"></div>
         <svg id="snapshotChart" width="100%" height="160" style="display:block"></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Berichte: Tages-/Wochenbericht direkt ansehen (nur Depots, seit v2.13.87) -->
+  <div id="reportsRow" style="display:none">
+    <div class="snapshot-header sub-header" onclick="openReportModal()">
+      <div class="snapshot-header-left">
+        <span>📰 Berichte</span>
+      </div>
+      <div class="snapshot-period" onclick="event.stopPropagation()">
+        <button onclick="openReportModal('daily')">🌙 Tagesbericht</button>
+        <button onclick="openReportModal('weekly')">📊 Wochenbericht</button>
       </div>
     </div>
   </div>
@@ -1227,6 +1262,29 @@ select</style>
   </div>
 </div>
 
+<!-- Modal: Berichte (Tages-/Wochenbericht ansehen, seit v2.13.87) -->
+<div class="overlay" id="reportModal" style="display:none" onclick="closeIfOverlay(event,'reportModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">&#128240; Berichte</span>
+      <button class="close-btn" onclick="closeModal('reportModal')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="rp-depot" id="rpDepot"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin:10px 0 8px">
+        <button class="btn btn-ghost btn-sm notif-filter-btn active" id="rpTabDaily" onclick="setReportType('daily')" style="font-size:12px">&#127769; Tagesbericht</button>
+        <button class="btn btn-ghost btn-sm notif-filter-btn" id="rpTabWeekly" onclick="setReportType('weekly')" style="font-size:12px">&#128202; Wochenbericht</button>
+      </div>
+      <div class="rp-meta" id="rpMeta"></div>
+      <div id="rpContent"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-ghost" onclick="loadReport()">&#8635; Aktualisieren</button>
+      <button class="btn btn-ghost" onclick="closeModal('reportModal')">Schließen</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Erträge (Dividenden + realisierte G/V aus Parqet-Sync, seit v2.13.52) -->
 <div class="overlay" id="earningsModal" style="display:none" onclick="closeIfOverlay(event,'earningsModal')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1424,7 +1482,23 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section" id="help-topflop" data-kw="Gewinner Verlierer beste schlechteste Tagesperformance Prozent Euro umschalten Karten Übersicht">
+      <details class="help-section" id="help-berichte" data-kw="Bericht Berichte Tagesbericht Wochenbericht Zusammenfassung Digest Vorschau ansehen Alarme Allzeithoch Discount Trendwechsel Nachkauf Handelstag Zwischenstand">
+        <summary class="help-summary">📰 Berichte</summary>
+        <div class="help-body">
+          Unter <b>Übersichten → 📰 Berichte</b> lassen sich <b>Tagesbericht</b> und <b>Wochenbericht</b>
+          des aktuellen Depots direkt in der App ansehen — mit denselben Inhalten wie die versendeten
+          Zusammenfassungen, aber unabhängig davon, ob der Versand aktiviert ist. Es wird nichts gesendet.<br><br>
+          <b>Tagesbericht:</b> Wertentwicklung des Depots, ATH-Treffer, Discount-Alarme und (wenn in der
+          Zusammenfassung aktiviert) Trendwechsel. Vor der Versandzeit ist er ein <b>Zwischenstand</b>.
+          Am Wochenende zeigt er den <b>letzten Handelstag</b> (Freitag; Feiertage werden nicht berücksichtigt).<br><br>
+          <b>Wochenbericht:</b> Wertentwicklung ggü. Vorwoche, Verteilung nach ATH-Abstand,
+          Nachkauf-Kandidaten, beste/schlechteste Aktie der Woche, Aktien kurz vor dem nächsten Level und Sektoren.<br><br>
+          <b>↻ Aktualisieren</b> berechnet den Bericht aus den gespeicherten Kursen neu; es löst keinen
+          Kurs-Refresh aus. Für Watchlists gibt es keine Berichte.
+        </div>
+      </details>
+
+      <details class="help-section" id="help-topflop"data-kw="Gewinner Verlierer beste schlechteste Tagesperformance Prozent Euro umschalten Karten Übersicht">
         <summary class="help-summary">🏆 Top 3 / Flop 3</summary>
         <div class="help-body">
           In der Portfolio-Übersicht zeigen vier Karten die besten und schlechtesten Positionen:
@@ -2518,6 +2592,9 @@ function applyViewUiState(){
   // Nachkauf-Schwelle seit v2.8.10 keine Watchlist-Eigenschaft mehr.
   const buyBtn = document.getElementById("buyFilterBtn");
   if(buyBtn) buyBtn.style.display = wl ? "none" : "";
+  // Berichte-Zeile (Tages-/Wochenbericht) gibt es nur für Depots, nicht für Watchlists
+  const repRow = document.getElementById("reportsRow");
+  if(repRow) repRow.style.display = (wl || !activeDepot) ? "none" : "";
 }
 
 // Leert die komplette Ansicht, wenn dem eingeloggten User kein Depot (und keine
@@ -2533,6 +2610,7 @@ function renderEmptyView(){
   const psw=document.getElementById("portfolioSummaryWrap"); if(psw) psw.style.display="none";
   const sow=document.getElementById("sectorOverviewWrap");   if(sow) sow.style.display="none";
   const snap=document.getElementById("snapshotSection");     if(snap) snap.style.display="none";
+  const rrow=document.getElementById("reportsRow");          if(rrow) rrow.style.display="none";
   const vs=document.getElementById("viewSelect");            if(vs)  vs.style.display="none";
   const athBtn=document.getElementById("athCheckBtn");       if(athBtn) athBtn.style.display="none";
   const lu=document.getElementById("lastUpdate");            if(lu)  lu.textContent="";
@@ -3387,7 +3465,7 @@ function toggleAthOverview(){
 function updateOverviewHint(){
   const hint = document.getElementById("overviewHint");
   if(!hint) return;
-  hint.textContent = isWl() ? "📉 🏷" : "📊 📉 🏷 📈";
+  hint.textContent = isWl() ? "📉 🏷" : "📊 📉 🏷 📈 📰";
 }
 
 function toggleOverviewGroup(){
@@ -6575,6 +6653,145 @@ function closeModal(id){
   }
 }
 function closeIfOverlay(e,id){if(e.target===document.getElementById(id))closeModal(id);}
+
+// ── Berichte: Tages-/Wochenbericht ansehen (Frontend v2.13.87 / Backend v2.8.53) ──
+// Rechnet das Backend bei jedem Öffnen bzw. „Aktualisieren“ neu (GET /depots/<id>/report) —
+// reine Ansicht, kein Versand. Nur für Depots; die Zeile ist in Watchlists ausgeblendet.
+let _reportType = "daily";
+let _reportDepotId = null;
+let _reportReq = 0;   // verwirft Antworten veralteter Aufrufe (Tab-/Depotwechsel, schnelles Mehrfach-Klicken)
+
+function openReportModal(type){
+  if(activeView.type !== "depot" || !activeDepot) return;
+  _reportDepotId = activeDepot.id;
+  const t = type || localStorage.getItem("reportTab");
+  document.getElementById("rpDepot").textContent = activeDepot.name || "";
+  openModal("reportModal");
+  setReportType(t);
+}
+
+function setReportType(type){
+  _reportType = type === "weekly" ? "weekly" : "daily";
+  localStorage.setItem("reportTab", _reportType);
+  document.getElementById("rpTabDaily").classList.toggle("active", _reportType === "daily");
+  document.getElementById("rpTabWeekly").classList.toggle("active", _reportType === "weekly");
+  loadReport();
+}
+
+async function loadReport(){
+  const depotId = _reportDepotId, type = _reportType, req = ++_reportReq;
+  const box = document.getElementById("rpContent");
+  document.getElementById("rpMeta").textContent = "";
+  box.innerHTML = '<div class="rp-empty">Lade …</div>';
+  try{
+    const r = await fetch(`${API}/depots/${encodeURIComponent(depotId)}/report?type=${type}`);
+    const d = await r.json();
+    if(req !== _reportReq) return;
+    if(!r.ok) throw new Error(d.error || "Fehler");
+    renderReport(d);
+  } catch(e){
+    if(req !== _reportReq) return;
+    box.innerHTML = '<div class="rp-empty">Bericht konnte nicht geladen werden.</div>';
+  }
+}
+
+const _rpNum = (v, digits) => Math.abs(v).toLocaleString("de-DE", {minimumFractionDigits:digits, maximumFractionDigits:digits});
+const rpPct  = v => (v >= 0 ? "+" : "−") + _rpNum(v, 1) + " %";
+const rpEur  = v => (v >= 0 ? "+" : "−") + _rpNum(Math.round(v), 0) + " €";
+const rpDiscColor = d => d < 20 ? "var(--green)" : d < 40 ? "var(--yellow)" : d < 60 ? "var(--orange)" : "var(--red)";
+
+function rpPortCard(pp, label){
+  if(!pp) return "";
+  const up = pp.delta_pct >= 0;
+  return `<div class="rp-card rp-sec"><div class="rp-lbl">Portfolio ggü. ${esc(label)}</div>
+    <div class="rp-big" style="color:var(${up ? "--green" : "--red"})">${up ? "📈" : "📉"} ${rpPct(pp.delta_pct)} <span>(${rpEur(pp.delta_eur)})</span></div></div>`;
+}
+
+function rpSection(title, inner){
+  return `<div class="rp-sec"><div class="sd-section-lbl">${title}</div>${inner}</div>`;
+}
+
+function renderReport(d){
+  const box = document.getElementById("rpContent");
+  document.getElementById("rpDepot").textContent = `${d.depot_name} · ${d.total} Aktie${d.total === 1 ? "" : "n"}`;
+  box.innerHTML = d.type === "weekly" ? rpWeeklyHtml(d) : rpDailyHtml(d);
+  const stand = d.updated ? ` · Stand: ${d.updated} Uhr` : "";
+  document.getElementById("rpMeta").textContent = d.type === "weekly"
+    ? (d.empty ? "" : `KW ${d.kw}${stand}`)
+    : (d.day.is_today ? `Heute${stand}` : `Letzter Handelstag: ${d.day.label}${stand}`);
+}
+
+function rpDailyHtml(d){
+  let html = "";
+  if(d.interim){
+    html += `<div class="rp-note">Zwischenstand: ${d.digest_enabled
+      ? `Die Tageszusammenfassung wird um ${esc(d.digest_time)} Uhr versendet. Bis dahin können noch Alarme dazukommen.`
+      : "Im Lauf des Tages können noch Alarme dazukommen."}</div>`;
+  }
+  html += rpPortCard(d.port_perf, d.port_perf ? d.port_perf.ref_label : "");
+  const rows = list => `<div class="rp-list">${list.map(l => `<div class="rp-row"><span>${esc(l)}</span></div>`).join("")}</div>`;
+  if(d.ath.length){
+    html += rpSection(`🎉 ${d.ath.length} neue${d.ath.length === 1 ? "s Allzeithoch" : " Allzeithochs"}`, rows(d.ath));
+  }
+  if(d.discount.length){
+    html += rpSection(`📉 ${d.discount.length} Discount-Alarm${d.discount.length === 1 ? "" : "e"}`, rows(d.discount));
+  }
+  if(d.cross.length){
+    const crossRows = d.cross.map(c => {
+      const golden = c.type === "golden";
+      return `<div class="rp-row"><div><div>${esc(c.line)}</div><div class="rp-detail">${esc(c.detail)}</div></div>
+        <span style="font-weight:600;flex-shrink:0;color:var(${golden ? "--green" : "--red"})">${golden ? "Golden Cross" : "Death Cross"}</span></div>`;
+    }).join("");
+    html += rpSection(`🔀 Trendwechsel SMA50/SMA200 (${d.cross.length})`,
+      `<div class="rp-list">${crossRows}</div><div class="rp-disc">${esc(d.cross_disclaimer)}</div>`);
+  }
+  if(!d.ath.length && !d.discount.length && !d.cross.length){
+    html += `<div class="rp-empty">${d.day.is_today
+      ? "Heute gab es keine ATH- oder Discount-Alarme."
+      : `Am letzten Handelstag (${esc(d.day.label)}) gab es keine ATH- oder Discount-Alarme.`}</div>`;
+  }
+  return html;
+}
+
+function rpWeeklyHtml(d){
+  if(d.empty) return '<div class="rp-empty">Dieses Depot enthält noch keine Aktien.</div>';
+  let html = rpPortCard(d.port_perf, "Vorwoche");
+
+  const b = d.buckets, seg = (n, c) => `<div style="flex:${n};background:var(${c})"></div>`;
+  html += rpSection("📊 Verteilung · Abstand zum ATH", `
+    <div class="rp-bar">${seg(b["<20"], "--green")}${seg(b["20-39"], "--yellow")}${seg(b["40-59"], "--orange")}${seg(b[">60"], "--red")}</div>
+    <div class="rp-dist">
+      <div><span>✅ &lt; 20 % unter ATH</span><b style="color:var(--green)">${b["<20"]}</b></div>
+      <div><span>🟡 20–39 %</span><b style="color:var(--yellow)">${b["20-39"]}</b></div>
+      <div><span>🟠 40–59 %</span><b style="color:var(--orange)">${b["40-59"]}</b></div>
+      <div><span>🔴 ≥ 60 %</span><b style="color:var(--red)">${b[">60"]}</b></div>
+    </div>`);
+
+  if(d.nachkauf.length){
+    html += rpSection("🛒 Nachkauf-Kandidaten", `<div class="rp-list">${d.nachkauf.map(n => `
+      <div class="rp-row"><span>${esc(n.name)} <b style="color:${rpDiscColor(n.discount)}">−${_rpNum(n.discount, 1)} %</b></span>
+      <span class="rp-sub">${n.qty ? `${n.qty} Stk. · ~${_rpNum(n.est_eur, 0)} €` : ""}</span></div>`).join("")}</div>`);
+  }
+
+  if(d.perf_best && d.perf_worst){
+    const card = (lbl, p) => `<div class="rp-card"><div class="rp-lbl">${lbl}</div>
+      <div style="font-size:14px;font-weight:600">${esc(p.name)} <span style="color:var(${p.perf >= 0 ? "--green" : "--red"})">${rpPct(p.perf)}</span></div></div>`;
+    html += rpSection("🏆 Beste / Schlechteste (Woche)",
+      `<div class="rp-pair">${card("📈 Beste", d.perf_best)}${card("📉 Schlechteste", d.perf_worst)}</div>`);
+  }
+
+  if(d.near.length){
+    html += rpSection("⚠️ Nah am nächsten Level", `<div class="rp-list">${d.near.map(n => `
+      <div class="rp-row"><span>${esc(n.name)} −${_rpNum(n.discount, 1)} %</span>
+      <span class="rp-sub">→ −${n.lvl} %-Block bei ${_rpNum(n.next_price, 2)} €</span></div>`).join("")}</div>`);
+  }
+
+  if(d.sectors.length){
+    html += rpSection("📂 Sektoren", `<div class="rp-chips">${d.sectors.map(s =>
+      `<span class="rp-chip">${esc(s.name)} ${s.count}</span>`).join("")}</div>`);
+  }
+  return html;
+}
 
 // ── Aktien-Detail-Modal ─────────────────────────────────────────
 // Aufruf über Klick auf den Aktiennamen in Tabelle/Karte sowie (bestehend) beim
