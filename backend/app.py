@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.51"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.52"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2902,17 +2902,16 @@ def _next_parqet_sync_dt():
     candidates = [dt for dt in (_next_depot_parqet_run(d["parqet"], tz, now) for d in depots) if dt]
     return min(candidates) if candidates else None
 
-def _weekly_portfolio_perf(depot_id, current_total):
-    """Vergleicht den aktuellen Portfolio-Gesamtwert mit dem nächstälteren Snapshot,
-    der mindestens 7 Tage zurückliegt (Fallback bei Lücken/Handelstage-Konfiguration,
+def _portfolio_perf_vs_snapshot(depot_id, current_total, target_date):
+    """Vergleicht den aktuellen Portfolio-Gesamtwert mit dem jüngsten Snapshot, der
+    höchstens am target_date ('YYYY-MM-DD') liegt (Fallback bei Lücken/Handelstage-Konfiguration,
     analog zu nearestClose() im Frontend-ETF-Vergleich — siehe PROJECT_CONTEXT).
     None wenn kein ausreichend alter Snapshot für dieses Depot existiert oder
     current_total 0 ist (z.B. neues Depot ohne Positionen)."""
     if not current_total:
         return None
-    target     = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     candidates = [s for s in load_snapshots()
-                  if s["date"] <= target and depot_id in s.get("depots", {})]
+                  if s["date"] <= target_date and depot_id in s.get("depots", {})]
     if not candidates:
         return None
     ref     = max(candidates, key=lambda s: s["date"])
@@ -2922,6 +2921,30 @@ def _weekly_portfolio_perf(depot_id, current_total):
     delta_eur = current_total - ref_val
     delta_pct = delta_eur / ref_val * 100
     return {"delta_eur": delta_eur, "delta_pct": delta_pct, "ref_date": ref["date"]}
+
+def _weekly_portfolio_perf(depot_id, current_total):
+    """Wochenbericht: Vergleich mit dem Snapshot von vor mindestens 7 Tagen."""
+    target = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    return _portfolio_perf_vs_snapshot(depot_id, current_total, target)
+
+def _daily_portfolio_perf(depot_id, current_total):
+    """Tageszusammenfassung: Vergleich mit dem letzten Snapshot VOR heute. Snapshots entstehen
+    nur an den konfigurierten Handelstagen, daher ist die Basis z.B. montags der Freitag —
+    der Aufrufer zeigt deshalb das konkrete Datum (ref_date) statt „Vortag“ an."""
+    target = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    return _portfolio_perf_vs_snapshot(depot_id, current_total, target)
+
+def _depot_total_value(stocks):
+    """Aktueller Gesamtwert eines Depots in € (Summe current_eur × shares)."""
+    return sum(s["current_eur"] * s["shares"] for s in stocks
+               if s.get("current_eur") and s.get("shares"))
+
+_WEEKDAYS_DE_SHORT = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+
+def _ref_date_label(ref_date):
+    """'2026-10-09' → 'Fr, 09.10.' (Basis-Datum des Portfolio-Vergleichs)."""
+    d = datetime.strptime(ref_date, "%Y-%m-%d")
+    return f"{_WEEKDAYS_DE_SHORT[d.weekday()]}, {d.strftime('%d.%m.')}"
 
 def _build_digest_data(depot, stocks):
     """Berechnet alle für den Wochenbericht benötigten Daten einmalig.
@@ -3234,17 +3257,25 @@ def _build_daily_ath_digest_data(depot_id):
     discount_hits = [e for e in entries if e["kind"] == "discount"]
     return ath_hits, discount_hits
 
-def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None):
+_DAILY_NO_ALARMS_TEXT = "Heute gab es keine ATH- oder Discount-Alarme."
+
+def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None, port_perf=None):
     """Baut den Text für die tägliche 21-Uhr-Zusammenfassung. cross_hits (Trendwechsel) wird
-    nur übergeben, wenn der User sie in der Zusammenfassung sehen will; sie zählen nicht als Alarm."""
+    nur übergeben, wenn der User sie in der Zusammenfassung sehen will; sie zählen nicht als Alarm.
+    port_perf (aus _daily_portfolio_perf) steht als feste Zeile oben; None → Zeile entfällt."""
     name  = depot.get("name", "Depot")
     total = len(ath_hits) + len(discount_hits)
     title = f"🌙 DepotRadar Tageszusammenfassung — {name}"
     cross_rows = _cross_digest_rows(cross_hits or [])
+    port_line = ""
+    if port_perf:
+        icon = "📈" if port_perf["delta_pct"] >= 0 else "📉"
+        port_line = (f"{icon} Portfolio: {port_perf['delta_pct']:+.1f}% ({port_perf['delta_eur']:+.0f} €) "
+                     f"ggü. {_ref_date_label(port_perf['ref_date'])}\n\n")
     if total == 0 and not cross_rows:
-        return title, f"Depot: {name}\n\nHeute gab es keine Benachrichtigung für dein Depot."
-    lines = [f"Depot: {name}\n\nHeute gab es {total} Alarm(e):" if total
-             else f"Depot: {name}\n\nHeute gab es keine Discount- oder ATH-Alarme."]
+        return title, f"Depot: {name}\n\n{port_line}{_DAILY_NO_ALARMS_TEXT}"
+    lines = [f"Depot: {name}\n\n{port_line}Heute gab es {total} Alarm(e):" if total
+             else f"Depot: {name}\n\n{port_line}{_DAILY_NO_ALARMS_TEXT}"]
     if ath_hits:
         lines.append(f"\n🎉 {len(ath_hits)} neue(s) Allzeithoch:")
         lines += [f"  • {ln}" for ln in _dedupe_digest_lines(ath_hits)]
@@ -3258,13 +3289,21 @@ def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None)
     link = f"\n\n{APP_URL}" if APP_URL else ""
     return title, "\n".join(lines) + link
 
-def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None):
-    """HTML-Version der Tageszusammenfassung für E-Mail-Versand."""
+def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None, port_perf=None):
+    """HTML-Version der Tageszusammenfassung für E-Mail-Versand (port_perf wie im Text-Pendant)."""
     name  = depot.get("name", "Depot")
     total = len(ath_hits) + len(discount_hits)
     cross_rows = _cross_digest_rows(cross_hits or [])
+    port_html = ""
+    if port_perf:
+        up    = port_perf["delta_pct"] >= 0
+        icon  = "📈" if up else "📉"
+        color = "#4ade80" if up else "#f87171"
+        port_html = (f'<div style="font-weight:600;font-size:15px;margin-top:6px;color:{color}">'
+                     f'{icon} Portfolio: {port_perf["delta_pct"]:+.1f}% ({port_perf["delta_eur"]:+.0f} €) '
+                     f'ggü. {_ref_date_label(port_perf["ref_date"])}</div>')
     if total == 0 and not cross_rows:
-        body_html = '<p style="color:#64748b;margin:0">Heute gab es keine Benachrichtigung für dein Depot.</p>'
+        body_html = f'<p style="color:#64748b;margin:0">{_DAILY_NO_ALARMS_TEXT}</p>'
     else:
         sections = []
         if ath_hits:
@@ -3285,6 +3324,7 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None)
     <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
       <h2 style="margin:0;font-size:18px">🌙 Tageszusammenfassung</h2>
       <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {name} · {total} Alarm(e) heute</div>
+      {port_html}
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
       {body_html}
@@ -3413,8 +3453,9 @@ def send_daily_ath_digests(user_id):
         if not urls: continue
         ath_hits, discount_hits = _build_daily_ath_digest_data(did)
         cross_hits  = _build_daily_cross_data(did) if get_cross_prefs(user)["cross_digest"] else []
-        title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits, cross_hits)
-        html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits, cross_hits)
+        port_perf   = _daily_portfolio_perf(did, _depot_total_value(load_stocks(did)))
+        title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits, cross_hits, port_perf)
+        html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits, cross_hits, port_perf)
         add_log("daily_ath_digest", f"🌙 Tageszusammenfassung [{dc['name']}]",
                 f"Gesendet an {len(urls)} URL(s). ({len(ath_hits) + len(discount_hits)} Alarm(e))",
                 success=True, depot_id=dc["id"])

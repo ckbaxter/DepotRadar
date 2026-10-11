@@ -1,7 +1,15 @@
 {
-  "frontend_version": "2.13.85",
-  "backend_version": "2.8.51",
+  "frontend_version": "2.13.86",
+  "backend_version": "2.8.52",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.86 · Backend v2.8.52",
+      "changes": [
+        "Tageszusammenfassung: Oben steht jetzt immer die Wertentwicklung des Depots (€ und %) seit dem letzten Handelstag, mit konkretem Datum (z. B. „ggü. Fr, 09.10.“) – montags also der Vergleich zu Freitag. Die Zeile entfällt nur, wenn noch kein früherer Snapshot existiert.",
+        "An Tagen ohne Alarm lautet der Text jetzt „Heute gab es keine ATH- oder Discount-Alarme.“ statt „keine Benachrichtigung“ – die Zusammenfassung zählt nur ATH-, Discount- und (optional) Trendwechsel-Meldungen."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.85 · Backend v2.8.51",
