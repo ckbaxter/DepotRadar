@@ -1,7 +1,14 @@
 {
-  "frontend_version": "2.13.87",
+  "frontend_version": "2.13.88",
   "backend_version": "2.8.53",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.88",
+      "changes": [
+        "Die Spaltenüberschriften −20 % bis −60 % in der Aktientabelle haben jetzt dieselben Farben wie die Aktien selbst: −20 % und −30 % gelb, −40 % und −50 % orange, −60 % rot."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.87 · Backend v2.8.53",
