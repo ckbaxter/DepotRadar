@@ -62,21 +62,25 @@ logs: ## Backend-Logs verfolgen (letzte 100 Zeilen, Abbruch mit Strg+C)
 
 release: check-version ## Release-Tag backend-v<Version> setzen und pushen (startet den Image-Build)
 	@set -e; \
-	V=$$($(PYTHON) -c "import json; print(json.load(open('$(CHANGELOG)', encoding='utf-8'))['backend_version'])"); \
+	V=$$($(PYTHON) -c "import json; print(json.load(open('$(CHANGELOG)', encoding='utf-8'))['backend_version'])") || { echo "✗ backend_version aus $(CHANGELOG) nicht lesbar"; exit 1; }; \
 	TAG="backend-v$$V"; \
 	[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "✗ Nicht auf main (git checkout main && git pull)"; exit 1; }; \
 	git diff --quiet HEAD -- backend/app.py README.md $(CHANGELOG) || { echo "✗ Lokale Änderungen an app.py, README.md oder changelog.json (die Versionsprüfung liest diese Dateien)"; exit 1; }; \
-	git fetch --quiet origin main --tags; \
-	[ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ] || { echo "✗ main weicht von origin/main ab (git pull)"; exit 1; }; \
-	if git rev-parse -q --verify "refs/tags/$$TAG" >/dev/null; then echo "✗ Tag $$TAG existiert bereits"; exit 1; fi; \
-	$(PYTHON) scripts/sync-version.py --check --tag "$$TAG"; \
+	REMOTE_MAIN=$$(git ls-remote origin refs/heads/main) || { echo "✗ origin nicht erreichbar (git ls-remote origin schlug fehl)"; exit 1; }; \
+	REMOTE_MAIN=$$(printf '%s' "$$REMOTE_MAIN" | cut -f1); \
+	[ "$$(git rev-parse HEAD)" = "$$REMOTE_MAIN" ] || { echo "✗ main weicht von origin/main ab (git pull bzw. git push)"; exit 1; }; \
+	if git rev-parse -q --verify "refs/tags/$$TAG" >/dev/null; then echo "✗ Tag $$TAG existiert lokal bereits (anderer Stand als origin? git tag -d $$TAG)"; exit 1; fi; \
+	REMOTE_TAG=$$(git ls-remote --tags origin "refs/tags/$$TAG") || { echo "✗ origin nicht erreichbar (git ls-remote --tags origin schlug fehl)"; exit 1; }; \
+	[ -z "$$REMOTE_TAG" ] || { echo "✗ Tag $$TAG existiert bereits auf origin"; exit 1; }; \
+	$(PYTHON) scripts/sync-version.py --check --tag "$$TAG" || { echo "✗ Versionsprüfung für $$TAG fehlgeschlagen"; exit 1; }; \
 	echo "Release: $$TAG auf $$(git rev-parse --short HEAD)"; \
 	if [ "$(CONFIRM)" != "yes" ]; then \
-		read -r -p "Tag setzen und pushen (startet den Image-Build)? [j/N] " A; \
+		printf 'Tag setzen und pushen (startet den Image-Build)? [j/N] '; \
+		read -r A || A=""; \
 		case "$$A" in j|J|y|Y) ;; *) echo "Abgebrochen."; exit 1;; esac; \
 	fi; \
-	git tag "$$TAG"; \
-	git push origin "$$TAG"; \
+	git tag "$$TAG" || { echo "✗ git tag fehlgeschlagen"; exit 1; }; \
+	git push origin "$$TAG" || { echo "✗ Push von $$TAG fehlgeschlagen (lokalen Tag entfernen mit: git tag -d $$TAG)"; exit 1; }; \
 	echo "✓ $$TAG gepusht – das Image wird in GitHub Actions gebaut"
 
 cleanup: ## Nach dem Merge: main aktualisieren, Branch löschen (make cleanup BRANCH=feature/xyz)
