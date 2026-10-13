@@ -1,6 +1,8 @@
 version: 2
 updates:
   # Python/pip Abhängigkeiten
+  # Minor- und Patch-Updates kommen gebündelt in einem PR, Major-Updates einzeln.
+  # Cooldown: neue Releases werden erst nach 7 Tagen vorgeschlagen (Security-Updates sind davon ausgenommen).
   - package-ecosystem: pip
     directory: /backend
     schedule:
@@ -8,24 +10,35 @@ updates:
       day: monday
       time: "08:00"
       timezone: Europe/Berlin
-    open-pull-requests-limit: 5
-    labels:
-      - dependencies
+    cooldown:
+      default-days: 7
+    groups:
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   # Docker Base Image
+  # ⚠ Die Python-Version steht auch in .github/workflows/backend-image.yml (setup-python) —
+  # bei einem Bump des Base Images dort mitziehen.
   - package-ecosystem: docker
     directory: /backend
     schedule:
       interval: monthly
       timezone: Europe/Berlin
-    labels:
-      - dependencies
 
-  # GitHub Actions (Workflow .github/workflows/backend-image.yml)
+  # GitHub Actions (Workflows in .github/workflows/)
+  # Alle Action-Updates (u. a. die vier docker/*-Actions) kommen gebündelt in einem PR.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
       timezone: Europe/Berlin
-    labels:
-      - dependencies
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
