@@ -65,7 +65,7 @@ release: check-version ## Release-Tag backend-v<Version> setzen und pushen (star
 	V=$$($(PYTHON) -c "import json; print(json.load(open('$(CHANGELOG)', encoding='utf-8'))['backend_version'])"); \
 	TAG="backend-v$$V"; \
 	[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "✗ Nicht auf main (git checkout main && git pull)"; exit 1; }; \
-	[ -z "$$(git status --porcelain)" ] || { echo "✗ Arbeitsverzeichnis nicht sauber"; exit 1; }; \
+	git diff --quiet HEAD -- backend/app.py README.md $(CHANGELOG) || { echo "✗ Lokale Änderungen an app.py, README.md oder changelog.json (die Versionsprüfung liest diese Dateien)"; exit 1; }; \
 	git fetch --quiet origin main --tags; \
 	[ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ] || { echo "✗ main weicht von origin/main ab (git pull)"; exit 1; }; \
 	if git rev-parse -q --verify "refs/tags/$$TAG" >/dev/null; then echo "✗ Tag $$TAG existiert bereits"; exit 1; fi; \
