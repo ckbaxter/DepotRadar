@@ -21,8 +21,8 @@ updates:
           - patch
 
   # Docker Base Image
-  # ⚠ Die Python-Version steht auch in .github/workflows/backend-image.yml (setup-python) —
-  # bei einem Bump des Base Images dort mitziehen.
+  # Die Python-Version der CI (.github/workflows/backend-image.yml) wird aus dem Dockerfile
+  # gelesen — bei einem Bump des Base Images ist dort nichts mitzuziehen.
   - package-ecosystem: docker
     directory: /backend
     schedule:

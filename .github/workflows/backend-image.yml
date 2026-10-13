@@ -22,9 +22,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Die Python-Version steht nur im Dockerfile (FROM python:X.Y-...). Die CI nutzt dieselbe,
+      # damit ein Update des Base Images (z. B. durch Dependabot) hier automatisch mitzieht.
+      - name: Python-Version aus Dockerfile lesen
+        id: py
+        run: |
+          V=$(sed -nE 's/^FROM python:([0-9]+\.[0-9]+).*/\1/p' backend/Dockerfile | head -n1)
+          [ -n "$V" ] || { echo "::error::Python-Version in backend/Dockerfile nicht gefunden (erwartet: FROM python:X.Y...)"; exit 1; }
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: ${{ steps.py.outputs.v }}
 
       # Die Version kommt aus frontend/changelog.json (backend_version). Das Skript prüft, dass
       # VERSION in app.py, die README-Badges und der jüngste Changelog-Eintrag dazu passen,
