@@ -12,6 +12,7 @@ frontend/changelog.json ist die einzige Stelle, an der Versionen von Hand geänd
 
   python3 scripts/sync-version.py --check --tag backend-v2.8.50
       prüft zusätzlich, ob der Release-Tag zu backend_version passt
+      (frontend-v2.13.88 wird gegen frontend_version geprüft: Web-Image)
 
 Geprüft wird außerdem, dass der jüngste Changelog-Eintrag, der "Backend v…" bzw. "Frontend v…"
 nennt, zur jeweiligen Version oben in der Datei passt. Das lässt sich nicht automatisch
@@ -65,7 +66,8 @@ def newest_entry_version(entries, pattern):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="nur prüfen, nichts schreiben")
-    ap.add_argument("--tag", help="Release-Tag, der zu backend_version passen muss (z. B. backend-v2.8.50)")
+    ap.add_argument("--tag", help="Release-Tag, der zu backend_version bzw. frontend_version passen muss "
+                                  "(z. B. backend-v2.8.50 oder frontend-v2.13.88)")
     args = ap.parse_args()
 
     try:
@@ -107,9 +109,16 @@ def main():
                 f"(Eintrag ergänzen oder {key} korrigieren)"
             )
 
-    # 3) Release-Tag: nur von Hand korrigierbar
-    if args.tag and args.tag != f"backend-v{versions['backend_version']}":
-        errors.append(f"Tag {args.tag} passt nicht zu backend_version v{versions['backend_version']}")
+    # 3) Release-Tag: nur von Hand korrigierbar. backend-v… gehört zum Backend-Image,
+    #    frontend-v… zum Web-Image (nginx mit Frontend).
+    if args.tag:
+        expected = {f"backend-v{versions['backend_version']}": "backend_version",
+                    f"frontend-v{versions['frontend_version']}": "frontend_version"}
+        if args.tag not in expected:
+            errors.append(
+                f"Tag {args.tag} passt weder zu backend-v{versions['backend_version']} "
+                f"noch zu frontend-v{versions['frontend_version']}"
+            )
 
     if args.check:
         if fixes or errors:

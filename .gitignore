@@ -1,9 +1,8 @@
 # Datendateien — nicht ins Repository
 data/
 
-# Docker
+# Docker (lokale Einstellungen)
 .env
-docker-compose.yml
 
 # macOS
 .DS_Store

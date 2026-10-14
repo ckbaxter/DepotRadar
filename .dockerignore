@@ -1,0 +1,5 @@
+# Gilt für das Web-Image (Build-Kontext = Repo-Root, siehe nginx/Dockerfile): nur das Nötige senden.
+# Das Backend-Image baut mit ./backend als Kontext und ist davon nicht betroffen.
+*
+!frontend/
+!nginx/nginx.conf

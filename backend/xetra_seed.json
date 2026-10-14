@@ -1,5 +1,5 @@
 {
-  "_comment": "Mapping von US/non-EUR Ticker → XETRA/EUR-Listing. Vom Backend beim Aktiensuche-XETRA-Vorschlag verwendet. Eigene Einträge können hier ergänzt werden.",
+  "_comment": "Mapping von US/non-EUR Ticker → XETRA/EUR-Listing. Vom Backend beim Aktiensuche-XETRA-Vorschlag verwendet. Diese Datei liegt fest im Image; eigene und per OpenFIGI gefundene Einträge landen in data/xetra_map.json und haben Vorrang.",
   "AAPL": {
     "ticker": "APC.DE",
     "name": "Apple",

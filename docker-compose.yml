@@ -1,7 +1,10 @@
-version: "3.8"
+# DepotRadar — läuft komplett aus Images, ein Klon des Repositorys ist nicht nötig.
+# Einstellungen stehen in einer optionalen Datei `.env` neben dieser Datei (Vorlage: .env.example);
+# ohne `.env` gelten die Standardwerte hinter `:-`.
 
 services:
-# ⚠ Service-Name hier ändern? → Auch in nginx.conf: proxy_pass http://<name>:5000 anpassen!
+  # ⚠ Service-Namen nicht ändern: Die nginx-Konfiguration im Web-Image leitet /api/ an http://backend:5000
+  #   weiter, und das Backend liest die installierte Frontend-Version von http://nginx/changelog.json.
   backend:
     image: ghcr.io/ckbaxter/depotradar-backend:latest
     container_name: depotradar-backend
@@ -9,20 +12,21 @@ services:
     volumes:
       - ./data:/data
     environment:
-      - TZ=Europe/Berlin
-      - APP_URL=http://depotradar.lan   # Anpassen auf eigene URL
+      - TZ=${TZ:-Europe/Berlin}
+      - APP_URL=${APP_URL:-http://localhost:8080}   # Eigene URL/IP — wichtig für Parqet OAuth
+      - OPENFIGI_API_KEY=${OPENFIGI_API_KEY:-}
+      - ADMIN_USERS=${ADMIN_USERS:-}
+      - RESET_PIN_USER=${RESET_PIN_USER:-}          # One-Shot, siehe README
+      - DELETE_USER=${DELETE_USER:-}                # One-Shot, siehe README
     networks:
       - depotradar-net
 
   nginx:
-    image: nginx:alpine
+    image: ghcr.io/ckbaxter/depotradar-web:latest
     container_name: depotradar-nginx
     restart: unless-stopped
     ports:
-      - "8080:80"
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - "${WEB_PORT:-8080}:80"
     depends_on:
       - backend
     networks:

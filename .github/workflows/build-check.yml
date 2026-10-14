@@ -1,0 +1,49 @@
+name: Build-Check
+
+# Prüft bei jedem Pull Request, dass sich beide Images bauen lassen (ohne Veröffentlichung) und dass
+# die Compose-Dateien gültig sind. Die nginx-Konfiguration ist im Web-Image eingebacken und wird
+# deshalb hier mit `nginx -t` geprüft — ein Fehler fiele sonst erst nach dem Release auf.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compose-Dateien prüfen
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.build.yml config --quiet
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Backend-Image bauen
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          load: true
+          tags: depotradar-backend:test
+          cache-from: type=gha
+
+      - name: Web-Image bauen
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: nginx/Dockerfile
+          load: true
+          tags: depotradar-web:test
+          cache-from: type=gha,scope=web
+
+      # Der Hostname "backend" steht in proxy_pass und muss beim Prüfen auflösbar sein.
+      - name: nginx -t
+        run: docker run --rm --add-host backend:127.0.0.1 depotradar-web:test nginx -t
+
+      # Das Seed-File muss im Backend-Image liegen und gültiges JSON sein.
+      - name: XETRA-Seed im Backend-Image prüfen
+        run: docker run --rm depotradar-backend:test python -c "import json; m = json.load(open('/app/xetra_seed.json', encoding='utf-8')); assert len(m) > 1; print(len(m), 'Einträge')"
