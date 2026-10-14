@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.53"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.54"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -473,8 +473,34 @@ def load_health():        return _load_json(HEALTH_FILE, {})
 def save_health(h):       _save_json(HEALTH_FILE, h)
 def load_eur_rates():     return _load_json(EUR_RATES_FILE, {})
 def save_eur_rates(r):    _save_json(EUR_RATES_FILE, r)
-def load_xetra_map():     return _load_json(XETRA_MAP_FILE, {})
-def save_xetra_map(m):    _save_json(XETRA_MAP_FILE, m)
+# XETRA-Mapping (seit v2.8.54): Der Seed liegt fest im Image (backend/xetra_seed.json), der Cache in
+# data/xetra_map.json enthält nur eigene und per OpenFIGI gefundene Einträge und hat Vorrang. So
+# kommen neue Seed-Einträge mit einem Image-Update an, ohne den Cache der Nutzer zu überschreiben.
+# Eine ältere data/xetra_map.json (damals Seed + Cache in einer Datei) bleibt gültig.
+XETRA_SEED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "xetra_seed.json")
+_xetra_seed_cache = None
+
+def _load_xetra_seed():
+    global _xetra_seed_cache
+    if _xetra_seed_cache is None:
+        try:
+            seed = _load_json(XETRA_SEED_FILE, {})
+            _xetra_seed_cache = seed if isinstance(seed, dict) else {}
+        except Exception as e:
+            log.warning(f"XETRA-Seed nicht lesbar ({XETRA_SEED_FILE}): {e}")
+            _xetra_seed_cache = {}
+    return _xetra_seed_cache
+
+def load_xetra_map():
+    m = dict(_load_xetra_seed())
+    m.update(_load_json(XETRA_MAP_FILE, {}))
+    return m
+
+def save_xetra_map(m):
+    """Speichert nur, was vom Seed abweicht (Kommentar-Schlüssel mit '_' bleiben draußen)."""
+    seed = _load_xetra_seed()
+    _save_json(XETRA_MAP_FILE, {k: v for k, v in m.items()
+                                if not str(k).startswith("_") and seed.get(k) != v})
 
 # ── User helpers ──────────────────────────────────────────────────
 _PIN_HASH_ITERATIONS = 100_000  # PBKDF2-HMAC-SHA256 Iterationen (seit v2.8.19)
@@ -1703,8 +1729,9 @@ _UPDATE_MAX_BYTES    = 2_000_000   # Schutz vor unerwartet großen Antworten
 _UPDATE_MAX_ENTRIES  = 40          # so viele neueste Einträge genügen für die Änderungsliste
 _UPDATE_MAX_SHOWN    = 3           # Änderungen je Hinweis (Rest als "+ N weitere")
 _UPDATE_LOCAL_TTL    = 60          # Sekunden, die die lokale Frontend-Version zwischengespeichert wird
-_UPDATE_CMD          = {"backend":  "docker compose pull backend && docker compose up -d backend",
-                        "frontend": "git pull"}
+# Seit v2.8.54 sind Frontend (Web-Image) und Backend beides Images: ein Befehl aktualisiert beide.
+_UPDATE_CMD          = {"backend":  "docker compose pull && docker compose up -d",
+                        "frontend": "docker compose pull && docker compose up -d"}
 _SEMVER_RE           = re.compile(r"^\d+\.\d+\.\d+$")
 _update_state        = {"remote": None, "local_fe": None, "local_fe_at": 0.0}
 _update_lock         = threading.Lock()

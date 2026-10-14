@@ -4,7 +4,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.53-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.54-blue)
 ![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.88-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
@@ -55,7 +55,7 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 - **Erträge (Dividenden & realisierte Gewinne/Verluste)** — werden beim Parqet-Sync automatisch miterfasst (Datenquelle ausschließlich Parqet, keine manuelle Buchung); beide werden netto nach Steuer/Gebühr ausgewiesen. „💰 Erträge gesamt"-Kachel in der Portfolio-Übersicht öffnet ein Modal mit Typ-Filter (Alle/Dividenden/Verkäufe) und Aktien-Suche, die die Summen live umrechnet; zeigt auch bereits komplett verkaufte und aus dem Bestand entfernte Positionen. Kann die automatische Namensauflösung für eine ISIN ausnahmsweise keinen Treffer finden, lässt sich der Name direkt in der Zeile manuell nachtragen. Zusätzlich eine Monatsübersicht als Balkenchart (Jan–Dez, Jahres-Umschalter ‹ ›) mit Jahressumme unter den Balken — Dividenden grün, realisierte Gewinne/Verluste blau, Verluste in Rot unter der Nulllinie; reagiert auf denselben Typ-Filter und dieselbe Suche wie die Liste darunter
 - **Rebalancing** — „⚖️ Rebalancing"-Kachel in der Portfolio-Übersicht zeigt Kauf-/Verkaufsempfehlungen, um alle Positionen im Bestand gleich zu gewichten (Ziel = 100% ÷ Anzahl Positionen); rein automatisch berechnet, keine manuelle Zielvorgabe pro Aktie nötig. Zweiter Modus verteilt ein optional hinterlegtes Kaufbudget proportional auf die unterrepräsentierten Positionen. Nicht für Watchlists verfügbar
 - **ATH-Prüfung** — vergleicht gespeicherte ATH-Werte mit Yahoo Finance, verfügbar im Bestand und in jeder Watchlist; Korrekturen direkt in der App möglich
-- **XETRA-Unterstützung** — bei der Aktiensuche wird automatisch das passende XETRA-Listing vorgeschlagen; bekannte Aktien sofort aus lokalem Cache (`xetra_map.json`), unbekannte dynamisch via OpenFIGI und dann gecacht. Seit v2.8.16–18 zusätzlich ein Hinweis, wenn Yahoo an sein Antwortlimit stößt und die Suche eventuell eingegrenzt werden sollte (Ticker/ISIN statt Firmenname)
+- **XETRA-Unterstützung** — bei der Aktiensuche wird automatisch das passende XETRA-Listing vorgeschlagen; bekannte Aktien sofort aus der mitgelieferten Liste bzw. dem lokalen Cache (`data/xetra_map.json`), unbekannte dynamisch via OpenFIGI und dann gecacht. Seit v2.8.16–18 zusätzlich ein Hinweis, wenn Yahoo an sein Antwortlimit stößt und die Suche eventuell eingegrenzt werden sollte (Ticker/ISIN statt Firmenname)
 - **Apprise-Benachrichtigungen** — Alarm bei neuem Discount-Block, inkl. Kaufempfehlung, Nachkauf-Kennzeichnung (🛒) und Kursstand-Timestamp; HTML-formatiert für E-Mail-Versand; optionaler Bestätigungsmodus (2× Refresh vor Alarm); Apprise-URLs pro Benutzer, Ein/Aus-Schalter pro Depot
 - **ATH-Alarm pro Aktie** — eigene Benachrichtigung bei neuem Allzeithoch, individuell pro Aktie aktivierbar (🔔-Symbol neben dem ATH-Wert), auch für Watchlist-Aktien, Standard: deaktiviert
 - **Wöchentliche Zusammenfassung** — optionaler Wochenbericht per Apprise mit Portfolio-Wochenperformance (Gesamtwert ggü. Vorwoche, seit v2.8.33), ATH-Verteilung, Nachkauf-Kandidaten, bestem/schlechtestem Einzelperformer und Sektor-Übersicht; HTML-formatiert für E-Mail-Versand; pro Depot aktivierbar
@@ -82,106 +82,114 @@ Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfoli
 
 ## Installation
 
+DepotRadar läuft komplett aus Docker-Images — ein Klon dieses Repositorys ist nicht nötig. Es genügt ein Ordner mit der Compose-Datei:
+
 ```bash
-git clone https://github.com/ckbaxter/DepotRadar.git
-cd DepotRadar
-docker compose pull
+mkdir depotradar && cd depotradar
+curl -O https://raw.githubusercontent.com/ckbaxter/DepotRadar/main/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/ckbaxter/DepotRadar/main/.env.example
+```
+
+In der `.env` mindestens `APP_URL` auf die Adresse setzen, unter der du DepotRadar aufrufst (siehe [Konfiguration](#konfiguration)). Dann starten:
+
+```bash
 docker compose up -d
 ```
 
-Erreichbar unter: **<http://localhost:8080>**
+Erreichbar unter: **<http://localhost:8080>** (bzw. unter dem in `WEB_PORT` gesetzten Port)
 
 ### Aktualisieren
 
 ```bash
-cd DepotRadar
-git pull
+cd depotradar
 docker compose pull
 docker compose up -d
 ```
 
-Deine Daten liegen im Ordner `data/` und bleiben bei Updates erhalten.
+Deine Daten liegen im Ordner `data/` neben der Compose-Datei und bleiben bei Updates erhalten. Deine Einstellungen stehen in der `.env`, sodass du die Compose-Datei bei Bedarf einfach neu herunterladen kannst, ohne etwas zu verlieren.
+
+### Aus dem Quellcode bauen (optional)
+
+Wer selbst Änderungen testen möchte, klont das Repository und baut beide Images lokal:
+
+```bash
+git clone https://github.com/ckbaxter/DepotRadar.git
+cd DepotRadar
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+Zurück zu den veröffentlichten Images: `docker compose pull && docker compose up -d`.
 
 -----
 
 ## Verzeichnisstruktur
 
+So sieht der Ordner auf dem Server aus:
+
 ```
-DepotRadar/
-├── backend/
-│   ├── app.py
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── index.html
-│   ├── changelog.json         # Änderungsverlauf + aktuelle Frontend- und Backend-Version (nginx cached die Datei nie)
-│   └── icons/
-│       ├── favicon.svg
-│       ├── favicon.ico
-│       ├── favicon-16x16.png
-│       ├── favicon-32x32.png
-│       └── apple-touch-icon.png
-├── nginx/
-│   └── nginx.conf
-├── data/
-│   ├── README.md              # Übersicht aller Dateien: Zweck, Struktur, Schreiber/Leser
-│   ├── xetra_map.json         # XETRA-Ticker-Mapping (im Repo, selbst-erweiternd via OpenFIGI)
-│   ├── depots.json            # Wird beim ersten Start automatisch angelegt
-│   ├── depot_*.json
-│   ├── depot_*_backup.json    # Backup vor Parqet-Sync (automatisch)
-│   ├── watchlists.json        # Watchlist-Metadaten (eigenständig, nicht Teil von depots.json)
-│   ├── wl_*.json              # Watchlist-Aktien (je Watchlist eine Datei)
-│   ├── splits.json            # Aktiensplits (automatisch befüllt)
-│   ├── settings.json
-│   ├── users.json             # Benutzerprofile (wird beim ersten Start angelegt)
-│   ├── snapshots.json         # Tägliche Portfolio-Snapshots
-│   ├── notifications.json     # Verlauf / Benachrichtigungshistorie
-│   ├── health.json            # Gesundheits-Statistiken (persistiert für System-Status)
-│   ├── issues.json            # Hinweis-Center: Kanal-Status, Job-Register, Hinweis-Verlauf
-│   ├── eur_rates.json         # Gecachte EUR-Wechselkurse
-│   ├── realized_gains.json    # Realisierte Gewinne/Verluste aus Parqet-Sell-Aktivitäten
-│   └── dividends.json         # Dividenden aus Parqet-Aktivitäten
-└── docker-compose.yml
+depotradar/
+├── docker-compose.yml
+├── .env                       # Optional: deine Einstellungen (Vorlage: .env.example)
+└── data/                      # Alle Daten — wird beim ersten Start automatisch angelegt
+    ├── depots.json            # Wird beim ersten Start automatisch angelegt
+    ├── depot_*.json
+    ├── depot_*_backup.json    # Backup vor Parqet-Sync (automatisch)
+    ├── watchlists.json        # Watchlist-Metadaten (eigenständig, nicht Teil von depots.json)
+    ├── wl_*.json              # Watchlist-Aktien (je Watchlist eine Datei)
+    ├── splits.json            # Aktiensplits (automatisch befüllt)
+    ├── settings.json
+    ├── users.json             # Benutzerprofile (wird beim ersten Start angelegt)
+    ├── snapshots.json         # Tägliche Portfolio-Snapshots
+    ├── notifications.json     # Verlauf / Benachrichtigungshistorie
+    ├── health.json            # Gesundheits-Statistiken (persistiert für System-Status)
+    ├── issues.json            # Hinweis-Center: Kanal-Status, Job-Register, Hinweis-Verlauf
+    ├── eur_rates.json         # Gecachte EUR-Wechselkurse
+    ├── realized_gains.json    # Realisierte Gewinne/Verluste aus Parqet-Sell-Aktivitäten
+    ├── dividends.json         # Dividenden aus Parqet-Aktivitäten
+    └── xetra_map.json         # Eigene XETRA-Zuordnungen (Cache, selbst-erweiternd via OpenFIGI)
 ```
+
+Eine ausführliche Übersicht aller Dateien steht in [`data/README.md`](data/README.md).
 
 -----
 
 ## Konfiguration
 
-### docker-compose.yml
+### Einstellungen (`.env`)
 
-```yaml
-environment:
-  - TZ=Europe/Berlin
-  - APP_URL=http://depotradar.lan   # Eigene URL/IP — wichtig für Parqet OAuth
-  - OPENFIGI_API_KEY=               # Optional — siehe unten
-  - ADMIN_USERS=                    # Optional — Admin-Benutzer, siehe Administration
-```
+Alle Einstellungen stehen in der Datei `.env` neben der `docker-compose.yml` (Vorlage: [`.env.example`](.env.example)). Sie ist optional — fehlt ein Wert, gilt der Standard. Nach jeder Änderung: `docker compose up -d`.
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `APP_URL` | `http://localhost:8080` | Adresse, unter der DepotRadar erreichbar ist (ohne `/` am Ende) — wichtig für Parqet OAuth und die Links in Benachrichtigungen |
+| `WEB_PORT` | `8080` | Port auf dem Server, unter dem die Oberfläche erreichbar ist |
+| `TZ` | `Europe/Berlin` | Zeitzone des Servers |
+| `OPENFIGI_API_KEY` | leer | Optional — siehe unten |
+| `ADMIN_USERS` | leer | Admin-Benutzer, siehe Administration |
+| `RESET_PIN_USER`, `DELETE_USER` | leer | One-Shot-Variablen, siehe Administration |
 
 `APP_URL` muss auf die tatsächlich erreichbare Adresse zeigen.
 
 ### XETRA-Ticker-Suche (OpenFIGI)
 
-Beim Hinzufügen einer Aktie schlägt DepotRadar automatisch das passende XETRA-Listing vor (z.B. AMZN → AMZ.DE). Bekannte Aktien werden sofort aus `data/xetra_map.json` geladen. Für unbekannte Aktien fragt das Backend die kostenlose [OpenFIGI API](https://www.openfigi.com) von Bloomberg ab und speichert das Ergebnis automatisch im lokalen Cache.
+Beim Hinzufügen einer Aktie schlägt DepotRadar automatisch das passende XETRA-Listing vor (z.B. AMZN → AMZ.DE). Bekannte Aktien werden sofort aus der mitgelieferten Liste geladen (sie steckt im Image und wird bei Updates aktualisiert). Für unbekannte Aktien fragt das Backend die kostenlose [OpenFIGI API](https://www.openfigi.com) von Bloomberg ab und speichert das Ergebnis automatisch im lokalen Cache `data/xetra_map.json`; dieser Cache hat Vorrang vor der mitgelieferten Liste.
 
 **Ohne API-Key:** 25 Anfragen/Minute — für den normalen Betrieb ausreichend, da jede Aktie nur einmal abgefragt und dann gecacht wird.
 
-**Mit API-Key:** 250 Anfragen/Minute. Kostenlosen Key unter [openfigi.com](https://www.openfigi.com/api) registrieren und in `docker-compose.yml` eintragen:
+**Mit API-Key:** 250 Anfragen/Minute. Kostenlosen Key unter [openfigi.com](https://www.openfigi.com/api) registrieren und in der `.env` eintragen:
 
-```yaml
-environment:
-  - OPENFIGI_API_KEY=dein-key-hier
+```bash
+OPENFIGI_API_KEY=dein-key-hier
 ```
 
 ### Administration via Umgebungsvariablen
 
-Die Administration läuft über Umgebungsvariablen in `docker-compose.yml`. `ADMIN_USERS` ist dabei eine **dauerhafte** Variable (bleibt gesetzt), `RESET_PIN_USER` und `DELETE_USER` sind **One-Shot**-Variablen: nach dem Ausführen wieder entfernen und neu starten.
+Die Administration läuft über Umgebungsvariablen in der `.env` (neben der `docker-compose.yml`). `ADMIN_USERS` ist dabei eine **dauerhafte** Variable (bleibt gesetzt), `RESET_PIN_USER` und `DELETE_USER` sind **One-Shot**-Variablen: nach dem Ausführen wieder entfernen und neu starten.
 
 #### Admins festlegen (`ADMIN_USERS`)
 
-```yaml
-environment:
-  - ADMIN_USERS=Joe            # mehrere kommasepariert: Joe,Sina
+```bash
+ADMIN_USERS=Joe            # mehrere kommasepariert: Joe,Sina
 ```
 
 Die genannten Benutzer (Match über den Benutzernamen) erhalten Admin-Rechte:
@@ -196,18 +204,16 @@ Ist die Variable **nicht gesetzt**, gibt es keine Admins: jeder sieht im Verlauf
 
 #### PIN eines Benutzers zurücksetzen
 
-```yaml
-environment:
-  - RESET_PIN_USER=Joe
+```bash
+RESET_PIN_USER=Joe
 ```
 
 Beim nächsten Start wird der PIN des Benutzers `Joe` gelöscht — er kann sich danach ohne PIN einloggen und einen neuen setzen. **Variable anschließend entfernen und neu starten.**
 
 #### Benutzer löschen
 
-```yaml
-environment:
-  - DELETE_USER=Sina
+```bash
+DELETE_USER=Sina
 ```
 
 Beim nächsten Start wird der Benutzer `Sina` aus `users.json` entfernt. Depots **und Watchlists**, die **ausschließlich** diesem Benutzer gehörten, werden vollständig gelöscht (inkl. Aktien-Dateien). Depots/Watchlists, die mehreren Benutzern zugeordnet waren, bleiben erhalten. **Variable anschließend entfernen und neu starten.**
@@ -215,10 +221,10 @@ Beim nächsten Start wird der Benutzer `Sina` aus `users.json` entfernt. Depots 
 Alternativ können Admins Benutzer direkt über die UI löschen (siehe `ADMIN_USERS`). Die Env-Variable bleibt relevant für Selbstlöschung und für den Fall, dass kein Admin erreichbar ist.
 
 ```bash
-# Nach Setzen der Variable:
-docker compose up -d --force-recreate backend
-# Nach erfolgter Aktion Variable entfernen, dann erneut:
-docker compose up -d --force-recreate backend
+# Nach Setzen der Variable in der .env:
+docker compose up -d
+# Nach erfolgter Aktion Variable in der .env leeren, dann erneut:
+docker compose up -d
 ```
 
 -----

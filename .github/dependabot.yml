@@ -29,6 +29,13 @@ updates:
       interval: monthly
       timezone: Europe/Berlin
 
+  # Docker Base Image des Web-Images (nginx/Dockerfile)
+  - package-ecosystem: docker
+    directory: /nginx
+    schedule:
+      interval: monthly
+      timezone: Europe/Berlin
+
   # GitHub Actions (Workflows in .github/workflows/)
   # Alle Action-Updates (u. a. die vier docker/*-Actions) kommen gebündelt in einem PR.
   - package-ecosystem: github-actions

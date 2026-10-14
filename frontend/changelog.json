@@ -1,7 +1,16 @@
 {
   "frontend_version": "2.13.88",
-  "backend_version": "2.8.53",
+  "backend_version": "2.8.54",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Backend v2.8.54",
+      "changes": [
+        "Installation und Aktualisierung laufen jetzt allein über die docker-compose.yml – das Repository muss nicht mehr heruntergeladen werden. Einstellungen wie die eigene Adresse lassen sich optional in einer Datei .env festlegen.",
+        "Die mitgelieferte XETRA-Ticker-Liste wird bei Updates automatisch aktualisiert; bereits gespeicherte eigene Zuordnungen bleiben erhalten.",
+        "Der Update-Hinweis nennt für Oberfläche und Backend denselben Befehl: docker compose pull && docker compose up -d."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.88",

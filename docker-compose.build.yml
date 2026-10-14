@@ -1,0 +1,17 @@
+# Entwickler-Override: baut beide Images aus dem Klon statt sie von ghcr.io zu laden.
+# Nur zusammen mit der Hauptdatei verwenden (macht `make deploy`):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# Die lokalen Images heißen bewusst anders als die Release-Images, damit sich beide nicht verwechseln.
+# Zurück auf die Release-Images:  docker compose pull && docker compose up -d
+
+services:
+  backend:
+    image: depotradar-backend:local
+    build:
+      context: ./backend
+
+  nginx:
+    image: depotradar-web:local
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile

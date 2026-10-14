@@ -8,7 +8,7 @@ Die meisten Dateien werden beim ersten Start automatisch mit sinnvollen Defaults
 
 | Datei | Zweck | Struktur |
 |---|---|---|
-| `xetra_map.json` | Mapping von US-Tickern auf ihr bevorzugtes EUR-Listing (z. B. XETRA), self-expanding via OpenFIGI. Einzige Datei mit Seed-Daten im Repository. | `{TICKER: {ticker, name, exchange}}` |
+| `xetra_map.json` | Cache eigener und per OpenFIGI gefundener Zuordnungen von US-Tickern auf ihr bevorzugtes EUR-Listing (z. B. XETRA). Ergänzt die mitgelieferte Liste (liegt im Backend-Image, `backend/xetra_seed.json` im Repository); Einträge hier haben Vorrang. Wird bei Bedarf angelegt. | `{TICKER: {ticker, name, exchange}}` |
 | `depots.json` | Metadaten aller Depots | Liste von Depot-Objekten |
 | `depot_<id>.json` | Bestand eines einzelnen Depots (eine Datei pro Depot) | Liste von Stock-Objekten |
 | `depot_<id>_backup.json` | Automatisches Backup vor jedem Parqet-Sync | wie `depot_<id>.json` |
@@ -31,4 +31,4 @@ Da alle Daten als reguläre JSON-Dateien vorliegen, genügt eine normale Dateisi
 
 ## Hinweis für Mitwirkende
 
-`data/` ist komplett in `.gitignore` ausgeschlossen, da hier ausschließlich Lauf­zeit- und Nutzerdaten liegen. `xetra_map.json` und diese README sind bewusste Ausnahmen und müssen mit `git add -f` versioniert werden.
+`data/` ist komplett in `.gitignore` ausgeschlossen, da hier ausschließlich Lauf­zeit- und Nutzerdaten liegen. Diese README ist die einzige bewusste Ausnahme und muss mit `git add -f` versioniert werden. Die XETRA-Seed-Daten liegen nicht mehr hier, sondern in `backend/xetra_seed.json`.
