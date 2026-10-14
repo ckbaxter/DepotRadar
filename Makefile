@@ -6,7 +6,7 @@
 #   COMPOSE  Compose-Aufruf                                     (Standard: docker compose)
 #   PYTHON   Python-Interpreter                                 (Standard: python3)
 #   BRANCH   Branch, den `cleanup` löscht                       (ohne Standard)
-#   CONFIRM  `yes` überspringt die Rückfrage von `release`      (Standard: leer)
+#   CONFIRM  `yes` überspringt die Rückfrage der release-Ziele  (Standard: leer)
 #
 # Versionen werden nie hier gepflegt, sondern in frontend/changelog.json (siehe scripts/sync-version.py).
 
@@ -23,7 +23,7 @@ CHANGELOG := frontend/changelog.json
 .PHONY: help check check-py check-js check-version sync version deploy logs release release-tag release-backend release-frontend cleanup
 
 help: ## Diese Übersicht anzeigen
-	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  make %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  make %-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check: check-py check-js check-version ## Alle Prüfungen (Python, JavaScript, Versionen)
 	@echo "✓ Alle Prüfungen bestanden"
@@ -59,27 +59,63 @@ deploy: ## Backend- und Web-Image lokal neu bauen und die Container neu erstelle
 logs: ## Backend-Logs verfolgen (letzte 100 Zeilen, Abbruch mit Strg+C)
 	$(COMPOSE) logs -f --tail=100 $(SERVICE)
 
-release: ## (nur Hinweis) Es gibt zwei Images: make release-backend oder make release-frontend
-	@echo "✗ Bitte make release-backend (Backend-Image) oder make release-frontend (Web-Image) verwenden"; exit 1
-
-release-backend: PART := backend
-release-backend: IMAGE_NAME := Backend-Image
-release-backend: release-tag ## Tag backend-v<Version> setzen und pushen (baut das Backend-Image)
-
-release-frontend: PART := frontend
-release-frontend: IMAGE_NAME := Web-Image
-release-frontend: release-tag ## Tag frontend-v<Version> setzen und pushen (baut das Web-Image)
-
-# Gemeinsame Rezeptur der beiden Release-Targets (PART = backend|frontend kommt vom aufrufenden Target)
-release-tag: check-version
-	@set -e; \
-	V=$$($(PYTHON) -c "import json; print(json.load(open('$(CHANGELOG)', encoding='utf-8'))['$(PART)_version'])") || { echo "✗ $(PART)_version aus $(CHANGELOG) nicht lesbar"; exit 1; }; \
-	TAG="$(PART)-v$$V"; \
+# Gemeinsame Vorprüfungen der release-Ziele (Shell-Fragment, läuft innerhalb von `set -e`):
+# main ausgecheckt, relevante Dateien unverändert, main == origin/main
+RELEASE_PRECHECKS = \
 	[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "✗ Nicht auf main (git checkout main && git pull)"; exit 1; }; \
 	git diff --quiet HEAD -- backend/app.py README.md $(CHANGELOG) || { echo "✗ Lokale Änderungen an app.py, README.md oder changelog.json (die Versionsprüfung liest diese Dateien)"; exit 1; }; \
 	REMOTE_MAIN=$$(git ls-remote origin refs/heads/main) || { echo "✗ origin nicht erreichbar (git ls-remote origin schlug fehl)"; exit 1; }; \
 	REMOTE_MAIN=$$(printf '%s' "$$REMOTE_MAIN" | cut -f1); \
-	[ "$$(git rev-parse HEAD)" = "$$REMOTE_MAIN" ] || { echo "✗ main weicht von origin/main ab (git pull bzw. git push)"; exit 1; }; \
+	[ "$$(git rev-parse HEAD)" = "$$REMOTE_MAIN" ] || { echo "✗ main weicht von origin/main ab (git pull bzw. git push)"; exit 1; };
+
+release: check-version ## Fehlende Tags setzen und pushen: backend-v<Version> und/oder frontend-v<Version> (bereits vorhandene werden übersprungen)
+	@set -e; \
+	$(RELEASE_PRECHECKS) \
+	NEW=""; SKIP=""; \
+	for PART in backend frontend; do \
+		V=$$($(PYTHON) -c "import json; print(json.load(open('$(CHANGELOG)', encoding='utf-8'))['$${PART}_version'])") || { echo "✗ $${PART}_version aus $(CHANGELOG) nicht lesbar"; exit 1; }; \
+		TAG="$$PART-v$$V"; \
+		LOCAL_TAG=$$(git rev-parse -q --verify "refs/tags/$$TAG" || true); \
+		REMOTE_TAG=$$(git ls-remote --tags origin "refs/tags/$$TAG") || { echo "✗ origin nicht erreichbar (git ls-remote --tags origin schlug fehl)"; exit 1; }; \
+		if [ -n "$$REMOTE_TAG" ]; then \
+			SKIP="$$SKIP $$TAG"; \
+		elif [ -n "$$LOCAL_TAG" ]; then \
+			echo "✗ Tag $$TAG existiert nur lokal (anderer Stand als origin? git tag -d $$TAG)"; exit 1; \
+		else \
+			$(PYTHON) scripts/sync-version.py --check --tag "$$TAG" || { echo "✗ Versionsprüfung für $$TAG fehlgeschlagen"; exit 1; }; \
+			NEW="$$NEW $$TAG"; \
+		fi; \
+	done; \
+	if [ -z "$$NEW" ]; then echo "Nichts zu tun: alle Tags existieren bereits ($${SKIP# })."; echo "Wurde die Version in $(CHANGELOG) angehoben (make version)?"; exit 0; fi; \
+	echo "Release auf $$(git rev-parse --short HEAD):"; \
+	for T in $$NEW; do echo "  neu           $$T"; done; \
+	for T in $$SKIP; do echo "  übersprungen  $$T (existiert bereits)"; done; \
+	if [ "$(CONFIRM)" != "yes" ]; then \
+		printf 'Neue Tags setzen und pushen (startet die Image-Builds in GitHub Actions)? [j/N] '; \
+		read -r A || A=""; \
+		case "$$A" in j|J|y|Y) ;; *) echo "Abgebrochen."; exit 1;; esac; \
+	fi; \
+	for T in $$NEW; do \
+		git tag "$$T" || { echo "✗ git tag $$T fehlgeschlagen"; exit 1; }; \
+		git push origin "$$T" || { echo "✗ Push von $$T fehlgeschlagen (lokalen Tag entfernen mit: git tag -d $$T)"; exit 1; }; \
+		echo "✓ $$T gepusht"; \
+	done; \
+	echo "Die Images werden in GitHub Actions gebaut."
+
+release-backend: PART := backend
+release-backend: IMAGE_NAME := Backend-Image
+release-backend: release-tag ## Nur den Tag backend-v<Version> setzen und pushen (baut das Backend-Image)
+
+release-frontend: PART := frontend
+release-frontend: IMAGE_NAME := Web-Image
+release-frontend: release-tag ## Nur den Tag frontend-v<Version> setzen und pushen (baut das Web-Image)
+
+# Gemeinsame Rezeptur der beiden Einzel-Targets (PART = backend|frontend kommt vom aufrufenden Target)
+release-tag: check-version
+	@set -e; \
+	V=$$($(PYTHON) -c "import json; print(json.load(open('$(CHANGELOG)', encoding='utf-8'))['$(PART)_version'])") || { echo "✗ $(PART)_version aus $(CHANGELOG) nicht lesbar"; exit 1; }; \
+	TAG="$(PART)-v$$V"; \
+	$(RELEASE_PRECHECKS) \
 	if git rev-parse -q --verify "refs/tags/$$TAG" >/dev/null; then echo "✗ Tag $$TAG existiert lokal bereits (anderer Stand als origin? git tag -d $$TAG)"; exit 1; fi; \
 	REMOTE_TAG=$$(git ls-remote --tags origin "refs/tags/$$TAG") || { echo "✗ origin nicht erreichbar (git ls-remote --tags origin schlug fehl)"; exit 1; }; \
 	[ -z "$$REMOTE_TAG" ] || { echo "✗ Tag $$TAG existiert bereits auf origin"; exit 1; }; \
