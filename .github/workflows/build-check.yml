@@ -1,14 +1,23 @@
 name: Build-Check
 
-# Prüft bei jedem Pull Request, dass sich beide Images bauen lassen (ohne Veröffentlichung) und dass
-# die Compose-Dateien gültig sind. Die nginx-Konfiguration ist im Web-Image eingebacken und wird
-# deshalb hier mit `nginx -t` geprüft — ein Fehler fiele sonst erst nach dem Release auf.
+# Prüft, dass sich beide Images bauen lassen (ohne Veröffentlichung) und dass die Compose-Dateien
+# gültig sind. Die nginx-Konfiguration ist im Web-Image eingebacken und wird deshalb hier mit
+# `nginx -t` geprüft — ein Fehler fiele sonst erst nach dem Release auf.
+# Läuft schon beim Push auf einen Branch `feature/**` (also noch vor dem Pull Request), bei jedem
+# Pull Request (auch für andere Branches, z. B. von Dependabot) und manuell.
 on:
+  push:
+    branches: ["feature/**"]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Neuer Push auf denselben Branch bzw. Pull Request bricht einen noch laufenden Check ab.
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
