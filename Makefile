@@ -20,7 +20,7 @@ BUILD_FILES := -f docker-compose.yml -f docker-compose.build.yml
 PYTHON    ?= python3
 CHANGELOG := frontend/changelog.json
 
-.PHONY: help check check-py check-js check-version sync version deploy deploy-local logs release release-tag release-backend release-frontend cleanup
+.PHONY: help check check-py check-js check-version sync version pull deploy build deploy-local logs release release-tag release-backend release-frontend cleanup
 
 help: ## Diese Übersicht anzeigen
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  make %-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -52,16 +52,27 @@ sync: ## Versionen aus changelog.json nach app.py und README übertragen (davor 
 version: ## Backend- und Frontend-Version aus frontend/changelog.json anzeigen
 	@$(PYTHON) -c "import json; d = json.load(open('$(CHANGELOG)', encoding='utf-8')); print('Backend  v' + d['backend_version']); print('Frontend v' + d['frontend_version'])"
 
-deploy: ## Backend- und Web-Image lokal neu bauen und die Container neu erstellen (auf dem Server)
-	$(COMPOSE) $(BUILD_FILES) build --no-cache
-	$(COMPOSE) $(BUILD_FILES) up -d --force-recreate
+# Nur die Basis-Datei, also die Release-Images von ghcr.io (Backend und Web), ohne den Build-Override.
+pull: ## Release-Images (Backend und Web) von ghcr.io holen
+	$(COMPOSE) pull
 
-# Schnellere Variante von `deploy` für Tests auf dem Server: erst den ausgecheckten Branch aktualisieren,
-# dann mit Build-Cache bauen und nur geänderte Container neu erstellen. --ff-only bricht bei abweichender
-# Historie (z. B. nach einem Force-Push) mit klarer Meldung ab, statt einen Merge-Commit anzulegen.
-deploy-local: ## git pull, dann beide Images lokal bauen und starten (mit Build-Cache, auf dem Server)
+# Neue Release-Images holen und beide Container neu erstellen (auf dem Server). Weil nur die Basis-Datei läuft,
+# führt das auch von lokal gebauten Images (deploy-local) zurück auf die Release-Images.
+deploy: pull ## Release-Images holen und die Container neu erstellen (auf dem Server)
+	$(COMPOSE) up -d --force-recreate
+
+# Beide Images aus dem Klon bauen; die Tags depotradar-backend:local und depotradar-web:local legt
+# docker-compose.build.yml fest, damit sie nicht mit den Release-Images verwechselt werden.
+build: ## Backend- und Web-Image lokal bauen (ohne Cache, Tags :local)
+	$(COMPOSE) $(BUILD_FILES) build --no-cache
+
+# Erst git pull (nur Fast-Forward: bricht bei abweichenden Commits ab, statt zu mergen),
+# dann lokal bauen und genau diese Images starten (statt der Pakete aus ghcr.io).
+# build läuft als eigener make-Aufruf, damit ein durch den Pull geändertes Makefile verwendet wird.
+deploy-local: ## git pull, lokal bauen und diese Images starten (auf dem Server)
 	git pull --ff-only
-	$(COMPOSE) $(BUILD_FILES) up -d --build
+	$(MAKE) build
+	$(COMPOSE) $(BUILD_FILES) up -d --force-recreate
 
 logs: ## Backend-Logs verfolgen (letzte 100 Zeilen, Abbruch mit Strg+C)
 	$(COMPOSE) logs -f --tail=100 $(SERVICE)

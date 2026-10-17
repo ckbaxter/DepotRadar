@@ -1,8 +1,9 @@
 # Entwickler-Override: baut beide Images aus dem Klon statt sie von ghcr.io zu laden.
-# Nur zusammen mit der Hauptdatei verwenden (macht `make deploy-local`, davor läuft ein `git pull`):
-#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# Nur zusammen mit der Hauptdatei verwenden. `make deploy-local` macht (nach einem `git pull`):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build --no-cache     (= make build)
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --force-recreate
 # Die lokalen Images heißen bewusst anders als die Release-Images, damit sich beide nicht verwechseln.
-# Zurück auf die Release-Images:  docker compose pull && docker compose up -d
+# Zurück auf die Release-Images:  make deploy  (= docker compose pull && docker compose up -d --force-recreate)
 
 services:
   backend:
