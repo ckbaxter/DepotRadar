@@ -20,7 +20,7 @@ BUILD_FILES := -f docker-compose.yml -f docker-compose.build.yml
 PYTHON    ?= python3
 CHANGELOG := frontend/changelog.json
 
-.PHONY: help check check-py check-js check-version sync version deploy logs release release-tag release-backend release-frontend cleanup
+.PHONY: help check check-py check-js check-version sync version deploy deploy-local logs release release-tag release-backend release-frontend cleanup
 
 help: ## Diese Übersicht anzeigen
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  make %-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -55,6 +55,13 @@ version: ## Backend- und Frontend-Version aus frontend/changelog.json anzeigen
 deploy: ## Backend- und Web-Image lokal neu bauen und die Container neu erstellen (auf dem Server)
 	$(COMPOSE) $(BUILD_FILES) build --no-cache
 	$(COMPOSE) $(BUILD_FILES) up -d --force-recreate
+
+# Schnellere Variante von `deploy` für Tests auf dem Server: erst den ausgecheckten Branch aktualisieren,
+# dann mit Build-Cache bauen und nur geänderte Container neu erstellen. --ff-only bricht bei abweichender
+# Historie (z. B. nach einem Force-Push) mit klarer Meldung ab, statt einen Merge-Commit anzulegen.
+deploy-local: ## git pull, dann beide Images lokal bauen und starten (mit Build-Cache, auf dem Server)
+	git pull --ff-only
+	$(COMPOSE) $(BUILD_FILES) up -d --build
 
 logs: ## Backend-Logs verfolgen (letzte 100 Zeilen, Abbruch mit Strg+C)
 	$(COMPOSE) logs -f --tail=100 $(SERVICE)
