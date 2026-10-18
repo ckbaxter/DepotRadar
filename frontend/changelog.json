@@ -1,7 +1,14 @@
 {
-  "frontend_version": "2.13.88",
+  "frontend_version": "2.13.89",
   "backend_version": "2.8.54",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.89",
+      "changes": [
+        "Erträge: Die Liste ist jetzt nach Monaten gegliedert. Der Monatskopf mit Monat, Jahr, Anzahl der Einträge und Monatssumme bleibt beim Scrollen oben stehen, bis der nächste Monat beginnt – so siehst du immer, in welchem Monat du dich gerade befindest. In den Zeilen steht nur noch Tag und Monat."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Backend v2.8.54",

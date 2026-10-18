@@ -535,6 +535,16 @@ details[open] .usr-arrow{transform:rotate(90deg)}
 .eg-total-card.filtered .lbl .tag{display:inline-block}
 .eg-total-card .val{font-size:17px;font-weight:700}
 .eg-list{display:flex;flex-direction:column;gap:2px}
+/* Monatsköpfe in der Erträge-Liste (seit v2.13.89): bleiben beim Scrollen im Modal oben stehen,
+   bis der nächste Monat sie ablöst. Scroll-Container ist .modal-body (padding 20px) — daher
+   die -20px-Ränder, damit der Kopf die volle Breite deckt und darunter laufende Zeilen verdeckt. */
+.eg-group{display:flex;flex-direction:column;gap:2px}
+.eg-month{position:sticky;top:0;z-index:3;margin:0 -20px;padding:7px 20px;background:var(--bg3);border-top:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.eg-month-l{display:flex;align-items:baseline;gap:6px;min-width:0}
+.eg-month-name{font-size:13px;font-weight:700}
+.eg-month-year{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.eg-month-n{font-size:11px;color:var(--muted);white-space:nowrap}
+.eg-month-sum{font-size:13px;font-weight:700;flex-shrink:0;font-variant-numeric:tabular-nums}
 .eg-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--border)}
 .eg-row:last-child{border-bottom:none}
 .eg-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
@@ -1523,6 +1533,7 @@ select</style>
             <li>Typ-Filter (Alle / Dividenden / Verkäufe) und Aktien-Suche rechnen die Summenkacheln live um</li>
             <li>Monatsübersicht als Balkenchart (Jan–Dez) mit Jahres-Umschalter ‹ ›: Dividenden grün, realisierte Gewinne/Verluste blau, Verluste rot unterhalb der Nulllinie. Antippen eines Balkens zeigt den Wert; darunter stehen die Jahressummen</li>
             <li>Hinter der Dividenden-Jahressumme zeigt ein Chip die Veränderung zum Vorjahr in Prozent (▲ grün = mehr, ▼ rot = weniger). Fürs laufende Jahr wird mit dem <b>gleichen Zeitraum des Vorjahres</b> verglichen (z. B. 1.1.–8.10.), bei früheren Jahren Jahr gegen Jahr. Antippen des Chips wechselt zwischen Prozent und Euro-Differenz. „neu“ steht, wenn es im Vorjahr keine Dividenden gab</li>
+            <li>Die Liste darunter ist nach Monaten gegliedert: Der Monatskopf mit Monat, Jahr, Anzahl der Einträge und Monatssumme (Dividenden und Verkäufe zusammen) bleibt beim Scrollen oben stehen. Die Monatssumme folgt dem Typ-Filter und der Suche</li>
             <li>Auch inzwischen komplett verkaufte Positionen erscheinen weiterhin</li>
             <li>Lässt sich ein Name nicht automatisch auflösen, steht dort die ISIN mit „✎ Namen vergeben“ — der Name wird dauerhaft gespeichert</li>
           </ul>
@@ -7136,6 +7147,7 @@ let _egType = "all", _egRows = [];
 let _egYoyEur = false;      // Vorjahresvergleich-Chip: false = Prozent, true = Euro-Differenz
 let _egChartYear = new Date().getFullYear(), _egYearMin = _egChartYear;
 const EG_MONTHS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+const EG_MONTHS_LONG = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
 async function loadEarnings(depotId){
   // activeDepot bleibt beim Wechsel zu einer Watchlist unverändert bestehen
@@ -7179,6 +7191,12 @@ function fmtEgDate(iso){
   if(!iso) return "";
   const dt = new Date(iso);
   return isNaN(dt) ? iso : dt.toLocaleDateString("de-DE");
+}
+// Kurzform für die Listenzeilen (Monat und Jahr stehen im Monatskopf darüber): "15.10."
+function fmtEgDay(iso){
+  if(!iso) return "";
+  const dt = new Date(iso);
+  return isNaN(dt) ? iso : String(dt.getDate()).padStart(2, "0") + "." + String(dt.getMonth() + 1).padStart(2, "0") + ".";
 }
 
 function openEarningsModal(){
@@ -7398,17 +7416,47 @@ function renderEgList(){
   const matchesSearch = r => !q || r.name.toLowerCase().includes(q) || (r.ticker || "").toLowerCase().includes(q);
   const filtered = _egRows.filter(r => (_egType === "all" || r.type === _egType) && matchesSearch(r));
 
-  const list = document.getElementById("egList");
-  list.innerHTML = filtered.map(r => `
+  const egRowHtml = r => `
     <div class="eg-row" id="eg-row-${r.id}">
       <div class="eg-icon">${r.type === "div" ? "&#128181;" : "&#128200;"}</div>
       <div class="eg-info" data-name="${esc(r.name)}"${r.unresolved ? "" : ` onclick="pickEgStock(this.dataset.name)"`}>
         ${r.unresolved
           ? `<span class="eg-name-unresolved">ISIN ${esc(r.isin || "—")}</span><button class="eg-edit-name-btn" onclick="event.stopPropagation();startEgNameEdit(${jsArg(r.id)},${jsArg(r.type)})">&#9998; Namen vergeben</button>`
           : `<div class="eg-name">${esc(r.name)}${r.ticker ? ` (${esc(r.ticker)})` : ""}</div>`}
-        <div class="eg-date">${fmtEgDate(r.date)} · ${esc(r.label)}</div>
+        <div class="eg-date">${fmtEgDay(r.date)} · ${esc(r.label)}</div>
       </div>
       <div class="eg-amount" style="color:${r.amount >= 0 ? "var(--green)" : "var(--red)"}">${fmtEgAmount(r.amount)}</div>
+    </div>`;
+
+  // Gruppierung nach Kalendermonat (filtered ist bereits absteigend nach Datum sortiert, also
+  // stehen gleiche Monate nebeneinander). Der Monatskopf klebt beim Scrollen oben; die Summe
+  // folgt wie die Liste dem Typ-Filter und der Suche und kombiniert Dividenden und Verkäufe.
+  // Einträge ohne gültiges Datum landen gesammelt unter "Ohne Datum" am Ende.
+  const egGroups = [];
+  filtered.forEach(r => {
+    const d = new Date(r.date);
+    const key = isNaN(d) ? "none" : d.getFullYear() + "-" + d.getMonth();
+    let g = egGroups[egGroups.length - 1];
+    if(!g || g.key !== key){
+      g = {key, year: isNaN(d) ? null : d.getFullYear(), month: isNaN(d) ? null : d.getMonth(), rows: [], sum: 0};
+      egGroups.push(g);
+    }
+    g.rows.push(r);
+    g.sum += r.amount;
+  });
+
+  const list = document.getElementById("egList");
+  list.innerHTML = egGroups.map(g => `
+    <div class="eg-group">
+      <div class="eg-month">
+        <div class="eg-month-l">
+          <span class="eg-month-name">${g.month === null ? "Ohne Datum" : EG_MONTHS_LONG[g.month]}</span>
+          ${g.year === null ? "" : `<span class="eg-month-year">${g.year}</span>`}
+          <span class="eg-month-n">· ${g.rows.length} ${g.rows.length === 1 ? "Eintrag" : "Einträge"}</span>
+        </div>
+        <span class="eg-month-sum" style="color:${g.sum >= 0 ? "var(--green)" : "var(--red)"}">${fmtEgAmount(g.sum)}</span>
+      </div>
+      ${g.rows.map(egRowHtml).join("")}
     </div>`).join("");
   document.getElementById("egEmpty").style.display = filtered.length ? "none" : "block";
 
