@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.54"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.55"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1321,6 +1321,37 @@ def _sma_series(values, k):
         out.append(running / k if i >= k - 1 else None)
     return out
 
+_DIV_WINDOW_DAYS = 365   # Summe der Dividenden je Aktie über die letzten 12 Monate
+_DIV_GRACE_DAYS  = 35    # jährliche Zahler, deren Zahlung wenige Tage über 365 Tage zurückliegt, bleiben Zahler
+
+def _dividend_stats(res, now, divisor, eur_rate, current_eur):
+    """Dividende je Aktie der letzten 12 Monate (div_12m, EUR) und Rendite in % (div_yield) aus dem
+    events.dividends-Block einer Yahoo-chart-Antwort. Fehlt der Block, hat Yahoo keine Zahlung
+    gemeldet → 0 (Nicht-Zahler). Liegt die letzte Zahlung knapp außerhalb der 365 Tage
+    (jährlicher Zahler, der sich um ein paar Tage verschoben hat), zählt sie als Jahresbetrag, damit
+    solche Aktien nicht tagelang aus dem Filter fallen. Gibt bei Fehlern None/None zurück."""
+    try:
+        events = (res.get("events") or {}).get("dividends") or {}
+        pays = []
+        for ev in events.values():
+            ts, amt = ev.get("date"), ev.get("amount")
+            if ts and amt and amt > 0 and ts <= now:
+                pays.append((float(ts), float(amt)))
+        pays.sort()
+        window  = now - _DIV_WINDOW_DAYS * 86400
+        recent  = [a for t, a in pays if t >= window]
+        if recent:
+            total = sum(recent)
+        else:
+            late = [a for t, a in pays if t >= window - _DIV_GRACE_DAYS * 86400]
+            total = late[-1] if late else 0.0
+        div_12m = round(total / divisor * eur_rate, 4)
+        yield_pct = round(div_12m / current_eur * 100, 2) if current_eur and current_eur > 0 else None
+        return {"div_12m": div_12m, "div_yield": yield_pct if total > 0 else 0.0}
+    except Exception as e:
+        log.debug(f"Dividenden nicht auswertbar: {e}")
+        return {"div_12m": None, "div_yield": None}
+
 def fetch_performance(ticker, current_eur, eur_rate):
     """Berechnet 1T/1W/1M/3M/1J/3J Performance sowie 52-Wochen-Hoch/-Tief (week52_high/
     week52_low, seit v2.7.16). perf_1w wird nur noch intern für die Wochenzusammenfassung
@@ -1334,7 +1365,8 @@ def fetch_performance(ticker, current_eur, eur_rate):
     Close übereinstimmte. Jetzt bleibt der Wert stabil und wechselt nur um 0 Uhr."""
     try:
         enc = urlquote(ticker)
-        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false"
+        # events=div liefert die Dividendenhistorie im selben Call mit (seit v2.8.55, kein Zusatzaufruf)
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1d&includePrePost=false&events=div"
         r   = requests.get(url, headers=YH, timeout=10); r.raise_for_status()
         res = r.json()["chart"]["result"][0]
         # GBp-Kurse auf GBP normalisieren (sonst 100x zu hoch)
@@ -1413,12 +1445,18 @@ def fetch_performance(ticker, current_eur, eur_rate):
             result["sma_cross_age"]  = len(closes_all) - 1 - i
             break
 
+        # Dividenden der letzten 12 Monate (seit v2.8.55) aus den events=div-Daten desselben Calls.
+        # Beträge liegen wie die Kurse in der Chart-Währung (GBp → GBP über divisor). 0 = Yahoo kennt
+        # keine Zahlung (Nicht-Zahler/Thesaurierer), None = Feld nicht ermittelbar (Fehler).
+        result.update(_dividend_stats(res, now, divisor, eur_rate, current_eur))
+
         return result
     except Exception as e:
         log.warning(f"Performance {ticker}: {e}")
         return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
                 "week52_high": None, "week52_low": None,
-                "sma50": None, "sma200": None, "sma_cross_type": None, "sma_cross_date": None, "sma_cross_age": None}
+                "sma50": None, "sma200": None, "sma_cross_type": None, "sma_cross_date": None, "sma_cross_age": None,
+                "div_12m": None, "div_yield": None}
 
 # ── Apprise ───────────────────────────────────────────────────────
 EMAIL_PREFIXES = ("mailto://", "mailtos://", "sendgrid://", "sparkpost://", "postmark://", "ses://")
@@ -2192,6 +2230,8 @@ def _make_stock(data, old=None):
         "sma_cross_type": data.get("sma_cross_type"),
         "sma_cross_date": data.get("sma_cross_date"),
         "sma_cross_age":  data.get("sma_cross_age"),
+        "div_12m":        data.get("div_12m"),
+        "div_yield":      data.get("div_yield"),
         # Parqet-Felder explizit beibehalten (nicht durch **base überschreiben lassen)
         "isin":          base.get("isin"),
         "buy_price_eur": base.get("buy_price_eur"),
