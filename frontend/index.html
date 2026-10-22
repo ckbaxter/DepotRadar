@@ -1683,7 +1683,7 @@ select</style>
           <ul style="margin:8px 0 8px 18px;padding:0">
             <li><b>Gewinn / Verlust:</b> Im Plus bzw. im Minus gegenüber deinem Einstandskurs. Nur im Bestand, Positionen ohne Einstandskurs oder Stückzahl werden nicht berücksichtigt</li>
             <li><b>Dividende:</b> Zahler (in den letzten 12 Monaten ausgeschüttet) oder Rendite ≥ 2 % bzw. ≥ 4 %. Die Daten stammen von Yahoo und erscheinen nach dem nächsten Kurs-Refresh; bis dahin werden Positionen ohne Dividendendaten nicht berücksichtigt</li>
-            <li><b>Trend:</b> Golden Cross bzw. Death Cross (Kreuzung von SMA50 und SMA200 in den letzten 30 Tagen) oder Aufwärtstrend (SMA50 über SMA200) bzw. Abwärtstrend (SMA50 unter SMA200)</li>
+            <li><b>Trend:</b> Golden Cross bzw. Death Cross (Kreuzung von SMA50 und SMA200 in den letzten 30 Tagen) oder dauerhaft SMA50 über SMA200 bzw. SMA50 unter SMA200 (unabhängig vom Kurs; das ist nicht dasselbe wie die Kachel „Trend (SMA)“ in der Detailansicht, die den Kurs mit beiden Durchschnitten vergleicht)</li>
             <li><b>52 Wochen:</b> nahe am 52-Wochen-Hoch bzw. -Tief (Toleranz 3 %, wie die Badges 52W-H / 52W-T)</li>
           </ul>
           Die <b>Schnellauswahl</b> setzt häufige Kombinationen mit einem Tipp, z. B. „Dividenden im Plus + Golden Cross“.
@@ -2860,8 +2860,8 @@ function gfGroups(){
     {key:"dv", title:"Dividende", hint:"letzte 12 Monate",
      opts:[["all","Alle",""],["payer","Zahler","Dividende: Zahler"],["y2","Rendite ≥ 2 %","Rendite ≥ 2 %"],["y4","Rendite ≥ 4 %","Rendite ≥ 4 %"]]},
     {key:"tr", title:"Trend (SMA50 / SMA200)", hint:`Cross = letzte ${SMA_CROSS_RECENT_DAYS} Tage`,
-     opts:[["all","Alle",""],["golden","Golden Cross","Golden Cross"],["up","Aufwärtstrend","Aufwärtstrend"],
-           ["death","Death Cross","Death Cross"],["down","Abwärtstrend","Abwärtstrend"]]},
+     opts:[["all","Alle",""],["golden","Golden Cross","Golden Cross"],["up","SMA50 über SMA200","SMA50 über SMA200"],
+           ["death","Death Cross","Death Cross"],["down","SMA50 unter SMA200","SMA50 unter SMA200"]]},
     {key:"w", title:"52 Wochen", hint:`innerhalb von ${Math.round(WEEK52_TOLERANCE*100)} %`,
      opts:[["all","Alle",""],["high","Nahe Hoch","52W: nahe Hoch"],["low","Nahe Tief","52W: nahe Tief"]]},
   ];
