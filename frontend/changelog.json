@@ -1,7 +1,23 @@
 {
-  "frontend_version": "2.13.89",
-  "backend_version": "2.8.54",
+  "frontend_version": "2.13.90",
+  "backend_version": "2.8.55",
   "entries": [
+    {
+      "label": "Oktober 2026",
+      "versions": "Frontend v2.13.90",
+      "changes": [
+        "Neuer Filter-Button in der Aktionsleiste: Zeige zum Beispiel alle Aktien, die Dividende zahlen und bei denen du aktuell im Plus bist – optional nur mit Golden Cross. Das Auswahlfenster bietet vier Gruppen (Gewinn / Verlust, Dividende, Trend, 52 Wochen) und zeigt hinter jeder Option, wie viele Positionen übrig bleiben.",
+        "Die Schnellauswahl setzt häufige Kombinationen mit einem Tipp, etwa „Dividenden im Plus + Golden Cross“. Aktive Filter erscheinen als Chips unter der Leiste und lassen sich einzeln entfernen.",
+        "Neues Badge „Div“ in der Zeile mit der Dividendenrendite der letzten 12 Monate. Die Werte erscheinen nach dem nächsten Kurs-Refresh."
+      ]
+    },
+    {
+      "label": "Oktober 2026",
+      "versions": "Backend v2.8.55",
+      "changes": [
+        "Die Dividenden der letzten 12 Monate werden jetzt zusammen mit den Kursen von Yahoo geladen und als Dividendenrendite gespeichert – ohne zusätzliche Abfrage. Sie dient dem neuen Dividenden-Filter und dem Div-Badge."
+      ]
+    },
     {
       "label": "Oktober 2026",
       "versions": "Frontend v2.13.89",

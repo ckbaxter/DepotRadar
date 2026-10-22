@@ -298,6 +298,29 @@ tr:hover .sector-ph,.stock-card:hover .sector-ph{color:var(--muted)}
 .pb-cross{border:1px solid;background:transparent;cursor:pointer;font-family:inherit;min-height:22px}
 .pb-cross.gc{color:var(--green);border-color:var(--green)}
 .pb-cross.dc{color:var(--red);border-color:var(--red)}
+.pb-div{background:rgba(78,124,246,.14);color:var(--accent)}
+/* Gruppen-Filter (Gewinn / Dividende / Trend / 52 Wochen): Button, aktive Chips, Filter-Sheet (seit v2.13.90) */
+#groupFilterBtn{gap:6px;align-items:center}
+#groupFilterBtn.active{background:rgba(78,124,246,.15);color:var(--accent);border-color:var(--accent)}
+.gf-badge{min-width:18px;height:18px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center;padding:0 4px;box-sizing:border-box}
+.gf-chips{display:none;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 16px 4px}
+.gf-chip{display:inline-flex;align-items:center;gap:6px;min-height:32px;box-sizing:border-box;padding:0 10px 0 12px;border-radius:16px;border:1px solid var(--accent);background:rgba(78,124,246,.15);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.gf-reset{min-height:32px;padding:0 6px;border:none;background:none;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer;font-family:inherit}
+.gf-count{font-size:12px;color:var(--muted)}
+.gf-note{flex-basis:100%;font-size:11px;color:var(--yellow)}
+#groupFilterModal .modal{max-width:460px}
+.gf-group{margin-bottom:16px}
+.gf-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.gf-title{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.gf-hint{font-size:11px;color:var(--muted);text-align:right}
+.gf-opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.gf-opt{min-height:44px;box-sizing:border-box;padding:0 14px;border-radius:22px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;cursor:pointer;font-family:inherit}
+.gf-opt.on{border-color:var(--accent);background:rgba(78,124,246,.18);color:var(--accent);font-weight:600}
+.gf-foot-note{font-size:11px;color:var(--muted);line-height:1.5}
+@media(max-width:640px){
+  #groupFilterModal{align-items:flex-end;padding:0}
+  #groupFilterModal .modal{max-width:none;max-height:88vh;border-radius:18px 18px 0 0}
+}
 #crossPopover{position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;width:270px;max-width:calc(100vw - 16px);box-sizing:border-box;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none;font-size:12px;line-height:1.5;color:var(--text)}
 .sd-overlays{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;font-size:11px;color:var(--muted)}
 .sd-overlays button{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit}
@@ -838,6 +861,10 @@ select</style>
               style="display:none">&#128269; ATH prüfen</button>
       <button class="btn btn-ghost btn-sm" id="buyFilterBtn" onclick="toggleBuyFilter()" title="Nachkauf-Kandidaten anzeigen">🛒 Nachkauf</button>
       <button class="btn btn-ghost btn-sm" id="sectorFilterBtn" onclick="openSectorFilterDropdown(event)" title="Nach Sektor filtern" style="display:none">🏷️ Sektor</button>
+      <button class="btn btn-ghost btn-sm" id="groupFilterBtn" onclick="openGroupFilterSheet()" aria-haspopup="dialog" title="Nach Gewinn, Dividende, Trend und 52 Wochen filtern" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>
+        <span>Filter</span><span class="gf-badge" id="groupFilterBadge" style="display:none"></span>
+      </button>
       <div class="view-select" id="viewSelect" style="display:none">
         <button class="btn btn-ghost btn-sm view-select-btn" id="viewSelectBtn" onclick="toggleViewMenu(event)" title="Ansicht wechseln">
           <span id="viewSelectLabel">☰ Tabelle</span><span class="view-chev">▾</span>
@@ -898,6 +925,8 @@ select</style>
       <button class="sort-btn active" id="sb-discount" onclick="setSortKey('discount')">% v.ATH ▲</button>
     </div>
     </div>
+    <!-- Aktive Gruppen-Filter als Chips (bewusst außerhalb von #toolbarBody, damit sie auch bei eingeklappten Werkzeugen sichtbar bleiben) -->
+    <div class="gf-chips" id="groupFilterChips"></div>
     <div class="tbl-scroll">
       <table>
         <thead><tr>
@@ -948,6 +977,21 @@ select</style>
       <p id="emptyText">Tippe auf „+ Aktie hinzufügen" um zu starten.</p>
       <button class="btn btn-ghost btn-sm" id="emptyResetBtn" style="display:none;margin-top:12px"
               onclick="clearAllFilters()">Filter zurücksetzen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Gruppen-Filter (Mobil als Bottom-Sheet) -->
+<div class="overlay" id="groupFilterModal" style="display:none" onclick="closeIfOverlay(event,'groupFilterModal')">
+  <div class="modal" role="dialog" aria-label="Filter" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">Filter</span>
+      <button class="close-btn" aria-label="Schließen" onclick="closeModal('groupFilterModal')">&#215;</button>
+    </div>
+    <div class="modal-body" id="gfBody"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-ghost" onclick="resetGroupFilters()">Zurücksetzen</button>
+      <button class="btn btn-primary" id="gfApplyBtn" style="flex:1" onclick="closeModal('groupFilterModal')">Anzeigen</button>
     </div>
   </div>
 </div>
@@ -1626,6 +1670,27 @@ select</style>
         <div class="help-body">
           Filtert die Tabelle live nach Name oder Ticker. Kombinierbar mit allen anderen Filtern.
           Escape oder ✕ löscht den Filter.
+        </div>
+      </details>
+
+      <details class="help-section" id="help-filter" data-kw="Filter Dividende Rendite Gewinn Plus Minus Golden Cross Death Trend 52 Wochen Schnellauswahl">
+        <summary class="help-summary">🎛 Filter (Dividende, Gewinn, Trend)</summary>
+        <div class="help-body">
+          Der Button <b>Filter</b> in der Aktionsleiste öffnet ein Auswahlfenster mit vier Gruppen.
+          Pro Gruppe gilt eine Auswahl; mehrere Gruppen werden zusammen angewendet (UND), ebenso
+          wie Suche, ATH-Bereich, Sektor und Nachkauf. Hinter jeder Option steht, wie viele
+          Positionen bei dieser Auswahl übrig blieben.
+          <ul style="margin:8px 0 8px 18px;padding:0">
+            <li><b>Gewinn / Verlust:</b> Im Plus bzw. im Minus gegenüber deinem Einstandskurs. Nur im Bestand, Positionen ohne Einstandskurs oder Stückzahl werden nicht berücksichtigt</li>
+            <li><b>Dividende:</b> Zahler (in den letzten 12 Monaten ausgeschüttet) oder Rendite ≥ 2 % bzw. ≥ 4 %. Die Daten stammen von Yahoo und erscheinen nach dem nächsten Kurs-Refresh; bis dahin werden Positionen ohne Dividendendaten nicht berücksichtigt</li>
+            <li><b>Trend:</b> Golden Cross bzw. Death Cross (Kreuzung von SMA50 und SMA200 in den letzten 30 Tagen) oder Aufwärtstrend (SMA50 über SMA200) bzw. Abwärtstrend (SMA50 unter SMA200)</li>
+            <li><b>52 Wochen:</b> nahe am 52-Wochen-Hoch bzw. -Tief (Toleranz 3 %, wie die Badges 52W-H / 52W-T)</li>
+          </ul>
+          Die <b>Schnellauswahl</b> setzt häufige Kombinationen mit einem Tipp, z. B. „Dividenden im Plus + Golden Cross“.
+          Aktive Filter erscheinen als Chips unter der Leiste und lassen sich einzeln entfernen.
+          Beim Wechsel von Depot oder Watchlist werden alle Filter zurückgesetzt. Die Treemap-Ansicht ignoriert die Filter.<br><br>
+          Das Badge <b>Div x.x%</b> in der Zeile zeigt die Dividendenrendite der letzten 12 Monate.
+          Reine Orientierung, keine Anlageempfehlung.
         </div>
       </details>
 
@@ -2538,6 +2603,7 @@ function renderDepotTabs(){
 // 🛒-Filter in der Watchlist optisch aktiv blieb, obwohl er es nicht war.
 function resetViewFilters(){
   _buyFilterActive=false; _summaryFilter="all"; _activeSectorFilter=null;
+  _gf = GF_RESET();
   clearStockSearch();
   ["green","yellow","orange","red"].forEach(k=>{
     const el=document.getElementById("scard-"+k); if(el) el.classList.remove("active");
@@ -2624,6 +2690,7 @@ function renderEmptyView(){
   const rrow=document.getElementById("reportsRow");          if(rrow) rrow.style.display="none";
   const vs=document.getElementById("viewSelect");            if(vs)  vs.style.display="none";
   const athBtn=document.getElementById("athCheckBtn");       if(athBtn) athBtn.style.display="none";
+  hideGroupFilterUi();
   const lu=document.getElementById("lastUpdate");            if(lu)  lu.textContent="";
   const title=document.getElementById("viewTitle");          if(title) title.textContent="—";
   const budgetEl=document.getElementById("depotBudgetInfo"); if(budgetEl) budgetEl.textContent="";
@@ -2777,6 +2844,180 @@ function _applySummaryFilter(stocks){
     if(_summaryFilter === "red")    return d >= 60;
     return true;
   });
+}
+
+// ── Gruppen-Filter: Gewinn / Dividende / Trend / 52 Wochen (seit v2.13.90) ──
+// Vier Gruppen mit je einer Einzelwahl ("all" = Gruppe inaktiv). Alle Gruppen und die bestehenden
+// Filter (Suche, ATH-Bereich, Nachkauf, Sektor) gelten zusammen per UND. Der Zustand wird nicht
+// gespeichert und bei Depot-/Watchlist-Wechsel zurückgesetzt (resetViewFilters). Alle Kriterien
+// stützen sich auf bereits vorhandene Stock-Felder (Einstandskurs, div_yield, SMA/Cross, 52W) —
+// die Gewinn-Gruppe gibt es nur im Bestand (Watchlist-Aktien haben keinen Einstandskurs).
+// opts: [Wert, Label im Sheet, Label im Chip]
+function gfGroups(){
+  return [
+    {key:"pl", title:"Gewinn / Verlust", hint:"ab Einstandskurs", wlHidden:true,
+     opts:[["all","Alle",""],["plus","Im Plus","Im Plus"],["minus","Im Minus","Im Minus"]]},
+    {key:"dv", title:"Dividende", hint:"letzte 12 Monate",
+     opts:[["all","Alle",""],["payer","Zahler","Dividende: Zahler"],["y2","Rendite ≥ 2 %","Rendite ≥ 2 %"],["y4","Rendite ≥ 4 %","Rendite ≥ 4 %"]]},
+    {key:"tr", title:"Trend (SMA50 / SMA200)", hint:`Cross = letzte ${SMA_CROSS_RECENT_DAYS} Tage`,
+     opts:[["all","Alle",""],["golden","Golden Cross","Golden Cross"],["up","Aufwärtstrend","Aufwärtstrend"],
+           ["death","Death Cross","Death Cross"],["down","Abwärtstrend","Abwärtstrend"]]},
+    {key:"w", title:"52 Wochen", hint:`innerhalb von ${Math.round(WEEK52_TOLERANCE*100)} %`,
+     opts:[["all","Alle",""],["high","Nahe Hoch","52W: nahe Hoch"],["low","Nahe Tief","52W: nahe Tief"]]},
+  ];
+}
+const GF_PRESETS = [
+  {label:"Dividenden im Plus",                set:{pl:"plus",  dv:"payer", tr:"all",    w:"all"}},
+  {label:"Dividenden im Plus + Golden Cross", set:{pl:"plus",  dv:"payer", tr:"golden", w:"all"}},
+  {label:"Hohe Rendite im Minus",             set:{pl:"minus", dv:"y4",    tr:"all",    w:"all"}},
+];
+const GF_RESET = () => ({pl:"all", dv:"all", tr:"all", w:"all"});
+let _gf = GF_RESET();
+let _gfBase  = [];   // Positionen vor dem Gruppen-Filter (Basis der Trefferzahlen im Sheet)
+let _gfShown = 0;    // Positionen nach allen Filtern (Beschriftung des Sheet-Buttons)
+
+// In der Watchlist gilt die Gewinn-Gruppe nicht (kein Einstandskurs) — dort wird sie ignoriert.
+function _gfEff(){ return isWl() ? {..._gf, pl:"all"} : _gf; }
+function gfActiveCount(){ const f = _gfEff(); return gfGroups().filter(g => f[g.key] !== "all").length; }
+
+// Gleiche Voraussetzung wie die P&L-Zeile (pnlRow): Einstandskurs und Stückzahl
+function _gfHasEk(s){ return !!(s.buy_price_eur && s.shares && s.current_eur != null); }
+// Golden/Death Cross nur, wenn die Kreuzung noch "frisch" ist — dieselbe Regel wie crossBadge()
+function _gfCross(s){
+  if(s.sma_cross_type !== "golden" && s.sma_cross_type !== "death") return null;
+  if(!s.sma_cross_date) return null;
+  const t = new Date(); t.setHours(0,0,0,0);
+  const age = Math.round((t - new Date(s.sma_cross_date + "T00:00:00")) / 86400000);
+  return (age >= 0 && age <= SMA_CROSS_RECENT_DAYS) ? s.sma_cross_type : null;
+}
+// Gleiche Toleranzzone wie week52Badge(): Hoch hat Vorrang
+function _gfW52(s){
+  if(s.current_eur == null) return null;
+  if(s.week52_high != null && s.current_eur >= s.week52_high * (1 - WEEK52_TOLERANCE)) return "high";
+  if(s.week52_low  != null && s.current_eur <= s.week52_low  * (1 + WEEK52_TOLERANCE)) return "low";
+  return null;
+}
+// Positionen ohne die nötigen Daten (kein Einstandskurs, keine Dividendendaten, keine SMA) fallen
+// bei aktivem Filter der jeweiligen Gruppe heraus — nicht als "Treffer", nicht als "Nicht-Treffer".
+function gfMatch(s, f){
+  if(f.pl !== "all"){
+    if(!_gfHasEk(s)) return false;
+    const p = (s.current_eur - s.buy_price_eur) / s.buy_price_eur * 100;
+    if(f.pl === "plus" ? !(p > 0) : !(p < 0)) return false;
+  }
+  if(f.dv !== "all"){
+    const y = s.div_yield;
+    if(y == null) return false;
+    if(f.dv === "payer" && !(y > 0))  return false;
+    if(f.dv === "y2"    && !(y >= 2)) return false;
+    if(f.dv === "y4"    && !(y >= 4)) return false;
+  }
+  if(f.tr !== "all"){
+    if(f.tr === "golden" || f.tr === "death"){
+      if(_gfCross(s) !== f.tr) return false;
+    } else {
+      if(s.sma50 == null || s.sma200 == null) return false;
+      if(f.tr === "up" ? !(s.sma50 > s.sma200) : !(s.sma50 < s.sma200)) return false;
+    }
+  }
+  if(f.w !== "all" && _gfW52(s) !== f.w) return false;
+  return true;
+}
+function _applyGroupFilters(stocks){
+  _gfBase = stocks;
+  if(!gfActiveCount()) return stocks;
+  const f = _gfEff();
+  return stocks.filter(s => gfMatch(s, f));
+}
+
+function setGroupFilter(key, val){ _gf[key] = val; _gfRefresh(); }
+function applyGfPreset(i){ Object.assign(_gf, GF_PRESETS[i].set); _gfRefresh(); }
+function resetGroupFilters(){ _gf = GF_RESET(); _gfRefresh(); }
+function _gfRefresh(){ if(stocksCache) renderTable(stocksCache); }
+
+function openGroupFilterSheet(){
+  openModal("groupFilterModal");
+  renderGroupFilterSheet();
+}
+
+// Baut das Sheet neu auf (nur wenn es offen ist). Jede Option zeigt, wie viele Positionen
+// bei dieser Auswahl übrig blieben — die anderen Filter bleiben dabei unverändert.
+function renderGroupFilterSheet(){
+  const modal = document.getElementById("groupFilterModal"), body = document.getElementById("gfBody");
+  if(!modal || !body || modal.style.display === "none") return;
+  const f = _gfEff(), wl = isWl();
+  let h = "";
+  if(!wl){
+    h += `<div class="gf-group"><div class="gf-title">Schnellauswahl</div><div class="gf-opts">` +
+      GF_PRESETS.map((p, i) => {
+        const on = gfGroups().every(g => f[g.key] === p.set[g.key]);
+        return `<button type="button" class="gf-opt${on ? " on" : ""}" aria-pressed="${on}" onclick="applyGfPreset(${i})">${p.label}</button>`;
+      }).join("") + `</div></div>`;
+  }
+  gfGroups().filter(g => !(wl && g.wlHidden)).forEach(g => {
+    h += `<div class="gf-group"><div class="gf-head"><span class="gf-title">${g.title}</span><span class="gf-hint">${g.hint}</span></div><div class="gf-opts">` +
+      g.opts.map(o => {
+        const on = f[g.key] === o[0];
+        const n  = _gfBase.filter(s => gfMatch(s, {...f, [g.key]: o[0]})).length;
+        return `<button type="button" class="gf-opt${on ? " on" : ""}" aria-pressed="${on}" onclick="setGroupFilter('${g.key}','${o[0]}')">${o[1]} · ${n}</button>`;
+      }).join("") + `</div></div>`;
+  });
+  h += `<div class="gf-foot-note">Die Filter gelten zusammen mit Suche, ATH-Bereich, Sektor und Nachkauf. Dividendendaten stammen von Yahoo und füllen sich mit dem nächsten Kurs-Refresh.</div>`;
+  body.innerHTML = h;
+  const apply = document.getElementById("gfApplyBtn");
+  if(apply) apply.textContent = _gfShown === 1 ? "1 Treffer anzeigen" : `${_gfShown} Treffer anzeigen`;
+}
+
+// Hinweise zu Positionen, denen für die aktive Gruppe die Datenbasis fehlt
+function _gfNotes(f){
+  const out = [], others = k => ({...f, [k]: "all"});
+  const line = (c, what, filter, extra) =>
+    `${c} ${c === 1 ? "Position ohne " + what + " wird" : "Positionen ohne " + what + " werden"} bei „${filter}“ nicht berücksichtigt${extra || ""}.`;
+  if(f.pl !== "all"){
+    const c = _gfBase.filter(s => !_gfHasEk(s) && gfMatch(s, others("pl"))).length;
+    if(c) out.push(line(c, "Einstandskurs", "Gewinn / Verlust"));
+  }
+  if(f.dv !== "all"){
+    const c = _gfBase.filter(s => s.div_yield == null && gfMatch(s, others("dv"))).length;
+    if(c) out.push(line(c, "Dividendendaten", "Dividende", " (Daten kommen mit dem nächsten Kurs-Refresh)"));
+  }
+  if(f.tr === "up" || f.tr === "down"){
+    const c = _gfBase.filter(s => (s.sma50 == null || s.sma200 == null) && gfMatch(s, others("tr"))).length;
+    if(c) out.push(line(c, "SMA-Daten", "Trend", " (weniger als 200 Handelstage Historie)"));
+  }
+  return out;
+}
+
+// Aktive Filter als Chips unter der Aktionsleiste + Trefferzähler; aktualisiert außerdem Button
+// und (falls offen) das Sheet. Wird bei jedem renderTable() aufgerufen.
+function renderGroupFilterChips(shown, total){
+  _gfShown = shown;
+  const f = _gfEff(), n = gfActiveCount();
+  const btn = document.getElementById("groupFilterBtn"), badge = document.getElementById("groupFilterBadge");
+  if(btn) btn.classList.toggle("active", n > 0);
+  if(badge){ badge.textContent = n; badge.style.display = n ? "inline-flex" : "none"; }
+  const wrap = document.getElementById("groupFilterChips");
+  if(wrap){
+    if(!n){ wrap.style.display = "none"; wrap.innerHTML = ""; }
+    else {
+      wrap.innerHTML =
+        gfGroups().filter(g => f[g.key] !== "all").map(g => {
+          const o = g.opts.find(q => q[0] === f[g.key]);
+          return `<button type="button" class="gf-chip" aria-label="${o[2]} entfernen" onclick="setGroupFilter('${g.key}','all')">${o[2]}<span aria-hidden="true">✕</span></button>`;
+        }).join("") +
+        `<button type="button" class="gf-reset" onclick="resetGroupFilters()">Zurücksetzen</button>` +
+        `<span class="gf-count">${shown} von ${total} Positionen</span>` +
+        _gfNotes(f).map(t => `<span class="gf-note">${t}</span>`).join("");
+      wrap.style.display = "flex";
+    }
+  }
+  renderGroupFilterSheet();
+}
+function hideGroupFilterUi(){
+  _gfBase = []; _gfShown = 0;
+  const btn = document.getElementById("groupFilterBtn"), wrap = document.getElementById("groupFilterChips");
+  if(btn)  btn.style.display = "none";
+  if(wrap){ wrap.style.display = "none"; wrap.innerHTML = ""; }
 }
 
 function markBuyCandidates(stocks) {
@@ -3528,6 +3769,15 @@ function perfBadge(val, label){
   const sign = val > 0 ? "+" : "";
   return `<span class="pb ${cls}">${label} ${sign}${val.toFixed(1)}%</span>`;
 }
+// ── Dividenden-Badge (seit v2.13.90/2.8.55) ──────────────────────
+// Dividendenrendite der letzten 12 Monate (Yahoo, div_yield in %). Kein Badge bei Nicht-Zahlern
+// und solange noch keine Daten vorliegen (div_yield == null, kommt mit dem nächsten Kurs-Refresh).
+function divBadge(s){
+  const y = s.div_yield;
+  if(y == null || !(y > 0)) return "";
+  const txt = y < 0.1 ? y.toFixed(2) : y.toFixed(1);
+  return `<span class="pb pb-div" title="Dividendenrendite der letzten 12 Monate">Div ${txt}%</span>`;
+}
 // ── 52-Wochen-Hoch/-Tief Badge (seit v2.12.3/2.7.16) ──────────────
 // Toleranzzone 3% fest im Code (analog Sektor-Gap-Schwellenwert 50%), kein neues
 // Backend-Feld über week52_high/week52_low hinaus — Vergleichslogik läuft im Frontend.
@@ -3607,7 +3857,7 @@ function smaTrendTile(s){
   return `<div class="sd-item"><div class="lbl">Trend (SMA)</div><div class="v" style="color:${col}">${txt}</div></div>`;
 }
 function perfWrap(s){
-  const b = perfBadge(s.perf_1d,"1T") + perfBadge(s.perf_1m,"1M") + perfBadge(s.perf_3m,"3M") + perfBadge(s.perf_1y,"1J") + perfBadge(s.perf_3y,"3J") + week52Badge(s) + smaBadge(s) + crossBadge(s);
+  const b = perfBadge(s.perf_1d,"1T") + perfBadge(s.perf_1m,"1M") + perfBadge(s.perf_3m,"3M") + perfBadge(s.perf_1y,"1J") + perfBadge(s.perf_3y,"3J") + divBadge(s) + week52Badge(s) + smaBadge(s) + crossBadge(s);
   return b ? `<div class="perf-wrap">${b}</div>` : "";
 }
 
@@ -3685,6 +3935,7 @@ function activeFilterNames(){
   if(_summaryFilter !== "all") names.push("ATH-Bereich");
   if(_buyFilterActive)         names.push("Nachkauf");
   if(_activeSectorFilter)      names.push("Sektor");
+  if(gfActiveCount())          names.push("Filter");
   return names;
 }
 
@@ -3713,9 +3964,12 @@ function renderTable(stocks){
     showEmptyState(wl ? "🔍" : "📊",
                    wl ? "Beobachtungsliste ist leer" : "Noch keine Aktien",
                    "Tippe auf + Hinzufügen um zu starten.", false);
+    hideGroupFilterUi();
     return;
   }
   empty.style.display="none"; tscrl.style.display="";
+  const gfBtn = document.getElementById("groupFilterBtn");
+  if(gfBtn) gfBtn.style.display = "inline-flex";
 
   // Ansicht-Dropdown: immer sichtbar; Treemap-Option nur für Bestand ab 2 Positionen
   const viewSelect = document.getElementById("viewSelect");
@@ -3738,6 +3992,8 @@ function renderTable(stocks){
   markSectorGap(stocks);
   if(_buyFilterActive) stocks = stocks.filter(s => s._isBuyCandidate);
   if(_activeSectorFilter) stocks = stocks.filter(s => s.sector === _activeSectorFilter);
+  stocks = _applyGroupFilters(stocks);
+  renderGroupFilterChips(stocks.length, stocksCache.length);
   renderSectorFilterBtn();
 
   // Die Liste selbst ist nicht leer, aber kein Eintrag passt zur aktuellen Auswahl.
