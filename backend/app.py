@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.57"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.58"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1944,13 +1944,20 @@ def _collect_issues():
                 owners=owners, admin=True, affected=f"Depot „{dname}“", banner=True, depot_id=did,
                 actions=[{"type": "reconnect", "depot_id": did}], job="parqet_sync")
         n_rem, n_mis = len(pq.get("pending_removed") or []), len(pq.get("pending_mismatches") or [])
-        if n_rem or n_mis:
+        new_list = pq.get("pending_new") or []
+        n_new = len(new_list)
+        if n_rem or n_mis or n_new:
             names = ", ".join(r.get("name", "?") for r in (pq.get("pending_removed") or []))
             parts = []
             if n_rem: parts.append(f"Bei Parqet komplett verkauft, noch im ATH-Tracker: {names}.")
             if n_mis: parts.append(f"{n_mis} Abweichung(en) zwischen Parqet und Bestand zu prüfen.")
+            if n_new:
+                new_names = ", ".join((n.get("name") or n.get("isin") or "?") for n in new_list[:5])
+                if n_new > 5: new_names += f" und {n_new - 5} weitere"
+                parts.append(f"Neu bei Parqet, noch nicht im Depot: {new_names}.")
+            n_all = n_rem + n_mis + n_new
             add(f"parqet_pending:{did}", "parqet_pending", "action", "parqet",
-                f"Parqet: {n_rem + n_mis} {'Eintrag' if n_rem + n_mis == 1 else 'Einträge'} zu bestätigen", " ".join(parts),
+                f"Parqet: {n_all} {'Eintrag' if n_all == 1 else 'Einträge'} zu bestätigen", " ".join(parts),
                 owners=owners, affected=f"Depot „{dname}“", depot_id=did,
                 actions=[{"type": "pending", "depot_id": did}])
 
@@ -4105,6 +4112,7 @@ def parqet_status(depot_id):
                     "auto_sync_end_hour": pq.get("auto_sync_end_hour", 22),
                     "pending_removed": pq.get("pending_removed", []),
                     "pending_mismatches": pq.get("pending_mismatches", []),
+                    "pending_new": pq.get("pending_new", []),
                     "has_backup": os.path.exists(depot_backup_file(depot_id)),
                     "backup_time": (
                         datetime.fromtimestamp(os.path.getmtime(depot_backup_file(depot_id)))
@@ -4532,6 +4540,12 @@ def _parqet_sync_core(depot_id, auto=False):
             if d["id"] == depot_id:
                 d["parqet"]["last_sync"] = datetime.now().strftime("%d.%m.%Y %H:%M")
                 d["parqet"].pop("needs_reconnect", None)
+                # Neue Aktien bei Parqet (ISIN noch nicht im Depot) vormerken, damit sie auch nach
+                # einem automatischen Sync oder einem geschlossenen Import-Modal nicht verloren
+                # gehen. Bewusst ERSETZT statt gemerged: die Liste wird bei jedem Sync aus dem
+                # tatsächlichen Stand neu abgeleitet und bereinigt sich damit selbst (importierte
+                # oder inzwischen entfernte Aktien fallen automatisch heraus).
+                d["parqet"]["pending_new"] = new_stocks
                 if auto:
                     # Nur beim automatischen Sync: removed/mismatches zusätzlich nach ISIN
                     # gemerged persistieren (nicht überschreiben — mehrere Auto-Läufe können
@@ -4555,6 +4569,9 @@ def _parqet_sync_core(depot_id, auto=False):
             log_body += f" | Neue Dividenden: {new_div} | Neue realisierte G/V: {new_rg}"
         if updated_details:
             log_body += "\n\nAktualisiert:\n" + "\n".join(updated_details)
+        if new_stocks:
+            log_body += "\n\nNeu bei Parqet (noch nicht im Depot):\n" + "\n".join(
+                f"• {n['name'] or n['isin']} ({n['isin']})" for n in new_stocks)
         # "system" statt "manual_refresh" beim automatischen Sync — analog zum früheren
         # Token-Refresh-Job (v2.8.20), damit im Verlauf klar zwischen Klick und Hintergrund-
         # Lauf unterschieden werden kann, ohne einen neuen Typ/Label/Class-Fall zu brauchen.
@@ -4723,6 +4740,19 @@ def parqet_debug_holdings(depot_id):
         out["unfiltered"] = {"error": str(e)}
     return jsonify(out), 200
 
+def _clear_pending_new(depot_id, isins):
+    """Entfernt importierte ISINs aus parqet.pending_new. Lädt die Depots unmittelbar vor dem
+    Speichern frisch (Stale-Object-Antipattern, siehe Token-Refresh) und wird bewusst erst
+    NACH dem depot_lock-Block des Imports aufgerufen."""
+    isins = {i for i in isins if i}
+    if not isins: return
+    depots = load_depots()
+    for d in depots:
+        if d["id"] == depot_id and d.get("parqet", {}).get("pending_new"):
+            d["parqet"]["pending_new"] = [n for n in d["parqet"]["pending_new"] if n.get("isin") not in isins]
+            save_depots(depots)
+            break
+
 @app.route("/api/depots/<depot_id>/parqet/apply-removal", methods=["POST"])
 def parqet_apply_removal(depot_id):
     """Löscht eine Aktie, die laut Parqet-Sync komplett verkauft wurde, nach expliziter
@@ -4830,7 +4860,10 @@ def parqet_import_bulk(depot_id):
             except Exception as e:
                 results.append({"ok": False, "error": str(e)})
         save_stocks(depot_id, stocks)
-        return jsonify(results)
+    # Erfolgreich importierte (oder bereits vorhandene) ISINs aus der Vormerkung nehmen
+    _clear_pending_new(depot_id, [_clean_isin(it.get("isin")) for it, r in zip(items, results)
+                                  if isinstance(it, dict) and (r.get("ok") or r.get("skipped"))])
+    return jsonify(results)
 
 @app.route("/api/depots/<depot_id>/parqet/import", methods=["POST"])
 def parqet_import_stock(depot_id):
@@ -4852,18 +4885,21 @@ def parqet_import_stock(depot_id):
         if existing:
             existing.update({"isin": isin, "buy_price_eur": buy_price, "shares": shares})
             save_stocks(depot_id, stocks)
-            return jsonify({"ok": True, "action": "updated", "stock": existing})
-        try: data = fetch_stock_data(ticker)
-        except ValueError as e:
-            msg = str(e)
-            code = 404 if "nicht gefunden" in msg else 502
-            return jsonify({"error": msg, "ticker_not_found": code == 404}), code
-        except Exception as e: return jsonify({"error": str(e)}), 502
-        stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
-                 "isin": isin, "buy_price_eur": buy_price, "shares": shares,
-                 "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
-        stocks.append(stock); save_stocks(depot_id, stocks)
-        return jsonify({"ok": True, "action": "added", "stock": stock}), 201
+            imported = ("updated", existing)
+        else:
+            try: data = fetch_stock_data(ticker)
+            except ValueError as e:
+                msg = str(e)
+                code = 404 if "nicht gefunden" in msg else 502
+                return jsonify({"error": msg, "ticker_not_found": code == 404}), code
+            except Exception as e: return jsonify({"error": str(e)}), 502
+            stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
+                     "isin": isin, "buy_price_eur": buy_price, "shares": shares,
+                     "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
+            stocks.append(stock); save_stocks(depot_id, stocks)
+            imported = ("added", stock)
+    _clear_pending_new(depot_id, [isin])
+    return jsonify({"ok": True, "action": imported[0], "stock": imported[1]}), (201 if imported[0] == "added" else 200)
 
 @app.route("/api/depots/<depot_id>/earnings", methods=["GET"])
 def get_depot_earnings(depot_id):

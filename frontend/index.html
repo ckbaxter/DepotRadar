@@ -6382,9 +6382,9 @@ async function issueAction(idx, ai){
       try {
         const r = await fetch(`${API}/depots/${depot.id}/parqet/status`);
         const s = await r.json();
-        activeDepot.parqet = {...(activeDepot.parqet||{}), pending_removed: s.pending_removed, pending_mismatches: s.pending_mismatches};
+        activeDepot.parqet = {...(activeDepot.parqet||{}), pending_removed: s.pending_removed, pending_mismatches: s.pending_mismatches, pending_new: s.pending_new};
       } catch(e){ /* lokalen Stand verwenden */ }
-      showParqetPendingModal();
+      showParqetPendingModal(true);
     }
   } catch(e){ toast(e.message || "Fehlgeschlagen", false); }
 }
@@ -7987,7 +7987,7 @@ async function loadParqetStatus(depotId){
       portfolio_id: s.portfolio_id, portfolio_name: s.portfolio_name,
       auto_sync_enabled: s.auto_sync_enabled, auto_sync_interval_hours: s.auto_sync_interval_hours,
       auto_sync_start_hour: s.auto_sync_start_hour, auto_sync_end_hour: s.auto_sync_end_hour,
-      pending_removed: s.pending_removed, pending_mismatches: s.pending_mismatches};
+      pending_removed: s.pending_removed, pending_mismatches: s.pending_mismatches, pending_new: s.pending_new};
     updateParqetSyncUI();
   }
   refreshIssues();
@@ -8169,12 +8169,16 @@ function updateParqetSyncUI(){
 
 // Öffnet die Bestätigungs-Modals für ausstehende Pending-Fälle (persistiert vom automatischen
 // Sync) — sowohl beim Auto-Open (erster Besuch mit offenen Fällen) als auch per Badge-Klick.
-// Reihenfolge wie beim bisherigen manuellen Sync (mismatch vor removed).
-function showParqetPendingModal(){
+// Reihenfolge wie beim bisherigen manuellen Sync (mismatch vor removed, neue Aktien zuletzt).
+// Neue Aktien (pending_new) nur auf ausdrücklichen Klick im Hinweis-Center (withNew): das
+// Import-Modal importiert beim Öffnen sofort automatisch und gehört deshalb nicht ins
+// Auto-Öffnen beim ersten Besuch.
+function showParqetPendingModal(withNew){
   const pq = activeDepot?.parqet;
   if(!pq) return;
   if(pq.pending_mismatches?.length) openMismatchModal(pq.pending_mismatches);
   if(pq.pending_removed?.length) openRemovedModal(pq.pending_removed);
+  if(withNew && pq.pending_new?.length) openParqetImportModal(pq.pending_new, activeDepot.id);
 }
 
 async function doParqetSyncMain(){
@@ -8332,6 +8336,7 @@ async function openParqetImportModal(newStocks, depotId){
     }
   }
   document.getElementById("pqiAutoBar").style.width = "90%";
+  refreshIssues();  // Vormerkung (pending_new) hat das Backend beim Import bereits geleert
 
   document.getElementById("pqiAutoBar").style.width   = "100%";
   document.getElementById("pqiAutoCount").textContent = `${total} / ${total}`;
@@ -8494,6 +8499,7 @@ async function pqiImport(idx){
     box.querySelector('.form-input').disabled = true;
     toast(`${co.name} importiert`);
     loadCurrentStocks();
+    refreshIssues();
   } catch(e){
     const msg = e.message || "Unbekannter Fehler";
     if(msg.includes("nicht gefunden")){
