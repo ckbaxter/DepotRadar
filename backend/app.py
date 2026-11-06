@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.56"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.57"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -4775,6 +4775,9 @@ def parqet_import_bulk(depot_id):
     items  = request.get_json(silent=True)
     if not isinstance(items, list) or not items: return jsonify({"error": "Keine Daten"}), 400
     if len(items) > 500: return jsonify({"error": "Zu viele Einträge (max. 500)"}), 400
+    # Unbekannte Depot-ID abweisen: load_stocks()/save_stocks() legen sonst für jede beliebige
+    # ID (z. B. "null") stillschweigend eine eigene Bestandsdatei an.
+    if not get_depot(depot_id): return jsonify({"error": "Depot nicht gefunden"}), 404
     with depot_lock(depot_id):
         stocks          = load_stocks(depot_id)
         # Backup vor Import anlegen (Import = immer Änderung)
@@ -4842,6 +4845,7 @@ def parqet_import_stock(depot_id):
     except ValueError as e:
         return jsonify({"error": f"Ungültige Positionsangabe: {e}"}), 400
     if not ticker or not name: return jsonify({"error": "gültiger ticker und name erforderlich"}), 400
+    if not get_depot(depot_id): return jsonify({"error": "Depot nicht gefunden"}), 404
     with depot_lock(depot_id):
         stocks   = load_stocks(depot_id)
         existing = next((s for s in stocks if s["ticker"] == ticker), None)
