@@ -1,7 +1,21 @@
 {
-  "frontend_version": "2.13.90",
-  "backend_version": "2.8.56",
+  "frontend_version": "2.13.91",
+  "backend_version": "2.8.57",
   "entries": [
+    {
+      "label": "November 2026",
+      "versions": "Frontend v2.13.91",
+      "changes": [
+        "Parqet-Sync über den Button in der Kopfzeile: Neue Aktien aus Parqet werden jetzt in das richtige Depot importiert. Vorher ging der Import ins Leere, die Aktie erschien nie in der Liste, obwohl der Sync „Neu: 1“ meldete."
+      ]
+    },
+    {
+      "label": "November 2026",
+      "versions": "Backend v2.8.57",
+      "changes": [
+        "Der Import neuer Aktien aus Parqet wird abgewiesen, wenn das Ziel-Depot nicht existiert, statt stillschweigend eine leere Bestandsdatei anzulegen."
+      ]
+    },
     {
       "label": "November 2026",
       "versions": "Backend v2.8.56",
