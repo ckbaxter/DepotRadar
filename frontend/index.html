@@ -535,6 +535,22 @@ details[open] .usr-arrow{transform:rotate(90deg)}
 .rp-chips{display:flex;flex-wrap:wrap;gap:6px}
 .rp-chip{padding:4px 10px;border-radius:12px;background:var(--bg3);border:1px solid var(--border);font-size:12px}
 .rp-disc{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4}
+.rp-drv{padding:10px 14px;border-top:1px solid var(--border)}
+.rp-drv-list>.rp-drv:first-child{border-top:0}
+.rp-drv-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px}
+.rp-drv-pct{font-size:11px;color:var(--muted)}
+.rp-drv-bar{display:flex;align-items:center;gap:8px;margin-top:6px}
+.rp-drv-track{flex:1;height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+.rp-drv-track>div{height:100%;border-radius:3px}
+.rp-drv-share{font-size:11px;color:var(--muted);min-width:34px;text-align:right}
+.rp-drv-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:2px 10px;margin:14px 0 6px}
+.rp-drv-title{font-size:13px;font-weight:600}
+.rp-drv-sub{font-size:11px;color:var(--muted)}
+.rp-drv-more{border-top:1px solid var(--border)}
+.rp-drv-more>summary{list-style:none;cursor:pointer;min-height:44px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 14px;font-size:13px}
+.rp-drv-more>summary::-webkit-details-marker{display:none}
+.rp-drv-more[open] .rp-drv-chev{display:inline-block;transform:rotate(180deg)}
+.scard-link{display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:6px;padding:8px 0 2px;border:0;border-top:1px solid var(--border);background:transparent;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;text-align:left}
 .rp-empty{padding:18px 14px;text-align:center;font-size:13px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:10px}
 .sd-summary{font-size:13px;line-height:1.55;color:var(--text)}
 .sd-summary.loading{color:var(--muted);display:flex;align-items:center;gap:8px}
@@ -770,6 +786,7 @@ select</style>
           <div class="scard">
             <div class="scard-label">&#128201; Flop 3 (Heute)</div>
             <div style="font-size:13px;font-weight:600;margin-top:4px" id="ps-worst-today">—</div>
+            <button type="button" class="scard-link" onclick="openReportModal('daily','drivers')"><span>Alle Treiber des Tages</span><span aria-hidden="true">&#8250;</span></button>
           </div>
         </div>
       </div>
@@ -1559,14 +1576,15 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section" id="help-berichte" data-kw="Bericht Berichte Tagesbericht Wochenbericht Zusammenfassung Digest Vorschau ansehen Alarme Allzeithoch Discount Trendwechsel Nachkauf Handelstag Zwischenstand">
+      <details class="help-section" id="help-berichte" data-kw="Bericht Berichte Tagesbericht Wochenbericht Zusammenfassung Digest Vorschau ansehen Alarme Allzeithoch Discount Trendwechsel Nachkauf Handelstag Zwischenstand Treiber Beitrag Verlierer Gewinner">
         <summary class="help-summary">📰 Berichte</summary>
         <div class="help-body">
           Unter <b>Übersichten → 📰 Berichte</b> lassen sich <b>Tagesbericht</b> und <b>Wochenbericht</b>
           des aktuellen Depots direkt in der App ansehen — mit denselben Inhalten wie die versendeten
           Zusammenfassungen, aber unabhängig davon, ob der Versand aktiviert ist. Es wird nichts gesendet.<br><br>
-          <b>Tagesbericht:</b> Wertentwicklung des Depots, ATH-Treffer, Discount-Alarme und (wenn in der
-          Zusammenfassung aktiviert) Trendwechsel. Vor der Versandzeit ist er ein <b>Zwischenstand</b>.
+          <b>Tagesbericht:</b> Wertentwicklung des Depots, die <b>Treiber des Tages</b> (welche Positionen
+          wie viel € zur Tagesbewegung beigetragen haben, getrennt nach Verlierern und Gewinnern), ATH-Treffer,
+          Discount-Alarme und (wenn in der Zusammenfassung aktiviert) Trendwechsel. Vor der Versandzeit ist er ein <b>Zwischenstand</b>.
           Am Wochenende zeigt er den <b>letzten Handelstag</b> (Freitag; Feiertage werden nicht berücksichtigt).<br><br>
           <b>Wochenbericht:</b> Wertentwicklung ggü. Vorwoche, Verteilung nach ATH-Abstand,
           Nachkauf-Kandidaten, beste/schlechteste Aktie der Woche, Aktien kurz vor dem nächsten Level und Sektoren.<br><br>
@@ -1584,7 +1602,10 @@ select</style>
           Positionen im Bestand, für die ein Einstandskurs vorliegt — keine Watchlist-Aktien.<br><br>
           Tippen auf eine der drei Zahlen einer Karte schaltet die ganze Karte zwischen <b>%</b> und
           <b>€</b> um (Standard: %). Lange Firmennamen sind gekürzt — Tippen auf den Namen zeigt
-          ihn vollständig.
+          ihn vollständig.<br><br>
+          Der Link <b>„Alle Treiber des Tages“</b> unter „Flop 3 (Heute)“ öffnet den Tagesbericht beim
+          Abschnitt <b>Treiber des Tages</b>: dort sind <i>alle</i> Positionen nach ihrem €-Beitrag sortiert
+          (nicht nach Prozent wie auf den Karten), getrennt nach Verlierern und Gewinnern.
         </div>
       </details>
 
@@ -7116,11 +7137,13 @@ function closeIfOverlay(e,id){if(e.target===document.getElementById(id))closeMod
 // reine Ansicht, kein Versand. Nur für Depots; die Zeile ist in Watchlists ausgeblendet.
 let _reportType = "daily";
 let _reportDepotId = null;
+let _reportFocus = null;
 let _reportReq = 0;   // verwirft Antworten veralteter Aufrufe (Tab-/Depotwechsel, schnelles Mehrfach-Klicken)
 
-function openReportModal(type){
+function openReportModal(type, focus){
   if(activeView.type !== "depot" || !activeDepot) return;
   _reportDepotId = activeDepot.id;
+  _reportFocus = focus || null;   // "drivers": nach dem Laden zum Abschnitt „Treiber des Tages“ scrollen
   const t = type || localStorage.getItem("reportTab");
   document.getElementById("rpDepot").textContent = activeDepot.name || "";
   openModal("reportModal");
@@ -7172,10 +7195,76 @@ function renderReport(d){
   const box = document.getElementById("rpContent");
   document.getElementById("rpDepot").textContent = `${d.depot_name} · ${d.total} Aktie${d.total === 1 ? "" : "n"}`;
   box.innerHTML = d.type === "weekly" ? rpWeeklyHtml(d) : rpDailyHtml(d);
+  if(_reportFocus === "drivers" && d.type === "daily"){
+    const el = document.getElementById("rpDrivers");
+    if(el) el.scrollIntoView({block:"start"});
+  }
+  _reportFocus = null;
   const stand = d.updated ? ` · Stand: ${d.updated} Uhr` : "";
   document.getElementById("rpMeta").textContent = d.type === "weekly"
     ? (d.empty ? "" : `KW ${d.kw}${stand}`)
     : (d.day.is_today ? `Heute${stand}` : `Letzter Handelstag: ${d.day.label}${stand}`);
+}
+
+// Treiber des Tages (seit v2.13.94): Beitrag jeder Position zur Tagesbewegung in € (d.drivers aus
+// _day_drivers im Backend). Verlierer und Gewinner getrennt, je die größten n; der Rest klappt auf.
+const RP_DRIVERS_TOP = {losers: 5, winners: 3};
+
+// ctx: {max, total} der GANZEN Seite (größter Beitrag = 100 % Balken, Summe = Basis des Anteils), damit
+// Balken und Anteile in den aufgeklappten Zeilen zu denen der sichtbaren passen.
+function rpDriverRows(items, side, ctx){
+  if(!items.length) return "";
+  const {max, total} = ctx;
+  const col = side === "losers" ? "--red" : "--green";
+  return items.map(r => {
+    const a = Math.abs(r.delta_eur);
+    const share = total > 0 ? Math.round(a / total * 100) : 0;
+    return `<div class="rp-drv"><div class="rp-drv-top"><span>${esc(r.name)} <span class="rp-drv-pct">${rpPct(r.pct)}</span></span>
+      <span style="font-weight:700;color:var(${col})">${rpEur(r.delta_eur)}</span></div>
+      <div class="rp-drv-bar"><div class="rp-drv-track"><div style="width:${max > 0 ? Math.max(2, Math.round(a / max * 100)) : 0}%;background:var(${col})"></div></div>
+      <span class="rp-drv-share">${share < 1 ? "&lt;1" : share} %</span></div></div>`;
+  }).join("");
+}
+
+function rpDriverSide(dr, side){
+  const items = dr[side], loss = side === "losers";
+  if(!items.length) return "";
+  const top = RP_DRIVERS_TOP[side], rest = items.slice(top);
+  const sum = loss ? dr.loss_eur : dr.gain_eur;
+  const ctx = {max: Math.abs(items[0].delta_eur), total: Math.abs(sum)};   // Listen sind nach Beitrag sortiert
+  const topRows = rpDriverRows(items.slice(0, top), side, ctx);
+  let more = "";
+  if(rest.length){
+    const restSum = rest.reduce((a, r) => a + r.delta_eur, 0);
+    more = `<details class="rp-drv-more"><summary><span>${rest.length} weitere Position${rest.length === 1 ? "" : "en"} anzeigen <span class="rp-drv-chev" aria-hidden="true">&#9662;</span></span>
+      <span style="font-weight:700;color:var(${loss ? "--red" : "--green"})">${rpEur(restSum)}</span></summary>${rpDriverRows(rest, side, ctx)}</details>`;
+  }
+  return `<div class="rp-drv-head"><span class="rp-drv-title">${loss ? "Verlierer" : "Gewinner"}</span>
+    <span class="rp-drv-sub">Anteil am ${loss ? "Minus" : "Plus"} · ${items.length} Position${items.length === 1 ? "" : "en"} · ${rpEur(sum)}</span></div>
+    <div class="rp-list rp-drv-list">${topRows}${more}</div>`;
+}
+
+function rpDriversHtml(d){
+  if(!d.total) return "";
+  const lbl = "💸 Treiber des Tages", dr = d.drivers;
+  if(!dr){
+    return `<div class="rp-sec" id="rpDrivers"><div class="sd-section-lbl">${lbl}</div>
+      <div class="rp-empty">Für ${d.day.is_today ? "heute" : esc(d.day.label)} liegen noch keine Tagesdaten vor — sie entstehen mit dem Kurs-Refresh am Handelstag.</div></div>`;
+  }
+  const col = dr.total_eur > 0 ? "--green" : dr.total_eur < 0 ? "--red" : "--muted";
+  const parts = [`${dr.n} Position${dr.n === 1 ? "" : "en"}`, `${dr.losers.length} im Minus`, `${dr.winners.length} im Plus`];
+  if(dr.n_flat) parts.push(`${dr.n_flat} unverändert`);
+  if(dr.missing) parts.push(`${dr.missing} ohne Tagesdaten`);
+  const pp = d.port_perf, diff = pp ? pp.delta_eur - dr.total_eur : 0;
+  const hint = pp && Math.abs(diff) >= 1
+    ? `<div class="rp-disc" style="margin:6px 0 0">Die Portfolio-Zeile oben (${rpEur(pp.delta_eur)}) vergleicht mit dem Snapshot von ${esc(pp.ref_label)} und kann abweichen, z. B. durch Käufe/Verkäufe oder den Snapshot-Zeitpunkt (hier ${rpEur(diff)}).</div>` : "";
+  return `<div class="rp-sec" id="rpDrivers"><div class="sd-section-lbl">${lbl}</div>
+    <div class="rp-card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+      <span style="font-size:13px">Kursbewegung der Positionen</span>
+      <span class="rp-big" style="color:var(${col})">${rpEur(dr.total_eur)}</span></div>
+      <div class="rp-lbl" style="margin:4px 0 0">${parts.join(" · ")}</div></div>${hint}
+    ${rpDriverSide(dr, "losers")}${rpDriverSide(dr, "winners")}
+    <div class="rp-disc" style="margin-top:10px">Beitrag = Stückzahl × Kursänderung seit dem letzten Schlusskurs, in EUR. Nur Positionen im Depot.</div></div>`;
 }
 
 function rpDailyHtml(d){
@@ -7186,6 +7275,7 @@ function rpDailyHtml(d){
       : "Im Lauf des Tages können noch Alarme dazukommen."}</div>`;
   }
   html += rpPortCard(d.port_perf, d.port_perf ? d.port_perf.ref_label : "");
+  html += rpDriversHtml(d);
   const rows = list => `<div class="rp-list">${list.map(l => `<div class="rp-row"><span>${esc(l)}</span></div>`).join("")}</div>`;
   if(d.ath.length){
     html += rpSection(`🎉 ${d.ath.length} neue${d.ath.length === 1 ? "s Allzeithoch" : " Allzeithochs"}`, rows(d.ath));

@@ -1,7 +1,16 @@
 {
-  "frontend_version": "2.13.93",
-  "backend_version": "2.8.59",
+  "frontend_version": "2.13.94",
+  "backend_version": "2.8.60",
   "entries": [
+    {
+      "label": "November 2026",
+      "versions": "Backend v2.8.60 · Frontend v2.13.94",
+      "changes": [
+        "Neu: Treiber des Tages. Im Tagesbericht zeigt ein neuer Abschnitt, welche Positionen wie viel Euro zur Tagesbewegung deines Depots beigetragen haben – getrennt nach Verlierern und Gewinnern, mit Anteil am Minus bzw. Plus. Die größten Positionen stehen oben, der Rest lässt sich aufklappen.",
+        "Unter „Flop 3 (Heute)“ in der Portfolio-Übersicht öffnet der Link „Alle Treiber des Tages“ den Tagesbericht direkt an dieser Stelle.",
+        "Die Tageszusammenfassung per Push und E-Mail enthält den Block „Treiber des Tages“ mit den bis zu drei größten Verlierern und Gewinnern in Euro, direkt unter der Portfolio-Zeile."
+      ]
+    },
     {
       "label": "November 2026",
       "versions": "Backend v2.8.59 · Frontend v2.13.93",

@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from collections import Counter
 from datetime import datetime, timedelta
 from urllib.parse import quote as urlquote
+from html import escape as _html_escape
 
 import pytz, requests, apprise as apprise_lib
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -34,7 +35,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.59"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.60"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1402,6 +1403,13 @@ def fetch_performance(ticker, current_eur, eur_rate):
             if ts and price and price > 0 and datetime.fromtimestamp(ts, tz=tz).date() < today_local:
                 best_1d = float(price) / divisor * eur_rate  # Liste chronologisch aufsteigend -> letzter Treffer gewinnt
         result["perf_1d"] = round((current_eur - best_1d) / best_1d * 100, 1) if best_1d else None
+        # Treiber des Tages (seit v2.8.60): derselbe Referenz-Close in EUR plus das Datum, für das er
+        # gilt (App-Zeitzone). Der €-Beitrag je Position wird erst bei Bedarf aus Stückzahl × (Kurs −
+        # Referenz) berechnet, damit spätere Stückzahl-Änderungen (Parqet-Sync) nicht veralten. Das
+        # Datum verhindert, dass ein Refresh am Wochenende (Referenz = Freitag, Δ = 0) als
+        # Tagesbewegung des Freitags gezeigt wird.
+        result["day_ref_eur"]  = round(best_1d, 4) if best_1d else None
+        result["day_ref_date"] = today_local.isoformat() if best_1d else None
 
         # 52-Wochen-Hoch/-Tief: letzte ~252 Handelstage aus denselben 5J-Tagesdaten
         valid_points = sorted(
@@ -1453,7 +1461,8 @@ def fetch_performance(ticker, current_eur, eur_rate):
         return result
     except Exception as e:
         log.warning(f"Performance {ticker}: {e}")
-        return {"perf_1d": None, "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
+        return {"perf_1d": None, "day_ref_eur": None, "day_ref_date": None,
+                "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
                 "week52_high": None, "week52_low": None,
                 "sma50": None, "sma200": None, "sma_cross_type": None, "sma_cross_date": None, "sma_cross_age": None,
                 "div_12m": None, "div_yield": None}
@@ -2225,6 +2234,8 @@ def _make_stock(data, old=None):
         "currency":      data["currency"],
         "market_time":   data.get("market_time"),
         "perf_1d":       data.get("perf_1d"),
+        "day_ref_eur":   data.get("day_ref_eur"),
+        "day_ref_date":  data.get("day_ref_date"),
         "perf_1w":       data.get("perf_1w"),
         "perf_1m":       data.get("perf_1m"),
         "perf_3m":       data.get("perf_3m"),
@@ -3116,6 +3127,74 @@ def _ref_date_label(ref_date):
     d = datetime.strptime(ref_date, "%Y-%m-%d")
     return f"{_WEEKDAYS_DE_SHORT[d.weekday()]}, {d.strftime('%d.%m.')}"
 
+# ── Treiber des Tages (seit v2.8.60) ──────────────────────────────────────────────────────
+# Welche Positionen haben die Tagesbewegung des Depots verursacht? Beitrag je Position in €
+# = Stückzahl × (aktueller Kurs − Referenz-Close vor dem Tag), beides in EUR (Referenz:
+# day_ref_eur, gesetzt von fetch_performance; Wechselkurs konstant wie bei perf_1d). Gemeinsame
+# Basis für die Berichts-Ansicht (volle Listen) und die Tageszusammenfassung (Top n).
+_DRIVERS_DIGEST_TOP = 3   # Positionen je Seite (Verlierer/Gewinner) in der versendeten Zusammenfassung
+
+def _day_drivers(stocks, day):
+    """Treiber des Tages für den Bezugstag day (date). Zählt nur Positionen mit Stückzahl und
+    Kurs; Positionen, deren Referenz fehlt oder nicht von diesem Tag stammt (day_ref_date),
+    zählen nicht mit und stehen in „missing“. Ohne eine einzige verwertbare Position → None.
+    Listen sind nach Beitrag sortiert (Verlierer: größter Verlust zuerst, Gewinner: größter
+    Gewinn zuerst); Summen aus den gerundeten Einzelbeträgen."""
+    day_iso = day.isoformat()
+    rows, missing = [], 0
+    for s in stocks:
+        shares, cur = s.get("shares"), s.get("current_eur")
+        if not shares or not cur or cur <= 0:
+            continue
+        ref = s.get("day_ref_eur")
+        if not ref or ref <= 0 or s.get("day_ref_date") != day_iso:
+            missing += 1
+            continue
+        rows.append({"name": s.get("name") or s.get("ticker") or "?", "ticker": s.get("ticker", ""),
+                     "delta_eur": round(shares * (cur - ref), 2),
+                     "pct": round((cur - ref) / ref * 100, 1)})
+    if not rows:
+        return None
+    losers  = sorted((r for r in rows if r["delta_eur"] < 0), key=lambda r: r["delta_eur"])
+    winners = sorted((r for r in rows if r["delta_eur"] > 0), key=lambda r: -r["delta_eur"])
+    return {"total_eur": round(sum(r["delta_eur"] for r in rows), 2),
+            "loss_eur":  round(sum(r["delta_eur"] for r in losers), 2),
+            "gain_eur":  round(sum(r["delta_eur"] for r in winners), 2),
+            "n": len(rows), "n_flat": len(rows) - len(losers) - len(winners), "missing": missing,
+            "losers": losers, "winners": winners}
+
+def _drivers_top(drivers, key, top=_DRIVERS_DIGEST_TOP):
+    """Bis zu top Positionen einer Seite; Beträge, die auf 0 € runden, entfallen (sonst „-0 €“)."""
+    if not drivers: return []
+    return [r for r in drivers[key] if round(r["delta_eur"]) != 0][:top]
+
+def _drivers_text_block(drivers):
+    """Textblock „💸 Treiber des Tages“ für die Tageszusammenfassung; leer ohne Treffer.
+    Endet mit Leerzeile, damit er direkt hinter die Portfolio-Zeile gehängt werden kann."""
+    sides = [(label, _drivers_top(drivers, key))
+             for label, key in (("Größte Verlierer", "losers"), ("Größte Gewinner", "winners"))]
+    sides = [(label, items) for label, items in sides if items]
+    if not sides: return ""
+    lines = ["💸 Treiber des Tages:"]
+    for label, items in sides:
+        lines.append(f"{label}:")
+        lines += [f"  • {r['name']}  {r['delta_eur']:+.0f} € ({r['pct']:+.1f}%)" for r in items]
+    return "\n".join(lines) + "\n\n"
+
+def _drivers_html_block(drivers):
+    """HTML-Pendant für die E-Mail-Version (Namen werden maskiert); leer ohne Treffer."""
+    parts = []
+    for label, key, color in (("Größte Verlierer", "losers", "#dc2626"), ("Größte Gewinner", "winners", "#16a34a")):
+        items = _drivers_top(drivers, key)
+        if not items: continue
+        rows = "".join(f"<li style='padding:2px 0'>{_html_escape(str(r['name']))} "
+                       f"<b style='color:{color}'>{r['delta_eur']:+.0f} €</b> ({r['pct']:+.1f}%)</li>"
+                       for r in items)
+        parts.append(f"<div style='font-size:13px;color:#64748b;margin:8px 0 2px'>{label}</div>"
+                     f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
+    if not parts: return ""
+    return "<h3 style='color:#6366f1;margin:0 0 6px'>💸 Treiber des Tages</h3>" + "".join(parts)
+
 def _build_digest_data(depot, stocks):
     """Berechnet alle für den Wochenbericht benötigten Daten einmalig.
     Wird von build_digest_body und build_digest_html gemeinsam genutzt,
@@ -3431,10 +3510,11 @@ def _build_daily_ath_digest_data(depot_id, day=None):
 
 _DAILY_NO_ALARMS_TEXT = "Heute gab es keine ATH- oder Discount-Alarme."
 
-def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None, port_perf=None):
+def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None, port_perf=None, drivers=None):
     """Baut den Text für die tägliche 21-Uhr-Zusammenfassung. cross_hits (Trendwechsel) wird
     nur übergeben, wenn der User sie in der Zusammenfassung sehen will; sie zählen nicht als Alarm.
-    port_perf (aus _daily_portfolio_perf) steht als feste Zeile oben; None → Zeile entfällt."""
+    port_perf (aus _daily_portfolio_perf) steht als feste Zeile oben; None → Zeile entfällt.
+    drivers (aus _day_drivers, seit v2.8.60) steht als Block „Treiber des Tages“ direkt darunter."""
     name  = depot.get("name", "Depot")
     total = len(ath_hits) + len(discount_hits)
     title = f"🌙 DepotRadar Tageszusammenfassung — {name}"
@@ -3444,6 +3524,7 @@ def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None,
         icon = "📈" if port_perf["delta_pct"] >= 0 else "📉"
         port_line = (f"{icon} Portfolio: {port_perf['delta_pct']:+.1f}% ({port_perf['delta_eur']:+.0f} €) "
                      f"ggü. {_ref_date_label(port_perf['ref_date'])}\n\n")
+    port_line += _drivers_text_block(drivers)   # Block endet mit Leerzeile; leer ohne Treiber
     if total == 0 and not cross_rows:
         return title, f"Depot: {name}\n\n{port_line}{_DAILY_NO_ALARMS_TEXT}"
     lines = [f"Depot: {name}\n\n{port_line}Heute gab es {total} Alarm(e):" if total
@@ -3461,8 +3542,8 @@ def build_daily_ath_digest_body(depot, ath_hits, discount_hits, cross_hits=None,
     link = f"\n\n{APP_URL}" if APP_URL else ""
     return title, "\n".join(lines) + link
 
-def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None, port_perf=None):
-    """HTML-Version der Tageszusammenfassung für E-Mail-Versand (port_perf wie im Text-Pendant)."""
+def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None, port_perf=None, drivers=None):
+    """HTML-Version der Tageszusammenfassung für E-Mail-Versand (port_perf und drivers wie im Text-Pendant)."""
     name  = depot.get("name", "Depot")
     total = len(ath_hits) + len(discount_hits)
     cross_rows = _cross_digest_rows(cross_hits or [])
@@ -3491,6 +3572,9 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None,
                             f"<ul style='margin:0;padding-left:20px'>{_cross_html_rows(cross_rows)}</ul>"
                             f"<p style='font-size:12px;color:#94a3b8;margin:8px 0 0'>{_CROSS_DISCLAIMER}</p>")
         body_html = "".join(sections)
+    drivers_html = _drivers_html_block(drivers)
+    if drivers_html:
+        body_html = f"<div style='margin-bottom:8px'>{drivers_html}</div>" + body_html
     link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
@@ -3643,6 +3727,7 @@ def build_daily_report(depot, stocks, user):
     cross_rows = (_cross_digest_rows(_build_daily_cross_data(did, day))
                   if get_cross_prefs(user)["cross_digest"] else [])
     port_perf  = _daily_portfolio_perf(did, _depot_total_value(stocks), day)
+    drivers    = _day_drivers(stocks, day)
     _wd, _wt, dtime = get_user_digest_settings(user or {})
     dh, dm = _parse_hhmm(dtime, _DAILY_DIGEST_TIME_DEFAULT)
     return {"type": "daily", "depot_name": depot.get("name", "Depot"), "total": len(stocks),
@@ -3652,6 +3737,7 @@ def build_daily_report(depot, stocks, user):
             "digest_time": f"{dh:02d}:{dm:02d}",
             "digest_enabled": bool(depot.get("daily_ath_digest", False)),
             "port_perf": _report_perf(port_perf),
+            "drivers": drivers,
             "ath": _dedupe_digest_lines(ath_hits),
             "discount": _dedupe_digest_lines(discount_hits),
             "cross": cross_rows, "cross_disclaimer": _CROSS_DISCLAIMER,
@@ -3680,9 +3766,11 @@ def send_daily_ath_digests(user_id):
         if not urls: continue
         ath_hits, discount_hits = _build_daily_ath_digest_data(did)
         cross_hits  = _build_daily_cross_data(did) if get_cross_prefs(user)["cross_digest"] else []
-        port_perf   = _daily_portfolio_perf(did, _depot_total_value(load_stocks(did)))
-        title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits, cross_hits, port_perf)
-        html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits, cross_hits, port_perf)
+        stocks      = load_stocks(did)
+        port_perf   = _daily_portfolio_perf(did, _depot_total_value(stocks))
+        drivers     = _day_drivers(stocks, datetime.now().date())
+        title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits, cross_hits, port_perf, drivers)
+        html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits, cross_hits, port_perf, drivers)
         add_log("daily_ath_digest", f"🌙 Tageszusammenfassung [{dc['name']}]",
                 f"Gesendet an {len(urls)} URL(s). ({len(ath_hits) + len(discount_hits)} Alarm(e))",
                 success=True, depot_id=dc["id"])
