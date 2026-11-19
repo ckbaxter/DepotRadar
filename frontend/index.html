@@ -542,6 +542,29 @@ details[open] .usr-arrow{transform:rotate(90deg)}
 .sd-spinner{width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sd-spin .7s linear infinite;flex-shrink:0}
 @keyframes sd-spin{to{transform:rotate(360deg)}}
 .sd-source{font-size:10px;color:var(--muted);margin-top:10px;opacity:.7}
+/* Zielkurs (Watchlist, seit Frontend v2.13.93) */
+.tp-badge{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer;background:rgba(78,124,246,.14);color:var(--accent);border:1px solid rgba(78,124,246,.4)}
+.tp-badge .tp-sub{font-weight:500;opacity:.8}
+.tp-badge.hit{background:rgba(34,197,94,.15);color:var(--green);border-color:rgba(34,197,94,.45)}
+.tp-badge.none{background:transparent;color:var(--muted);border:1px dashed var(--border);font-weight:500}
+.tp-badge.none:hover{color:var(--accent);border-color:var(--accent)}
+.sd-tp{background:var(--bg3);border:1px solid rgba(78,124,246,.55);border-radius:10px;padding:14px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px}
+.sd-tp.hit{border-color:rgba(34,197,94,.55)}
+.sd-tp.empty{border-color:var(--border)}
+.sd-tp-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sd-tp-chip{font-size:11px;font-weight:600;padding:3px 8px;border-radius:10px;color:var(--accent);background:rgba(78,124,246,.14)}
+.sd-tp-chip.hit{color:var(--green);background:rgba(34,197,94,.16);font-weight:700}
+.sd-tp-chip.warn{color:var(--yellow);background:rgba(234,179,8,.14)}
+.sd-tp-chip.none{color:var(--muted);background:var(--bg)}
+.sd-tp-row{display:flex;gap:8px;align-items:stretch}
+.sd-tp-input{flex:1;display:flex;align-items:center;background:var(--bg2);border:1px solid var(--accent);border-radius:7px;padding:0 12px;min-height:44px}
+.sd-tp.hit .sd-tp-input,.sd-tp.empty .sd-tp-input{border-color:var(--border)}
+.sd-tp-input input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-size:16px;font-weight:600;font-family:inherit}
+.sd-tp-input span{color:var(--muted);font-size:13px}
+.sd-tp-save{background:#3d6af0;color:#fff;border:none;border-radius:7px;padding:0 16px;min-height:44px;font-size:13px;font-weight:600;cursor:pointer}
+.sd-tp-del{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:7px;padding:0 12px;min-height:44px;font-size:13px;cursor:pointer}
+.sd-tp-dist{font-size:13px;font-weight:600}
+.sd-tp-info{border-top:1px solid var(--border);padding-top:10px;font-size:12px;line-height:1.5;color:var(--muted)}
 
 /* Erträge-Modal (Dividenden + realisierte G/V aus Parqet-Sync, seit v2.13.52) */
 .eg-search-wrap{position:relative;display:flex;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)}
@@ -1676,12 +1699,13 @@ select</style>
       <details class="help-section" id="help-filter" data-kw="Filter Dividende Rendite Gewinn Plus Minus Golden Cross Death Trend 52 Wochen Schnellauswahl">
         <summary class="help-summary">🎛 Filter (Dividende, Gewinn, Trend)</summary>
         <div class="help-body">
-          Der Button <b>Filter</b> in der Aktionsleiste öffnet ein Auswahlfenster mit vier Gruppen.
+          Der Button <b>Filter</b> in der Aktionsleiste öffnet ein Auswahlfenster mit vier Gruppen (in der Watchlist zusätzlich <b>Zielkurs</b>, ohne Gewinn / Verlust).
           Pro Gruppe gilt eine Auswahl; mehrere Gruppen werden zusammen angewendet (UND), ebenso
           wie Suche, ATH-Bereich, Sektor und Nachkauf. Hinter jeder Option steht, wie viele
           Positionen bei dieser Auswahl übrig blieben.
           <ul style="margin:8px 0 8px 18px;padding:0">
             <li><b>Gewinn / Verlust:</b> Im Plus bzw. im Minus gegenüber deinem Einstandskurs. Nur im Bestand, Positionen ohne Einstandskurs oder Stückzahl werden nicht berücksichtigt</li>
+            <li><b>Zielkurs:</b> nur in der Watchlist — „Ziel erreicht“ (Kurs auf oder unter dem Zielkurs) bzw. „Ziel gesetzt“ (alle Aktien mit Zielkurs), siehe Abschnitt „Zielkurs (Watchlist)“</li>
             <li><b>Dividende:</b> Zahler (in den letzten 12 Monaten ausgeschüttet) oder Rendite ≥ 2 % bzw. ≥ 4 %. Die Daten stammen von Yahoo und erscheinen nach dem nächsten Kurs-Refresh; bis dahin werden Positionen ohne Dividendendaten nicht berücksichtigt</li>
             <li><b>Trend:</b> Golden Cross bzw. Death Cross (Kreuzung von SMA50 und SMA200 in den letzten 30 Tagen) oder dauerhaft SMA50 über SMA200 bzw. SMA50 unter SMA200 (unabhängig vom Kurs; das ist nicht dasselbe wie die Kachel „Trend (SMA)“ in der Detailansicht, die den Kurs mit beiden Durchschnitten vergleicht)</li>
             <li><b>52 Wochen:</b> nahe am 52-Wochen-Hoch bzw. -Tief (Toleranz 3 %, wie die Badges 52W-H / 52W-T)</li>
@@ -1731,6 +1755,29 @@ select</style>
           aber nicht in der Portfolio-Übersicht oder Nachkauf-Auswertung berücksichtigt.<br><br>
           Aktien lassen sich jederzeit verschieben — der Button erscheint nur wenn mindestens
           eine Watchlist vorhanden ist.
+        </div>
+      </details>
+
+      <details class="help-section" id="help-zielkurs" data-kw="Zielkurs Kursziel Wunschpreis Kaufkurs günstig kaufen Alarm Benachrichtigung Push Watchlist Beobachtungsliste Ziel erreicht">
+        <summary class="help-summary">🎯 Zielkurs (Watchlist)</summary>
+        <div class="help-body">
+          Für Aktien in einer Watchlist kannst du einen <b>Zielkurs in EUR</b> festlegen — den Preis,
+          ab dem du kaufen möchtest. Fällt der Kurs auf oder unter das Ziel, bekommst du eine Push-Meldung
+          über die Benachrichtigungskanäle der Watchlist.<br><br>
+          <b>Zielkurs setzen:</b> Klick auf den Aktiennamen (oder auf <b>+ Ziel setzen</b> unter dem Namen) öffnet die
+          Detailansicht. Dort steht im Block <b>🎯 Zielkurs</b> das Eingabefeld — Komma als Dezimaltrenner ist erlaubt.
+          <b>Speichern</b> übernimmt das Ziel, <b>Entfernen</b> löscht es. Während du tippst, siehst du direkt,
+          wie weit der Kurs noch vom Ziel entfernt ist.<br><br>
+          <b>Anzeige:</b> Das Badge unter dem Aktiennamen zeigt das Ziel — blau mit dem Restabstand, solange es nicht erreicht ist,
+          grün mit „erreicht“ (und „seit …“), sobald der Kurs darauf oder darunter liegt. Im Kursverlauf der Detailansicht
+          erscheint das Ziel als grün gestrichelte Linie (nur bei EUR-Notierung).<br><br>
+          <b>Meldung nur einmal:</b> Pro Erreichen kommt genau eine Push-Meldung. Das Ziel wird erst wieder scharf, wenn
+          der Kurs darüber gestiegen ist oder du den Zielkurs änderst bzw. entfernst. Ist der Benachrichtigungs-Schalter
+          der Watchlist aus (oder kein Kanal hinterlegt), bleibt es still; das Badge zeigt das Erreichen trotzdem an.<br><br>
+          <b>Filter:</b> Im Filter-Fenster der Watchlist gibt es die Gruppe „Zielkurs“ (erreicht / gesetzt).
+          Wird eine Aktie in den Bestand verschoben, entfällt ihr Zielkurs. Die Tages- und Wochenzusammenfassung
+          enthalten keine Zielkurs-Treffer — die Meldung kommt sofort beim nächsten Kurs-Refresh.
+          Reine Orientierung, keine Anlageempfehlung.
         </div>
       </details>
 
@@ -2851,12 +2898,15 @@ function _applySummaryFilter(stocks){
 // Filter (Suche, ATH-Bereich, Nachkauf, Sektor) gelten zusammen per UND. Der Zustand wird nicht
 // gespeichert und bei Depot-/Watchlist-Wechsel zurückgesetzt (resetViewFilters). Alle Kriterien
 // stützen sich auf bereits vorhandene Stock-Felder (Einstandskurs, div_yield, SMA/Cross, 52W) —
-// die Gewinn-Gruppe gibt es nur im Bestand (Watchlist-Aktien haben keinen Einstandskurs).
+// die Gewinn-Gruppe gibt es nur im Bestand (Watchlist-Aktien haben keinen Einstandskurs),
+// die Zielkurs-Gruppe (seit v2.13.93) nur in der Watchlist.
 // opts: [Wert, Label im Sheet, Label im Chip]
 function gfGroups(){
   return [
     {key:"pl", title:"Gewinn / Verlust", hint:"ab Einstandskurs", wlHidden:true,
      opts:[["all","Alle",""],["plus","Im Plus","Im Plus"],["minus","Im Minus","Im Minus"]]},
+    {key:"tp", title:"Zielkurs", hint:"nur Watchlist", depotHidden:true,
+     opts:[["all","Alle",""],["hit","🎯 Ziel erreicht","🎯 Ziel erreicht"],["set","🎯 Ziel gesetzt","🎯 Ziel gesetzt"]]},
     {key:"dv", title:"Dividende", hint:"letzte 12 Monate",
      opts:[["all","Alle",""],["payer","Zahler","Dividende: Zahler"],["y2","Rendite ≥ 2 %","Rendite ≥ 2 %"],["y4","Rendite ≥ 4 %","Rendite ≥ 4 %"]]},
     {key:"tr", title:"Trend (SMA50 / SMA200)", hint:`Cross = letzte ${SMA_CROSS_RECENT_DAYS} Tage`,
@@ -2871,13 +2921,14 @@ const GF_PRESETS = [
   {label:"Dividenden im Plus + Golden Cross", set:{pl:"plus",  dv:"payer", tr:"golden", w:"all"}},
   {label:"Hohe Rendite im Minus",             set:{pl:"minus", dv:"y4",    tr:"all",    w:"all"}},
 ];
-const GF_RESET = () => ({pl:"all", dv:"all", tr:"all", w:"all"});
+const GF_RESET = () => ({pl:"all", tp:"all", dv:"all", tr:"all", w:"all"});
 let _gf = GF_RESET();
 let _gfBase  = [];   // Positionen vor dem Gruppen-Filter (Basis der Trefferzahlen im Sheet)
 let _gfShown = 0;    // Positionen nach allen Filtern (Beschriftung des Sheet-Buttons)
 
 // In der Watchlist gilt die Gewinn-Gruppe nicht (kein Einstandskurs) — dort wird sie ignoriert.
-function _gfEff(){ return isWl() ? {..._gf, pl:"all"} : _gf; }
+// Umgekehrt gilt die Zielkurs-Gruppe nur in der Watchlist.
+function _gfEff(){ return isWl() ? {..._gf, pl:"all"} : {..._gf, tp:"all"}; }
 function gfActiveCount(){ const f = _gfEff(); return gfGroups().filter(g => f[g.key] !== "all").length; }
 
 // Gleiche Voraussetzung wie die P&L-Zeile (pnlRow): Einstandskurs und Stückzahl
@@ -2904,6 +2955,11 @@ function gfMatch(s, f){
     if(!_gfHasEk(s)) return false;
     const p = (s.current_eur - s.buy_price_eur) / s.buy_price_eur * 100;
     if(f.pl === "plus" ? !(p > 0) : !(p < 0)) return false;
+  }
+  if(f.tp !== "all"){
+    const st = tpState(s);
+    if(!st) return false;
+    if(f.tp === "hit" && !st.reached) return false;
   }
   if(f.dv !== "all"){
     const y = s.div_yield;
@@ -2950,11 +3006,11 @@ function renderGroupFilterSheet(){
   if(!wl){
     h += `<div class="gf-group"><div class="gf-title">Schnellauswahl</div><div class="gf-opts">` +
       GF_PRESETS.map((p, i) => {
-        const on = gfGroups().every(g => f[g.key] === p.set[g.key]);
+        const on = gfGroups().every(g => f[g.key] === (p.set[g.key] || "all"));
         return `<button type="button" class="gf-opt${on ? " on" : ""}" aria-pressed="${on}" onclick="applyGfPreset(${i})">${p.label}</button>`;
       }).join("") + `</div></div>`;
   }
-  gfGroups().filter(g => !(wl && g.wlHidden)).forEach(g => {
+  gfGroups().filter(g => !(wl && g.wlHidden) && !(!wl && g.depotHidden)).forEach(g => {
     h += `<div class="gf-group"><div class="gf-head"><span class="gf-title">${g.title}</span><span class="gf-hint">${g.hint}</span></div><div class="gf-opts">` +
       g.opts.map(o => {
         const on = f[g.key] === o[0];
@@ -4036,6 +4092,7 @@ function renderTable(stocks){
         <div class="sn stock-name-link" onclick="openStockDetail(${jsArg(s.ticker)},${jsArg(did)},${jsArg(wl?wlId:"")})">${esc(nm)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
         <div class="ss">${esc(s.ticker)} · ${esc(s.exchange)}${s.isin?` · <span class="isin-tag">${esc(s.isin)}</span>`:""}</div>
         ${sectorBadgeHtml(s, did, wl, wlId)}
+        ${wl?tpBadgeHtml(s, wlId):""}
         ${weightBarHtml(s)}
         ${pnlRow(s)}
       </td>
@@ -4089,6 +4146,7 @@ function renderTable(stocks){
           <div class="card-name stock-name-link" onclick="openStockDetail(${jsArg(s.ticker)},${jsArg(did)},${jsArg(wl?wlId:"")})">${esc(s.name)}${s.parqet_synced?'<span class="parqet-badge" style="margin-left:5px;vertical-align:middle">P</span>':""}</div>
           <div class="card-sub">${esc(s.ticker)} · ${esc(s.exchange)}${s.isin?` · ${esc(s.isin)}`:""}</div>
           ${sectorBadgeHtml(s, did, wl, wlId)}
+          ${wl?tpBadgeHtml(s, wlId):""}
           ${weightBarHtml(s, true)}
           ${pnlRow(s)}
         </div>
@@ -4117,6 +4175,138 @@ function renderTable(stocks){
   if(_viewMode === "treemap" && typeof d3 !== "undefined"){
     // Nächster Frame damit der Canvas bereits im DOM liegt und Breite messbar ist
     requestAnimationFrame(() => renderTreemap(_lastStocksForTreemap));
+  }
+}
+
+// ── Zielkurs (nur Watchlist, seit Frontend v2.13.93) ───────────────────────────
+// Das Ziel (EUR) steht als target_price am Watchlist-Eintrag. "Erreicht" wird live aus dem
+// aktuellen Kurs berechnet (Kurs <= Ziel); der Push selbst kommt vom Backend (Meldezustand
+// target_notified/target_hit_at). target_hit_at ist nur der Anzeigetext "seit …".
+function tpValue(s){ const v = s && s.target_price; return (typeof v === "number" && isFinite(v) && v > 0) ? v : null; }
+function tpState(s){
+  const tp = tpValue(s);
+  if(tp == null) return null;
+  const cur = s.current_eur;
+  if(cur == null || !isFinite(cur)) return {tp, cur:null, reached:false};
+  return {tp, cur, reached: cur <= tp, diff: cur - tp, pct: cur > 0 ? (cur - tp) / cur * 100 : 0};
+}
+const _tpPct = v => v.toLocaleString("de-DE",{minimumFractionDigits:1, maximumFractionDigits:1});
+// Zielkurs-Eingabe: deutsches Komma/Tausenderpunkte erlaubt; null bei leerer/ungültiger Eingabe
+function _tpParse(str){
+  let t = String(str == null ? "" : str).trim().replace(/\s|€|EUR/gi, "");
+  if(!t) return null;
+  if(t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  const v = Number(t);
+  return (isFinite(v) && v > 0) ? v : null;
+}
+// Badge in Tabelle/Karte (nur Watchlist): blau = gesetzt, grün = erreicht, gestrichelt = kein Ziel.
+// Klick öffnet das Detail-Modal, wo das Ziel bearbeitet wird.
+function tpBadgeHtml(s, wlId){
+  const open = `event.stopPropagation();openStockDetail(${jsArg(s.ticker)},'',${jsArg(wlId)})`;
+  const st = tpState(s);
+  if(!st) return `<div><span class="tp-badge none" onclick="${open}" title="Zielkurs setzen">+ Ziel setzen</span></div>`;
+  if(st.reached){
+    const since = s.target_hit_at ? `<span class="tp-sub">seit ${esc(s.target_hit_at)}</span>` : "";
+    return `<div><span class="tp-badge hit" onclick="${open}" title="Zielkurs erreicht — zum Bearbeiten tippen">🎯 ${fmtEUR(st.tp)} erreicht${since}</span></div>`;
+  }
+  const sub = st.cur != null ? `<span class="tp-sub">noch −${_tpPct(st.pct)} %</span>` : "";
+  return `<div><span class="tp-badge" onclick="${open}" title="Zielkurs — zum Bearbeiten tippen">🎯 ${fmtEUR(st.tp)}${sub}</span></div>`;
+}
+
+async function saveTargetPrice(ticker, wlId, remove){
+  const stock = stocksCache.find(x => x.ticker === ticker);
+  if(!stock || !wlId) return;
+  let payload = null;
+  if(!remove){
+    const inp = document.getElementById("sdTpInput");
+    const raw = inp ? inp.value.trim() : "";
+    if(raw){
+      payload = _tpParse(raw);
+      if(payload == null){ toast("Bitte einen gültigen Zielkurs in EUR eingeben (z. B. 85,00)", false); return; }
+    }
+  }
+  try{
+    const r = await fetch(`${API}/watchlists/${wlId}/stocks/${encodeURIComponent(ticker)}`, {
+      method:"PATCH", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({target_price: payload})
+    });
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok){ toast(j.error || "Fehler beim Speichern", false); return; }
+    // Zielkurs-Felder aus der Server-Antwort übernehmen (Meldezustand wird bei Änderung dort zurückgesetzt)
+    ["target_price","target_notified","target_hit_at"].forEach(k => { delete stock[k]; if(j[k] != null) stock[k] = j[k]; });
+    toast(payload == null ? "Zielkurs entfernt" : "Zielkurs gespeichert");
+    if(_sdActiveTicker === ticker) renderSdTarget(ticker);
+    if(_sdHistCache[ticker]) renderStockChart(ticker);
+    renderTable(stocksCache);
+  } catch(e){ toast("Fehler: " + e.message, false); }
+}
+
+// Zielkurs-Block im Detail-Modal (nur Watchlist). Wird beim Öffnen und nach jedem Speichern neu aufgebaut.
+function renderSdTarget(ticker){
+  const el = document.getElementById("sdTarget");
+  const s = stocksCache.find(x => x.ticker === ticker);
+  if(!el || !s) return;
+  const wlId = el.dataset.wl || "";
+  const st = tpState(s);
+  const cls = !st ? "empty" : st.reached ? "hit" : "";
+  const chip = !st ? ["none","Kein Ziel gesetzt"] : st.reached ? ["hit","Ziel erreicht"] : ["","Ziel noch nicht erreicht"];
+  let info;
+  if(st && st.reached){
+    info = `${s.target_hit_at ? `<div>Push gesendet am ${esc(s.target_hit_at)}.</div>` : ""}
+            <div>Wird wieder scharf, sobald der Kurs über ${fmtEUR(st.tp)} steigt.</div>`;
+  } else {
+    info = `Push über deine Benachrichtigungskanäle, sobald der Kurs auf oder unter das Ziel fällt. Danach wird das Ziel wieder scharf, sobald der Kurs darüber steigt.`;
+  }
+  el.className = `sd-tp ${cls}`;
+  el.innerHTML = `
+    <div class="sd-tp-head">
+      <label for="sdTpInput" class="sd-section-lbl" style="margin:0">🎯 Zielkurs</label>
+      <span class="sd-tp-chip ${chip[0]}" id="sdTpChip">${chip[1]}</span>
+    </div>
+    <div class="sd-tp-row">
+      <div class="sd-tp-input"><input id="sdTpInput" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 85,00"
+        value="${st ? esc(st.tp.toLocaleString("de-DE",{minimumFractionDigits:2, maximumFractionDigits:4})) : ""}"
+        oninput="sdTpPreview(${jsArg(ticker)})" onkeydown="if(event.key==='Enter'){event.preventDefault();saveTargetPrice(${jsArg(ticker)},${jsArg(wlId)},false)}"><span>EUR</span></div>
+      <button type="button" class="sd-tp-save" onclick="saveTargetPrice(${jsArg(ticker)},${jsArg(wlId)},false)">Speichern</button>
+      ${st ? `<button type="button" class="sd-tp-del" onclick="saveTargetPrice(${jsArg(ticker)},${jsArg(wlId)},true)">Entfernen</button>` : ""}
+    </div>
+    <div class="sd-tp-dist" id="sdTpDist"></div>
+    <div class="sd-tp-info">${info}</div>`;
+  sdTpPreview(ticker);
+}
+
+// Abstandszeile unter dem Eingabefeld: folgt der Eingabe live (Vorschau), nicht nur dem gespeicherten Ziel.
+function sdTpPreview(ticker){
+  const s = stocksCache.find(x => x.ticker === ticker);
+  const inp = document.getElementById("sdTpInput"), dist = document.getElementById("sdTpDist"), chip = document.getElementById("sdTpChip");
+  if(!s || !inp || !dist) return;
+  const raw = inp.value.trim(), tp = _tpParse(raw), cur = s.current_eur;
+  const saved = tpValue(s);
+  let txt = "", col = "var(--muted)";
+  if(!raw){
+    txt = "Ohne Zielkurs wird kein Alarm ausgelöst.";
+  } else if(tp == null){
+    txt = "Bitte eine positive Zahl in EUR eingeben."; col = "var(--red)";
+  } else if(cur == null){
+    txt = "Aktueller Kurs liegt noch nicht vor.";
+  } else if(cur <= tp){
+    const under = (tp - cur) / tp * 100;
+    txt = `Aktuell ${fmtEUR(cur)} · ${under > 0 ? _tpPct(under) + " % unter dem Ziel" : "genau auf dem Ziel"} (${fmtEUR(tp)})`;
+    col = "var(--green)";
+  } else {
+    txt = `Aktuell ${fmtEUR(cur)} · noch ${_tpPct((cur - tp) / cur * 100)} % bis zum Ziel (−${fmtEUR(cur - tp)})`;
+    col = "var(--accent)";
+  }
+  dist.textContent = txt; dist.style.color = col;
+  // Warnhinweis, wenn ein noch nicht gespeichertes Ziel über dem Kurs liegt (löst sofort aus)
+  if(chip && tp != null && cur != null && cur <= tp && tp !== saved){
+    chip.className = "sd-tp-chip warn"; chip.textContent = "Ziel liegt über dem Kurs";
+    dist.textContent = `Das Ziel liegt über dem aktuellen Kurs von ${fmtEUR(cur)} – der Alarm würde sofort auslösen.`;
+    dist.style.color = "var(--yellow)";
+  } else if(chip){
+    const st = tpState(s);
+    chip.className = "sd-tp-chip " + (!st ? "none" : st.reached ? "hit" : "");
+    chip.textContent = !st ? "Kein Ziel gesetzt" : st.reached ? "Ziel erreicht" : "Ziel noch nicht erreicht";
   }
 }
 
@@ -6035,8 +6225,8 @@ function getUserWatchlistIds(){
 }
 
 // ── Verlauf ───────────────────────────────────────────────────────
-const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung",daily_watchlist_digest:"📋 Watchlist-Zusammenfassung",cross:"🔀 Trendwechsel",system:"⚙️ System"};
-const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh",daily_ath_digest:"auto_refresh",daily_watchlist_digest:"auto_refresh",cross:"auto_refresh",system:"manual_refresh"};
+const typeLabel={alert:"🔔 Alarm",auto_refresh:"🔄 Auto-Refresh",manual_refresh:"👆 Manuell",test:"✅ Test",pending_notify:"⏳ Ausstehend",pending_confirmed:"✅ Bestätigt",digest:"📊 Wochenbericht",daily_ath_digest:"🌙 Tageszusammenfassung",daily_watchlist_digest:"📋 Watchlist-Zusammenfassung",cross:"🔀 Trendwechsel",target:"🎯 Zielkurs",system:"⚙️ System"};
+const typeClass={alert:"alert",auto_refresh:"auto_refresh",manual_refresh:"manual_refresh",pending_notify:"alert",pending_confirmed:"alert",test:"test",digest:"auto_refresh",daily_ath_digest:"auto_refresh",daily_watchlist_digest:"auto_refresh",cross:"auto_refresh",target:"alert",system:"manual_refresh"};
 let _notifItems = [];
 let _notifTypeFilter = "all";
 let _notifUserFilter = "all";
@@ -7100,6 +7290,7 @@ function openStockDetail(ticker, depotId, wlId){
       ${s._isSectorGap ? `<div class="sd-status-item gap">&#9878;&#65039; Sektor unterrepräsentiert</div>` : ""}
     </div>` : ""}
     <div class="sd-perf-wrap">${perfWrap(s)}</div>
+    ${isWl() ? `<div class="sd-tp" id="sdTarget" data-wl="${esc(activeView.id || "")}"></div>` : ""}
     <div class="sd-chart-wrap">
       <div class="sd-chart-head">
         <span class="sd-chart-perf" id="sdChartPerf"></span>
@@ -7132,6 +7323,7 @@ function openStockDetail(ticker, depotId, wlId){
     <div class="sd-summary loading" id="sdCompanyInfo"><div class="sd-spinner"></div> Firmeninfo wird geladen…</div>
   `;
   openModal("stockDetailModal");
+  if(isWl()) renderSdTarget(ticker);
   loadStockHistory(ticker);
   loadCompanyInfo(ticker, s.name);
 }
@@ -7302,10 +7494,17 @@ function renderStockChart(ticker){
     });
   }
 
+  // Zielkurs-Linie (Watchlist, gestrichelt grün): nur bei EUR-Notierung, an den Rand geklemmt wie die EK-Linie
+  const tpLine = (isWl() && s && cur === "EUR") ? tpValue(s) : null;
   let ekHtml = "", legendHtml = "";
+  if(tpLine != null){
+    const tl = tpLine < minV ? "🎯 ↓" : tpLine > maxV ? "🎯 ↑" : "🎯";
+    ekHtml += `<line x1="${pad.l}" y1="${pyClamp(tpLine)}" x2="${pad.l+iW}" y2="${pyClamp(tpLine)}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.85"/>
+      <text x="${pad.l+iW-2}" y="${Math.max(pad.t+9, pyClamp(tpLine)-3)}" text-anchor="end" font-size="9" font-weight="700" fill="var(--green)">${tl} ${fmtP(tpLine, 2)}</text>`;
+  }
   if(ek){
     const ekLabel = ek < minV ? "EK ↓" : ek > maxV ? "EK ↑" : "EK";
-    ekHtml = `<line x1="${pad.l}" y1="${pyClamp(ek)}" x2="${pad.l+iW}" y2="${pyClamp(ek)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.7"/>`;
+    ekHtml += `<line x1="${pad.l}" y1="${pyClamp(ek)}" x2="${pad.l+iW}" y2="${pyClamp(ek)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.7"/>`;
     legendHtml = `<g>
       <line x1="${pad.l+4}" y1="${pad.t+6}" x2="${pad.l+16}" y2="${pad.t+6}" stroke="${lineColor}" stroke-width="2"/>
       <text x="${pad.l+20}" y="${pad.t+10}" font-size="9" fill="var(--muted)">Kurs</text>
