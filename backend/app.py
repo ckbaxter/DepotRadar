@@ -34,7 +34,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.58"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.59"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -2476,6 +2476,83 @@ def check_cross_notify(stock, label, urls, mention, prefs, depot_id=None, watchl
     add_log("cross", title, body, True, depot_id=depot_id, watchlist_id=watchlist_id, kind="cross", extra=extra)
     return key
 
+# ── Zielkurs (nur Watchlists, seit v2.8.59) ───────────────────────
+# Pro Watchlist-Aktie optional `target_price` (EUR). Fällt der Kurs auf oder unter das Ziel, geht
+# genau eine Meldung raus (Verlauf-Typ "target"); danach ist das Ziel "ausgelöst"
+# (`target_notified`) und wird erst wieder scharf, wenn der Kurs über das Ziel steigt oder das
+# Ziel geändert/gelöscht wird. `target_hit_at` merkt sich nur für die Anzeige, seit wann der Kurs
+# unter dem Ziel liegt. Die Prüfung nutzt die ohnehin geholten Kurse — kein zusätzlicher Yahoo-Call.
+_TARGET_PRICE_MAX = 1_000_000_000
+
+def _clear_target_state(stock):
+    stock.pop("target_notified", None)
+    stock.pop("target_hit_at", None)
+
+def build_target_html(stock, label, cur, tp, under_pct, ath_dist):
+    """HTML-Version der Zielkurs-Meldung für E-Mail-Versand."""
+    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
+                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+    under = "genau auf dem Ziel" if cur == tp else f"{under_pct:.1f}% unter dem Ziel"
+    ath_row = (f'<tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">Abstand zum ATH</td>'
+               f'<td style="padding:4px 8px;font-weight:600">-{ath_dist:.1f}%</td></tr>') if ath_dist is not None else ""
+    return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
+    <div style="background:#22c55e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
+      <h2 style="margin:0;font-size:18px">🎯 Zielkurs erreicht — {label}</h2>
+      <div style="opacity:.85;font-size:13px;margin-top:4px">{under}</div>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
+      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span></h3>
+      <table style="width:100%;border-collapse:collapse;margin-top:12px">
+        <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{cur:.2f} €</td></tr>
+        <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">Zielkurs</td><td style="padding:4px 8px;font-weight:600">{tp:.2f} €</td></tr>
+        {ath_row}
+        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{stock.get('market_time', '—')}</td></tr>
+      </table>
+      {link_html}
+    </div>
+    <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:12px">Gesendet von DepotRadar</p>
+    </body></html>"""
+
+def check_target_notify(stock, label, urls, mention="", notify=True, watchlist_id=None):
+    """Prüft den Zielkurs einer Watchlist-Aktie und meldet das Erreichen genau einmal.
+    - Kurs über dem Ziel: Zustand zurücksetzen (Ziel ist wieder scharf).
+    - Kurs auf/unter dem Ziel: `target_hit_at` setzen (Anzeige "seit …"); gesendet wird nur, wenn
+      `notify` (Benachrichtigungen der Watchlist an), URLs vorhanden und noch nicht gemeldet.
+    - Schlägt der Versand fehl, bleibt `target_notified` ungesetzt: nächster Refresh versucht es erneut.
+    Verändert den Stock-Dict direkt; der Aufrufer speichert."""
+    try:
+        tp  = float(stock.get("target_price") or 0)
+        cur = float(stock.get("current_eur"))
+    except (TypeError, ValueError):
+        return
+    if tp <= 0:
+        return
+    if cur > tp:
+        _clear_target_state(stock)
+        return
+    if not stock.get("target_hit_at"):
+        stock["target_hit_at"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+    if stock.get("target_notified") or not notify or not urls:
+        return
+    under_pct = (tp - cur) / tp * 100
+    ath       = float(stock.get("ath_eur") or 0)
+    ath_dist  = (ath - cur) / ath * 100 if ath > 0 else None
+    under     = "Kurs liegt genau auf dem Ziel" if cur == tp else f"{under_pct:.1f}% unter dem Ziel"
+    link      = f"\n\n{APP_URL}" if APP_URL else ""
+    ath_line  = f"\nATH-Abstand:     -{ath_dist:.1f}%" if ath_dist is not None else ""
+    title = f"🎯 Zielkurs erreicht: {stock['name']} ({stock['ticker']})"
+    body  = (f"{label}\n\n"
+             f"Aktueller Kurs:  {cur:.2f} EUR\n"
+             f"Zielkurs:        {tp:.2f} EUR\n"
+             f"Abstand:         {under}{ath_line}\n"
+             f"Kursstand:       {stock.get('market_time', '—')}{link}")
+    ok = send_apprise(title, body, urls, mention=mention,
+                      html_body=build_target_html(stock, label, cur, tp, under_pct, ath_dist),
+                      watchlist_id=watchlist_id, kind="target", log_type="target",
+                      log_extra={"target_price": tp})
+    if ok:
+        stock["target_notified"] = True
+
 def _send_notifications(stocks, label, urls, buy_budget, nachkauf_set, sector_gap_set=None, mention="", confirm=False, depot_id=None, watchlist_id=None, cross_prefs=None):
     """Phase 2: Benachrichtigungen auslösen nachdem alle Kurse bekannt sind."""
     sector_gap_set = sector_gap_set or set()
@@ -2555,6 +2632,15 @@ def _refresh_watchlist(wl, price_cache=None):
                                        None, mention, confirm, watchlist_id=wl_id,
                                        cross_prefs=get_cross_prefs(get_watchlist_user(wl_id)))
             send_ath_alerts(ath_hits, f"Beobachtung: {wl['name']}", urls, mention, watchlist_id=wl_id)
+
+        # Zielkurse prüfen (seit v2.8.59). Der Zustand (target_hit_at/target_notified) wird auch bei
+        # ausgeschalteten Benachrichtigungen geführt, gesendet wird dann aber nichts.
+        for s in wls:
+            try:
+                check_target_notify(s, f"Beobachtung: {wl['name']}", urls, mention,
+                                    notify=wl.get("notifications_enabled", True), watchlist_id=wl_id)
+            except Exception as e:
+                log.error(f"Zielkurs {s.get('name','?')}: {e}")
 
         save_wl_stocks(wl_id, wls)
         return ok, err
@@ -5693,6 +5779,19 @@ def wl_patch_stock(wl_id, ticker):
                 try: stock[key] = _clean_patch_field(key, val)
                 except ValueError as e:
                     return jsonify({"error": f"Ungültiger Wert für {key}: {e}"}), 400
+            elif key == "target_price":
+                # Zielkurs in EUR (v2.8.59): positive Zahl, deutsches Komma erlaubt; null/"" löscht ihn.
+                # Jede Änderung setzt den Meldezustand zurück, damit das neue Ziel frisch geprüft wird.
+                try:
+                    new_tp = _parse_position_value(val, 4)
+                    if new_tp is not None and new_tp > _TARGET_PRICE_MAX:
+                        raise ValueError("Wert zu groß")
+                except ValueError as e:
+                    return jsonify({"error": f"Ungültiger Wert für {key}: {e}"}), 400
+                if new_tp != stock.get("target_price"):
+                    _clear_target_state(stock)
+                if new_tp is None: stock.pop("target_price", None)
+                else:              stock["target_price"] = new_tp
         save_wl_stocks(wl_id, stocks)
         return jsonify(stock)
 
@@ -5722,6 +5821,11 @@ def wl_refresh_stock(wl_id, ticker):
                     and wl.get("notifications_enabled", True)):
                 send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
                                  f"Beobachtung: {wl['name']}", u_urls, u_ment, watchlist_id=wl_id)
+            try:
+                check_target_notify(stocks[idx], f"Beobachtung: {wl['name']}", u_urls, u_ment,
+                                    notify=wl.get("notifications_enabled", True), watchlist_id=wl_id)
+            except Exception as e:
+                log.error(f"Zielkurs {stocks[idx].get('name','?')}: {e}")
             save_wl_stocks(wl_id, stocks); return jsonify(stocks[idx])
         except Exception as e: return jsonify({"error": str(e)}), 502
 
@@ -5740,6 +5844,8 @@ def wl_move_to_depot(wl_id, ticker):
         if any(s["ticker"] == ticker.upper() for s in depot_stocks):
             return jsonify({"error": "Bereits im Depot"}), 409
         s = dict(stock); s["last_notified_block"] = initial_block(s["current_eur"], s["ath_eur"])
+        # Zielkurs gibt es nur in Watchlists — im Bestand würde er nirgends geprüft oder angezeigt
+        s.pop("target_price", None); _clear_target_state(s)
         depot_stocks.append(s); save_stocks(depot_id, depot_stocks)
         save_wl_stocks(wl_id, [s for s in wl_stocks if s["ticker"] != ticker.upper()])
         return jsonify({"ok": True, "stock": s})
