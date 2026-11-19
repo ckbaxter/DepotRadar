@@ -1582,6 +1582,8 @@ select</style>
           Unter <b>Übersichten → 📰 Berichte</b> lassen sich <b>Tagesbericht</b> und <b>Wochenbericht</b>
           des aktuellen Depots direkt in der App ansehen — mit denselben Inhalten wie die versendeten
           Zusammenfassungen, aber unabhängig davon, ob der Versand aktiviert ist. Es wird nichts gesendet.<br><br>
+          Bei den Treibern steht die Seite mit der <b>größeren Summe oben</b> (Gewinner oder Verlierer, je nach Tag bzw. Woche)
+          mit 5 sichtbaren Positionen, die andere darunter mit 3; der Rest lässt sich aufklappen.<br><br>
           <b>Tagesbericht:</b> Wertentwicklung des Depots, die <b>Treiber des Tages</b> (welche Positionen
           wie viel € zur Tagesbewegung beigetragen haben, getrennt nach Verlierern und Gewinnern), ATH-Treffer,
           Discount-Alarme und (wenn in der Zusammenfassung aktiviert) Trendwechsel. Vor der Versandzeit ist er ein <b>Zwischenstand</b>.
@@ -7209,8 +7211,9 @@ function renderReport(d){
 }
 
 // Treiber des Tages (seit v2.13.94): Beitrag jeder Position zur Tagesbewegung in € (d.drivers aus
-// _day_drivers im Backend). Verlierer und Gewinner getrennt, je die größten n; der Rest klappt auf.
-const RP_DRIVERS_TOP = {day: {losers: 5, winners: 3}, week: {losers: 3, winners: 3}};
+// _drivers_calc im Backend). Verlierer und Gewinner getrennt; die Seite mit der größeren Summe steht oben
+// (sichtbar: 5 Positionen), die andere darunter (sichtbar: 3); der Rest klappt auf. Gleich groß: Verlierer zuerst.
+const RP_DRIVERS_TOP = [5, 3];
 
 // ctx: {max, total} der GANZEN Seite (größter Beitrag = 100 % Balken, Summe = Basis des Anteils), damit
 // Balken und Anteile in den aufgeklappten Zeilen zu denen der sichtbaren passen.
@@ -7228,10 +7231,10 @@ function rpDriverRows(items, side, ctx){
   }).join("");
 }
 
-function rpDriverSide(dr, side, period){
+function rpDriverSide(dr, side, rank){
   const items = dr[side], loss = side === "losers";
   if(!items.length) return "";
-  const top = RP_DRIVERS_TOP[period || "day"][side], rest = items.slice(top);
+  const top = RP_DRIVERS_TOP[rank], rest = items.slice(top);
   const sum = loss ? dr.loss_eur : dr.gain_eur;
   const ctx = {max: Math.abs(items[0].delta_eur), total: Math.abs(sum)};   // Listen sind nach Beitrag sortiert
   const topRows = rpDriverRows(items.slice(0, top), side, ctx);
@@ -7262,6 +7265,7 @@ function rpDriversHtml(d, period){
   const parts = [`${dr.n} Position${dr.n === 1 ? "" : "en"}`, `${dr.losers.length} im Minus`, `${dr.winners.length} im Plus`];
   if(dr.n_flat) parts.push(`${dr.n_flat} unverändert`);
   if(dr.missing) parts.push(`${dr.missing} ohne ${wk ? "Wochendaten" : "Tagesdaten"}`);
+  const sides = dr.gain_eur > Math.abs(dr.loss_eur) ? ["winners", "losers"] : ["losers", "winners"];
   const pp = d.port_perf, diff = pp ? pp.delta_eur - dr.total_eur : 0;
   const hint = pp && Math.abs(diff) >= 1
     ? `<div class="rp-disc" style="margin:6px 0 0">${wk
@@ -7275,7 +7279,7 @@ function rpDriversHtml(d, period){
       <span style="font-size:13px">Kursbewegung der Positionen</span>
       <span class="rp-big" style="color:var(${col})">${rpEur(dr.total_eur)}</span></div>
       <div class="rp-lbl" style="margin:4px 0 0">${parts.join(" · ")}</div></div>${hint}
-    ${rpDriverSide(dr, "losers", period)}${rpDriverSide(dr, "winners", period)}
+    ${sides.map((sd, i) => rpDriverSide(dr, sd, i)).join("")}
     <div class="rp-disc" style="margin-top:10px">${foot}</div></div>`;
 }
 
