@@ -1,7 +1,16 @@
 {
-  "frontend_version": "2.13.94",
-  "backend_version": "2.8.60",
+  "frontend_version": "2.13.95",
+  "backend_version": "2.8.61",
   "entries": [
+    {
+      "label": "November 2026",
+      "versions": "Backend v2.8.61 · Frontend v2.13.95",
+      "changes": [
+        "Neu: Treiber der Woche. Im Wochenbericht zeigt ein neuer Abschnitt, welche Positionen wie viel Euro zur Bewegung deines Depots in der Woche beigetragen haben – getrennt nach Verlierern und Gewinnern, mit Anteil am Minus bzw. Plus. Die drei größten stehen oben, der Rest lässt sich aufklappen. Er ersetzt „Beste / Schlechteste (Woche)“.",
+        "Die Wochenzusammenfassung per Push und E-Mail enthält den Block „Treiber der Woche“ mit den bis zu drei größten Verlierern und Gewinnern in Euro, direkt unter der Portfolio-Zeile.",
+        "Hinweis: Die Beiträge rechnen mit der heutigen Stückzahl – Käufe und Verkäufe innerhalb der Woche sind nicht herausgerechnet. Direkt nach dem Update erscheinen die Treiber der Woche nach dem nächsten Kurs-Refresh."
+      ]
+    },
     {
       "label": "November 2026",
       "versions": "Backend v2.8.60 · Frontend v2.13.94",

@@ -35,7 +35,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.60"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.61"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -1384,6 +1384,7 @@ def fetch_performance(ticker, current_eur, eur_rate):
             "perf_3y": now - 3 * 365 * 86400,
         }
         result = {}
+        week_ref = None
         for key, target_ts in targets.items():
             best, min_diff = None, float("inf")
             for ts, price in zip(tss, closes):
@@ -1393,6 +1394,8 @@ def fetch_performance(ticker, current_eur, eur_rate):
                         min_diff = diff
                         best     = float(price) / divisor * eur_rate
             result[key] = round((current_eur - best) / best * 100, 1) if best else None
+            if key == "perf_1w":
+                week_ref = best   # ungerundeter Referenz-Close (EUR) für die Treiber der Woche
 
         # perf_1d: letzter Close VOR dem heutigen Kalendertag (App-Zeitzone) — fest bis 0 Uhr,
         # kein rollierendes 24h-Fenster mehr (siehe Docstring)
@@ -1410,6 +1413,13 @@ def fetch_performance(ticker, current_eur, eur_rate):
         # Tagesbewegung des Freitags gezeigt wird.
         result["day_ref_eur"]  = round(best_1d, 4) if best_1d else None
         result["day_ref_date"] = today_local.isoformat() if best_1d else None
+        # Treiber der Woche (seit v2.8.61): dieselbe Referenz wie perf_1w (Schlusskurs, der „jetzt − 7
+        # Tage“ am nächsten liegt, in EUR mit konstantem Wechselkurs) plus der Tag der Berechnung. Das
+        # Referenzfenster wandert mit jedem Refresh mit; _week_drivers lässt nur Positionen zu, deren
+        # Referenz höchstens _WEEK_REF_MAX_AGE_DAYS alt ist, damit sich Wochenbeiträge nicht aus
+        # unterschiedlich alten Referenzen mischen.
+        result["week_ref_eur"]  = round(week_ref, 4) if week_ref else None
+        result["week_ref_date"] = today_local.isoformat() if week_ref else None
 
         # 52-Wochen-Hoch/-Tief: letzte ~252 Handelstage aus denselben 5J-Tagesdaten
         valid_points = sorted(
@@ -1462,6 +1472,7 @@ def fetch_performance(ticker, current_eur, eur_rate):
     except Exception as e:
         log.warning(f"Performance {ticker}: {e}")
         return {"perf_1d": None, "day_ref_eur": None, "day_ref_date": None,
+                "week_ref_eur": None, "week_ref_date": None,
                 "perf_1w": None, "perf_1m": None, "perf_3m": None, "perf_1y": None, "perf_3y": None,
                 "week52_high": None, "week52_low": None,
                 "sma50": None, "sma200": None, "sma_cross_type": None, "sma_cross_date": None, "sma_cross_age": None,
@@ -2236,6 +2247,8 @@ def _make_stock(data, old=None):
         "perf_1d":       data.get("perf_1d"),
         "day_ref_eur":   data.get("day_ref_eur"),
         "day_ref_date":  data.get("day_ref_date"),
+        "week_ref_eur":  data.get("week_ref_eur"),
+        "week_ref_date": data.get("week_ref_date"),
         "perf_1w":       data.get("perf_1w"),
         "perf_1m":       data.get("perf_1m"),
         "perf_3m":       data.get("perf_3m"),
@@ -3127,27 +3140,28 @@ def _ref_date_label(ref_date):
     d = datetime.strptime(ref_date, "%Y-%m-%d")
     return f"{_WEEKDAYS_DE_SHORT[d.weekday()]}, {d.strftime('%d.%m.')}"
 
-# ── Treiber des Tages (seit v2.8.60) ──────────────────────────────────────────────────────
-# Welche Positionen haben die Tagesbewegung des Depots verursacht? Beitrag je Position in €
-# = Stückzahl × (aktueller Kurs − Referenz-Close vor dem Tag), beides in EUR (Referenz:
-# day_ref_eur, gesetzt von fetch_performance; Wechselkurs konstant wie bei perf_1d). Gemeinsame
-# Basis für die Berichts-Ansicht (volle Listen) und die Tageszusammenfassung (Top n).
+# ── Treiber des Tages (seit v2.8.60) und der Woche (seit v2.8.61) ─────────────────────────
+# Welche Positionen haben die Bewegung des Depots verursacht? Beitrag je Position in € =
+# Stückzahl × (aktueller Kurs − Referenz-Close), beides in EUR (Referenz: day_ref_eur bzw.
+# week_ref_eur, gesetzt von fetch_performance; Wechselkurs konstant wie bei perf_1d/perf_1w).
+# Gemeinsame Basis für die Berichts-Ansicht (volle Listen) und die versendeten Zusammenfassungen
+# (Top n). Stückzahl ist die heutige: Käufe/Verkäufe im Zeitraum sind nicht herausgerechnet.
 _DRIVERS_DIGEST_TOP = 3   # Positionen je Seite (Verlierer/Gewinner) in der versendeten Zusammenfassung
+_WEEK_REF_MAX_AGE_DAYS = 4   # so alt (Kalendertage) darf week_ref_date höchstens sein (Fr → Mo, Feiertag)
 
-def _day_drivers(stocks, day):
-    """Treiber des Tages für den Bezugstag day (date). Zählt nur Positionen mit Stückzahl und
-    Kurs; Positionen, deren Referenz fehlt oder nicht von diesem Tag stammt (day_ref_date),
-    zählen nicht mit und stehen in „missing“. Ohne eine einzige verwertbare Position → None.
-    Listen sind nach Beitrag sortiert (Verlierer: größter Verlust zuerst, Gewinner: größter
-    Gewinn zuerst); Summen aus den gerundeten Einzelbeträgen."""
-    day_iso = day.isoformat()
+def _drivers_calc(stocks, ref_field, date_field, date_ok):
+    """Gemeinsamer Kern: zählt nur Positionen mit Stückzahl und Kurs; Positionen, deren Referenz
+    (ref_field) fehlt oder deren Referenzdatum (date_field) date_ok nicht besteht, zählen nicht
+    mit und stehen in „missing“. Ohne eine einzige verwertbare Position → None. Listen sind nach
+    Beitrag sortiert (Verlierer: größter Verlust zuerst, Gewinner: größter Gewinn zuerst);
+    Summen aus den gerundeten Einzelbeträgen."""
     rows, missing = [], 0
     for s in stocks:
         shares, cur = s.get("shares"), s.get("current_eur")
         if not shares or not cur or cur <= 0:
             continue
-        ref = s.get("day_ref_eur")
-        if not ref or ref <= 0 or s.get("day_ref_date") != day_iso:
+        ref = s.get(ref_field)
+        if not ref or ref <= 0 or not date_ok(s.get(date_field)):
             missing += 1
             continue
         rows.append({"name": s.get("name") or s.get("ticker") or "?", "ticker": s.get("ticker", ""),
@@ -3163,25 +3177,43 @@ def _day_drivers(stocks, day):
             "n": len(rows), "n_flat": len(rows) - len(losers) - len(winners), "missing": missing,
             "losers": losers, "winners": winners}
 
+def _day_drivers(stocks, day):
+    """Treiber des Tages für den Bezugstag day (date): Referenz muss genau von diesem Tag stammen
+    (day_ref_date), sonst zählt die Position als „missing“."""
+    day_iso = day.isoformat()
+    return _drivers_calc(stocks, "day_ref_eur", "day_ref_date", lambda d: d == day_iso)
+
+def _week_drivers(stocks, today):
+    """Treiber der Woche (Referenz: Schlusskurs rund 7 Tage vor dem Refresh, week_ref_eur). Die
+    Referenz wandert mit jedem Refresh mit; gilt nur, wenn week_ref_date höchstens
+    _WEEK_REF_MAX_AGE_DAYS Tage vor today liegt (nicht in der Zukunft), sonst „missing“."""
+    def _fresh(d):
+        try:
+            age = (today - datetime.strptime(d, "%Y-%m-%d").date()).days
+        except (TypeError, ValueError):
+            return False
+        return 0 <= age <= _WEEK_REF_MAX_AGE_DAYS
+    return _drivers_calc(stocks, "week_ref_eur", "week_ref_date", _fresh)
+
 def _drivers_top(drivers, key, top=_DRIVERS_DIGEST_TOP):
     """Bis zu top Positionen einer Seite; Beträge, die auf 0 € runden, entfallen (sonst „-0 €“)."""
     if not drivers: return []
     return [r for r in drivers[key] if round(r["delta_eur"]) != 0][:top]
 
-def _drivers_text_block(drivers):
-    """Textblock „💸 Treiber des Tages“ für die Tageszusammenfassung; leer ohne Treffer.
+def _drivers_text_block(drivers, title="Treiber des Tages"):
+    """Textblock „💸 Treiber des Tages“ (bzw. der Woche) für die Zusammenfassungen; leer ohne Treffer.
     Endet mit Leerzeile, damit er direkt hinter die Portfolio-Zeile gehängt werden kann."""
     sides = [(label, _drivers_top(drivers, key))
              for label, key in (("Größte Verlierer", "losers"), ("Größte Gewinner", "winners"))]
     sides = [(label, items) for label, items in sides if items]
     if not sides: return ""
-    lines = ["💸 Treiber des Tages:"]
+    lines = [f"💸 {title}:"]
     for label, items in sides:
         lines.append(f"{label}:")
         lines += [f"  • {r['name']}  {r['delta_eur']:+.0f} € ({r['pct']:+.1f}%)" for r in items]
     return "\n".join(lines) + "\n\n"
 
-def _drivers_html_block(drivers):
+def _drivers_html_block(drivers, title="Treiber des Tages"):
     """HTML-Pendant für die E-Mail-Version (Namen werden maskiert); leer ohne Treffer."""
     parts = []
     for label, key, color in (("Größte Verlierer", "losers", "#dc2626"), ("Größte Gewinner", "winners", "#16a34a")):
@@ -3193,7 +3225,7 @@ def _drivers_html_block(drivers):
         parts.append(f"<div style='font-size:13px;color:#64748b;margin:8px 0 2px'>{label}</div>"
                      f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
     if not parts: return ""
-    return "<h3 style='color:#6366f1;margin:0 0 6px'>💸 Treiber des Tages</h3>" + "".join(parts)
+    return f"<h3 style='color:#6366f1;margin:0 0 6px'>💸 {title}</h3>" + "".join(parts)
 
 def _build_digest_data(depot, stocks):
     """Berechnet alle für den Wochenbericht benötigten Daten einmalig.
@@ -3210,6 +3242,7 @@ def _build_digest_data(depot, stocks):
         if s.get("current_eur") and s.get("shares"):
             current_total += s["current_eur"] * s["shares"]
     port_perf = _weekly_portfolio_perf(depot.get("id"), current_total)
+    drivers   = _week_drivers(stocks, datetime.now().date())   # Treiber der Woche (seit v2.8.61)
 
     # ATH-Verteilung
     buckets = {"<20": 0, "20-39": 0, "40-59": 0, ">60": 0}
@@ -3263,7 +3296,8 @@ def _build_digest_data(depot, stocks):
 
     return {"kw": kw, "name": name, "total": total, "buckets": buckets,
             "nk_items": nk_items, "perf_best": perf_best, "perf_worst": perf_worst,
-            "near_items": near_items, "sector_counts": sector_counts, "port_perf": port_perf}
+            "near_items": near_items, "sector_counts": sector_counts, "port_perf": port_perf,
+            "drivers": drivers}
 
 
 def build_digest_body(depot, stocks):
@@ -3289,7 +3323,10 @@ def build_digest_body(depot, stocks):
         if lines: nk_lines = "\n\n🛒 Nachkauf-Kandidaten:\n" + "\n".join(lines)
 
     perf_section = ""
-    if d["perf_best"] and d["perf_worst"]:
+    drivers_text = _drivers_text_block(d["drivers"], "Treiber der Woche")
+    # Beste/Schlechteste (Prozent) nur noch als Fallback, solange keine Treiber vorliegen
+    # (z. B. direkt nach dem Update vor dem ersten Kurs-Refresh, oder Depot ohne Stückzahlen)
+    if not drivers_text and d["perf_best"] and d["perf_worst"]:
         best = d["perf_best"]; worst = d["perf_worst"]
         perf_section = ("\n\n🏆 Bester/Schlechtester Performer (Woche):"
                         f"\n  📈 Beste:        {best[0]['name']} {best[1]:+.1f}%"
@@ -3311,6 +3348,7 @@ def build_digest_body(depot, stocks):
         pp   = d["port_perf"]
         icon = "📈" if pp["delta_pct"] >= 0 else "📉"
         port_section = f"{icon} Portfolio: {pp['delta_pct']:+.1f}% ({pp['delta_eur']:+.0f} €) ggü. Vorwoche\n\n"
+    port_section += drivers_text   # Block endet mit Leerzeile; leer ohne Treiber
 
     link = f"\n\n{APP_URL}" if APP_URL else ""
     body = (f"Depot: {d['name']} ({d['total']} Aktien)\n\n"
@@ -3349,7 +3387,8 @@ def build_digest_html(depot, stocks):
             <table style="width:100%;border-collapse:collapse">{''.join(rows)}</table>"""
 
     perf_html = ""
-    if d["perf_best"] and d["perf_worst"]:
+    drivers_html = _drivers_html_block(d["drivers"], "Treiber der Woche")
+    if not drivers_html and d["perf_best"] and d["perf_worst"]:   # Fallback, siehe Textversion
         best = d["perf_best"]; worst = d["perf_worst"]
         perf_html = f"""<h3 style="margin:20px 0 8px">🏆 Bester/Schlechtester Performer (Woche)</h3>
         <table style="width:100%;border-collapse:collapse">
@@ -3390,7 +3429,8 @@ def build_digest_html(depot, stocks):
       {port_html}
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
-      <h3 style="margin:0 0 8px">📊 ATH-Verteilung</h3>
+      {drivers_html}
+      <h3 style="margin:{'20px' if drivers_html else '0'} 0 8px">📊 ATH-Verteilung</h3>
       {dist_html}
       {nk_html}
       {perf_html}
@@ -3705,8 +3745,8 @@ def build_weekly_report(depot, stocks):
     def _perf_item(pair):
         return {"name": pair[0]["name"], "perf": round(pair[1], 1)} if pair else None
     return {"type": "weekly", "depot_name": d["name"], "total": d["total"], "kw": d["kw"],
-            "port_perf": _report_perf(d["port_perf"]), "buckets": d["buckets"],
-            "nachkauf": nachkauf,
+            "port_perf": _report_perf(d["port_perf"]), "drivers": d["drivers"],
+            "buckets": d["buckets"], "nachkauf": nachkauf,
             "perf_best": _perf_item(d["perf_best"]), "perf_worst": _perf_item(d["perf_worst"]),
             "near": [{"name": it["name"], "discount": round(it["discount"], 1),
                       "lvl": it["lvl"], "next_price": it["next_price"]} for it in d["near_items"]],
