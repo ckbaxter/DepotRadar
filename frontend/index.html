@@ -1586,8 +1586,10 @@ select</style>
           wie viel € zur Tagesbewegung beigetragen haben, getrennt nach Verlierern und Gewinnern), ATH-Treffer,
           Discount-Alarme und (wenn in der Zusammenfassung aktiviert) Trendwechsel. Vor der Versandzeit ist er ein <b>Zwischenstand</b>.
           Am Wochenende zeigt er den <b>letzten Handelstag</b> (Freitag; Feiertage werden nicht berücksichtigt).<br><br>
-          <b>Wochenbericht:</b> Wertentwicklung ggü. Vorwoche, Verteilung nach ATH-Abstand,
-          Nachkauf-Kandidaten, beste/schlechteste Aktie der Woche, Aktien kurz vor dem nächsten Level und Sektoren.<br><br>
+          <b>Wochenbericht:</b> Wertentwicklung ggü. Vorwoche, die <b>Treiber der Woche</b> (welche Positionen
+          wie viel € zur Wochenbewegung beigetragen haben — gerechnet mit der heutigen Stückzahl, Käufe und Verkäufe
+          der Woche sind nicht herausgerechnet), Verteilung nach ATH-Abstand,
+          Nachkauf-Kandidaten, Aktien kurz vor dem nächsten Level und Sektoren.<br><br>
           <b>↻ Aktualisieren</b> berechnet den Bericht aus den gespeicherten Kursen neu; es löst keinen
           Kurs-Refresh aus. Für Watchlists gibt es keine Berichte.
         </div>
@@ -1954,7 +1956,7 @@ select</style>
         </div>
       </details>
 
-      <details class="help-section" id="help-wochenbericht" data-kw="Digest wöchentlich Wochenperformance Bericht Sonntag">
+      <details class="help-section" id="help-wochenbericht" data-kw="Digest wöchentlich Wochenperformance Bericht Sonntag Treiber Woche Verlierer Gewinner">
         <summary class="help-summary">📊 Wöchentliche Zusammenfassung</summary>
         <div class="help-body">
           Pro Depot aktivierbar (Depot-Einstellungen → ⚙ → Apprise-Bereich) — Wochentag und
@@ -1967,7 +1969,7 @@ select</style>
             <li>ATH-Verteilung — wie viele Positionen in welcher Discount-Stufe liegen</li>
             <li>Aktuelle Nachkauf-Kandidaten</li>
             <li>Portfolio-Wochenperformance — Gesamtwert gegenüber dem Stand vor etwa 7 Tagen</li>
-            <li>Beste und schlechteste Wochenperformance im Depot</li>
+            <li>Treiber der Woche — die bis zu drei größten Verlierer und Gewinner in Euro (heutige Stückzahl × Kursänderung seit dem Schlusskurs vor etwa 7 Tagen)</li>
             <li>Aktien, die kurz vor dem nächsten Discount-Level stehen</li>
           </ul><br>
           Nutzt dieselben Apprise-URLs wie die normalen Alarme. Im Verlauf erscheint sie mit
@@ -7208,7 +7210,7 @@ function renderReport(d){
 
 // Treiber des Tages (seit v2.13.94): Beitrag jeder Position zur Tagesbewegung in € (d.drivers aus
 // _day_drivers im Backend). Verlierer und Gewinner getrennt, je die größten n; der Rest klappt auf.
-const RP_DRIVERS_TOP = {losers: 5, winners: 3};
+const RP_DRIVERS_TOP = {day: {losers: 5, winners: 3}, week: {losers: 3, winners: 3}};
 
 // ctx: {max, total} der GANZEN Seite (größter Beitrag = 100 % Balken, Summe = Basis des Anteils), damit
 // Balken und Anteile in den aufgeklappten Zeilen zu denen der sichtbaren passen.
@@ -7226,10 +7228,10 @@ function rpDriverRows(items, side, ctx){
   }).join("");
 }
 
-function rpDriverSide(dr, side){
+function rpDriverSide(dr, side, period){
   const items = dr[side], loss = side === "losers";
   if(!items.length) return "";
-  const top = RP_DRIVERS_TOP[side], rest = items.slice(top);
+  const top = RP_DRIVERS_TOP[period || "day"][side], rest = items.slice(top);
   const sum = loss ? dr.loss_eur : dr.gain_eur;
   const ctx = {max: Math.abs(items[0].delta_eur), total: Math.abs(sum)};   // Listen sind nach Beitrag sortiert
   const topRows = rpDriverRows(items.slice(0, top), side, ctx);
@@ -7244,27 +7246,37 @@ function rpDriverSide(dr, side){
     <div class="rp-list rp-drv-list">${topRows}${more}</div>`;
 }
 
-function rpDriversHtml(d){
+// period: "day" (Tagesbericht, Referenz = letzter Schlusskurs) oder "week" (Wochenbericht, Referenz = Schlusskurs
+// vor ~7 Tagen); beide Berichte liefern d.drivers aus demselben Backend-Kern (_drivers_calc).
+function rpDriversHtml(d, period){
   if(!d.total) return "";
-  const lbl = "💸 Treiber des Tages", dr = d.drivers;
+  const wk = period === "week";
+  const lbl = wk ? "💸 Treiber der Woche" : "💸 Treiber des Tages", dr = d.drivers;
   if(!dr){
     return `<div class="rp-sec" id="rpDrivers"><div class="sd-section-lbl">${lbl}</div>
-      <div class="rp-empty">Für ${d.day.is_today ? "heute" : esc(d.day.label)} liegen noch keine Tagesdaten vor — sie entstehen mit dem Kurs-Refresh am Handelstag.</div></div>`;
+      <div class="rp-empty">${wk
+        ? "Für diese Woche liegen noch keine Wochendaten vor — sie entstehen mit dem nächsten Kurs-Refresh."
+        : `Für ${d.day.is_today ? "heute" : esc(d.day.label)} liegen noch keine Tagesdaten vor — sie entstehen mit dem Kurs-Refresh am Handelstag.`}</div></div>`;
   }
   const col = dr.total_eur > 0 ? "--green" : dr.total_eur < 0 ? "--red" : "--muted";
   const parts = [`${dr.n} Position${dr.n === 1 ? "" : "en"}`, `${dr.losers.length} im Minus`, `${dr.winners.length} im Plus`];
   if(dr.n_flat) parts.push(`${dr.n_flat} unverändert`);
-  if(dr.missing) parts.push(`${dr.missing} ohne Tagesdaten`);
+  if(dr.missing) parts.push(`${dr.missing} ohne ${wk ? "Wochendaten" : "Tagesdaten"}`);
   const pp = d.port_perf, diff = pp ? pp.delta_eur - dr.total_eur : 0;
   const hint = pp && Math.abs(diff) >= 1
-    ? `<div class="rp-disc" style="margin:6px 0 0">Die Portfolio-Zeile oben (${rpEur(pp.delta_eur)}) vergleicht mit dem Snapshot von ${esc(pp.ref_label)} und kann abweichen, z. B. durch Käufe/Verkäufe oder den Snapshot-Zeitpunkt (hier ${rpEur(diff)}).</div>` : "";
+    ? `<div class="rp-disc" style="margin:6px 0 0">${wk
+        ? `Die Portfolio-Zeile oben (${rpEur(pp.delta_eur)}) vergleicht mit dem Snapshot der Vorwoche. Käufe und Verkäufe der Woche sind dort enthalten, in den Beiträgen unten aber nicht (hier ${rpEur(diff)}).`
+        : `Die Portfolio-Zeile oben (${rpEur(pp.delta_eur)}) vergleicht mit dem Snapshot von ${esc(pp.ref_label)} und kann abweichen, z. B. durch Käufe/Verkäufe oder den Snapshot-Zeitpunkt (hier ${rpEur(diff)}).`}</div>` : "";
+  const foot = wk
+    ? "Beitrag = heutige Stückzahl × Kursänderung seit dem Schlusskurs vor 7 Tagen, in EUR. Nur Positionen im Depot."
+    : "Beitrag = Stückzahl × Kursänderung seit dem letzten Schlusskurs, in EUR. Nur Positionen im Depot.";
   return `<div class="rp-sec" id="rpDrivers"><div class="sd-section-lbl">${lbl}</div>
     <div class="rp-card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
       <span style="font-size:13px">Kursbewegung der Positionen</span>
       <span class="rp-big" style="color:var(${col})">${rpEur(dr.total_eur)}</span></div>
       <div class="rp-lbl" style="margin:4px 0 0">${parts.join(" · ")}</div></div>${hint}
-    ${rpDriverSide(dr, "losers")}${rpDriverSide(dr, "winners")}
-    <div class="rp-disc" style="margin-top:10px">Beitrag = Stückzahl × Kursänderung seit dem letzten Schlusskurs, in EUR. Nur Positionen im Depot.</div></div>`;
+    ${rpDriverSide(dr, "losers", period)}${rpDriverSide(dr, "winners", period)}
+    <div class="rp-disc" style="margin-top:10px">${foot}</div></div>`;
 }
 
 function rpDailyHtml(d){
@@ -7275,7 +7287,7 @@ function rpDailyHtml(d){
       : "Im Lauf des Tages können noch Alarme dazukommen."}</div>`;
   }
   html += rpPortCard(d.port_perf, d.port_perf ? d.port_perf.ref_label : "");
-  html += rpDriversHtml(d);
+  html += rpDriversHtml(d, "day");
   const rows = list => `<div class="rp-list">${list.map(l => `<div class="rp-row"><span>${esc(l)}</span></div>`).join("")}</div>`;
   if(d.ath.length){
     html += rpSection(`🎉 ${d.ath.length} neue${d.ath.length === 1 ? "s Allzeithoch" : " Allzeithochs"}`, rows(d.ath));
@@ -7303,6 +7315,7 @@ function rpDailyHtml(d){
 function rpWeeklyHtml(d){
   if(d.empty) return '<div class="rp-empty">Dieses Depot enthält noch keine Aktien.</div>';
   let html = rpPortCard(d.port_perf, "Vorwoche");
+  html += rpDriversHtml(d, "week");
 
   const b = d.buckets, seg = (n, c) => `<div style="flex:${n};background:var(${c})"></div>`;
   html += rpSection("📊 Verteilung · Abstand zum ATH", `
@@ -7320,7 +7333,7 @@ function rpWeeklyHtml(d){
       <span class="rp-sub">${n.qty ? `${n.qty} Stk. · ~${_rpNum(n.est_eur, 0)} €` : ""}</span></div>`).join("")}</div>`);
   }
 
-  if(d.perf_best && d.perf_worst){
+  if(!d.drivers && d.perf_best && d.perf_worst){   // Fallback, solange keine Treiber vorliegen
     const card = (lbl, p) => `<div class="rp-card"><div class="rp-lbl">${lbl}</div>
       <div style="font-size:14px;font-weight:600">${esc(p.name)} <span style="color:var(${p.perf >= 0 ? "--green" : "--red"})">${rpPct(p.perf)}</span></div></div>`;
     html += rpSection("🏆 Beste / Schlechteste (Woche)",
