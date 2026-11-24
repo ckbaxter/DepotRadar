@@ -1,10 +1,23 @@
 {
   "frontend_version": "2.13.96",
-  "backend_version": "2.8.61",
+  "backend_version": "2.8.62",
   "entries": [
     {
       "label": "November 2026",
-      "versions": "Backend v2.8.61 · Frontend v2.13.96",
+      "versions": "Backend v2.8.62",
+      "changes": [
+        "Parqet: Nach „Neu verbinden“ bleibt der automatische Sync mit seinen Einstellungen erhalten – bisher war er danach unbemerkt ausgeschaltet. Wer schon einmal neu verbunden hat, prüft ihn bitte in den Depot-Einstellungen.",
+        "Sind die Benachrichtigungen eines Depots oder einer Watchlist ausgeschaltet, löst auch das manuelle Aktualisieren keine Kursalarme mehr aus.",
+        "Beim Verschieben einer Aktie zwischen Depot und Watchlist kann die Aktie nicht mehr verloren gehen, wenn das Ziel inzwischen gelöscht wurde.",
+        "Alarme beim manuellen Aktualisieren enthalten jetzt dieselben Angaben wie die automatischen (Kaufempfehlung, 🛒, ⚖️) und werden im Verlauf und in der Tageszusammenfassung deinem Depot zugeordnet.",
+        "Verlaufseinträge gehen nicht mehr verloren, wenn mehrere Vorgänge gleichzeitig laufen.",
+        "Änderungen in den Einstellungen werden nicht mehr von einem gleichzeitig laufenden Kurs-Refresh überschrieben.",
+        "Ist die Nachkauf-Schwelle eines Depots auf 0 gestellt, zeigt auch der Wochenbericht keine Nachkauf-Kandidaten mehr."
+      ]
+    },
+    {
+      "label": "November 2026",
+      "versions": "Frontend v2.13.96",
       "changes": [
         "Treiber des Tages und der Woche: Die Seite mit der größeren Summe steht jetzt oben – überwiegen die Gewinne, stehen die Gewinner vor den Verlierern, sonst umgekehrt. Oben werden 5 Positionen direkt angezeigt, darunter 3; der Rest lässt sich aufklappen. Im Wochenbericht gilt dasselbe."
       ]

@@ -35,7 +35,7 @@ DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.61"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.62"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
@@ -558,6 +558,15 @@ _NACHKAUF_THRESHOLD_DEFAULT = 30
 _NACHKAUF_THRESHOLD_MIN     = 0
 _NACHKAUF_THRESHOLD_MAX     = 50
 
+def depot_nachkauf_threshold(depot):
+    """Nachkauf-Schwelle eines Depots; fehlt sie, gilt der Standard. 0 bleibt 0 (= deaktiviert) —
+    seit v2.8.62 die einzige Stelle, die das Feld liest (der Wochenbericht machte vorher aus 0 eine 30)."""
+    raw = depot.get("nachkauf_threshold")
+    try:
+        return int(raw) if raw is not None else _NACHKAUF_THRESHOLD_DEFAULT
+    except (TypeError, ValueError):
+        return _NACHKAUF_THRESHOLD_DEFAULT
+
 def _parse_hhmm(value, fallback):
     try:
         h, m = map(int, str(value).split(":"))
@@ -668,13 +677,22 @@ def load_settings():
     s.pop("apprise_urls", None)
     return s
 
-def save_settings(s):     _save_json(SETTINGS_FILE, s)
+def update_settings_file(fn):
+    """load-modify-save von settings.json unter Lock (seit v2.8.62). fn(raw) ändert das ROHE Dict
+    aus der Datei — nur die Schlüssel, die sich wirklich ändern sollen. Vorher schrieb save_settings()
+    das Ergebnis von load_settings() zurück: das enthält nur bekannte Schlüssel, die Migrations-Marker
+    (_migrated_*) gingen bei jedem Auto-Refresh verloren, und Scheduler (next_refresh_ts) und
+    Einstellungs-Dialog konnten sich gegenseitig Änderungen überschreiben."""
+    with file_lock(SETTINGS_FILE):
+        raw = _load_json(SETTINGS_FILE, {})
+        if not isinstance(raw, dict): raw = {}
+        fn(raw)
+        _save_json(SETTINGS_FILE, raw)
 
 def save_notifications(n): _save_json(NOTIF_FILE, n)
 
 def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, user_id=None, user_name=None, kind=None,
             extra=None):
-    n = load_notifications()
     entry = {"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
              "type": etype, "title": title, "body": body, "success": success}
     if kind:
@@ -702,8 +720,13 @@ def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, 
         entry["user_id"] = user_id
         if user_name:
             entry["user_name"] = user_name
-    n.append(entry)
-    save_notifications(n)
+    # Lock um load-append-save (seit v2.8.62): Scheduler und Requests schreiben parallel, ohne Lock
+    # gingen Einträge verloren (der zweite Save überschrieb den ersten). Die User-Auflösung oben
+    # läuft bewusst vorher, damit der Lock nur kurz gehalten wird.
+    with file_lock(NOTIF_FILE):
+        n = load_notifications()
+        n.append(entry)
+        save_notifications(n)
 
 def get_depot(depot_id):
     """Hilfsfunktion: Gibt Depot-Dict zurück oder None."""
@@ -712,6 +735,17 @@ def get_depot(depot_id):
 def get_watchlist(wl_id):
     """Hilfsfunktion: Gibt Watchlist-Dict zurück oder None."""
     return next((w for w in load_watchlists() if w["id"] == wl_id), None)
+
+# Existenzprüfung für IDs aus Requests (seit v2.8.62): load_stocks()/save_stocks() und die Watchlist-
+# Pendants legen für JEDE ID eine Datei an (z. B. "null" → depot_null.json). Schreibende Routen prüfen
+# deshalb vorab, ob Depot bzw. Watchlist existieren; Nicht-Strings (z. B. Zahl im JSON-Body) gelten
+# als unbekannt statt in _safe() einen 500er auszulösen. Nur zur Prüfung — wer danach depots.json
+# speichert, lädt frisch (siehe get_depot-Antipattern).
+def existing_depot(depot_id):
+    return get_depot(depot_id) if isinstance(depot_id, str) and depot_id else None
+
+def existing_watchlist(wl_id):
+    return get_watchlist(wl_id) if isinstance(wl_id, str) and wl_id else None
 
 def is_admin_user(user):
     """Admin-Status wird zur Laufzeit aus der ADMIN_USERS-Env-Variable berechnet (Match über
@@ -2607,7 +2641,7 @@ def _refresh_depot(depot, price_cache=None, progress_key=None):
     did       = depot["id"]; dname = depot["name"]
     urls, mention, confirm = resolve_notification_settings(did)
     budget    = depot.get("buy_budget") or None
-    raw_t = depot.get("nachkauf_threshold"); threshold = int(raw_t) if raw_t is not None else _NACHKAUF_THRESHOLD_DEFAULT
+    threshold = depot_nachkauf_threshold(depot)
 
     # Der komplette load-modify-save-Zyklus (inkl. der Yahoo-Netzwerk-Calls) läuft
     # unter dem Depot-Lock, damit ein paralleler HTTP-Request auf denselben Bestand
@@ -2949,8 +2983,6 @@ def cleanup_old_logs():
         days     = s.get("verlauf_retention_days", 60)
         tz       = pytz.timezone(s.get("timezone", "Europe/Berlin"))
         cutoff   = datetime.now(tz) - timedelta(days=days)
-        notifs   = load_notifications()
-        before   = len(notifs)
 
         def is_fresh(n):
             t = n.get("time", "")  # Feld heißt "time" nicht "timestamp"
@@ -2961,10 +2993,14 @@ def cleanup_old_logs():
             except Exception:
                 return True  # bei Parse-Fehler behalten
 
-        notifs  = [n for n in notifs if is_fresh(n)]
-        removed = before - len(notifs)
+        with file_lock(NOTIF_FILE):   # gleicher Lock wie add_log (seit v2.8.62)
+            notifs  = load_notifications()
+            before  = len(notifs)
+            notifs  = [n for n in notifs if is_fresh(n)]
+            removed = before - len(notifs)
+            if removed > 0:
+                save_notifications(notifs)
         if removed > 0:
-            save_notifications(notifs)
             log.info(f"Verlauf bereinigt: {removed} Einträge älter als {days} Tage entfernt")
     except Exception as e:
         log.warning(f"Verlauf-Bereinigung fehlgeschlagen: {e}")
@@ -2997,12 +3033,19 @@ def trading_window_check():
     start_mins = sh * 60 + sm; end_mins = eh * 60 + em
     if now.weekday() not in days or now_mins < start_mins or now_mins > end_mins: return
     today = now.date()
+    # Nur next_refresh_ts speichern, nicht das ganze (mit Defaults gemischte) Settings-Dict — sonst
+    # gingen Migrations-Marker und parallel im Dialog geänderte Werte verloren (seit v2.8.62).
     if now.hour == sh and now.minute == sm and _start_of_day_done != today:
-        _start_of_day_done = today; _last_refresh = now.replace(second=0, microsecond=0); s["next_refresh_ts"] = (_last_refresh + timedelta(seconds=interval)).timestamp(); save_settings(s); cleanup_old_logs(); refresh_all_depots("auto"); return
+        _start_of_day_done = today; _last_refresh = now.replace(second=0, microsecond=0)
+        _save_next_refresh_ts((_last_refresh + timedelta(seconds=interval)).timestamp())
+        cleanup_old_logs(); refresh_all_depots("auto"); return
     if _last_refresh is None or (now - _last_refresh).total_seconds() >= interval:
         _last_refresh = now.replace(second=0, microsecond=0)  # auf volle Minute abrunden → kein Drift
-        s["next_refresh_ts"] = (_last_refresh + timedelta(seconds=interval)).timestamp(); save_settings(s)
+        _save_next_refresh_ts((_last_refresh + timedelta(seconds=interval)).timestamp())
         refresh_all_depots("auto")
+
+def _save_next_refresh_ts(ts):
+    update_settings_file(lambda raw: raw.update(next_refresh_ts=ts))
 
 def _next_refresh_dt():
     """Kernlogik von get_next_run_info() — berechnet den Zeitpunkt des nächsten automatischen
@@ -3256,7 +3299,7 @@ def _build_digest_data(depot, stocks):
         else:        buckets[">60"]   += 1
 
     # Nachkauf-Kandidaten
-    threshold = int(depot.get("nachkauf_threshold") or _NACHKAUF_THRESHOLD_DEFAULT)
+    threshold = depot_nachkauf_threshold(depot)   # 0 = deaktiviert (vor v2.8.62 hier fälschlich 30)
     nk_set    = calc_nachkauf_set(stocks, threshold)
     budget    = depot.get("buy_budget")
     nk_items  = []
@@ -4264,10 +4307,20 @@ def parqet_callback():
     depots = load_depots()
     for d in depots:
         if d["id"] == depot_id:
-            d["parqet"] = {"access_token": tokens["access_token"],
-                           "refresh_token": tokens.get("refresh_token"),
-                           "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600),
-                           "portfolio_id": None, "connected": True, "last_sync": None}
+            # Bestehende Parqet-Einstellungen übernehmen und nur die Token-Felder ersetzen (seit v2.8.62).
+            # Vorher wurde das ganze Objekt neu gebaut — nach „Neu verbinden“ waren damit die Auto-Sync-
+            # Einstellungen weg, die parqet_reconnect() eigens aufbewahrt, und der automatische Sync
+            # lief unbemerkt nicht mehr. Nach parqet_reconnect() fehlt portfolio_id ohnehin (die App
+            # bietet danach die Portfolio-Auswahl an); bei einem direkten Neu-Verbinden bleibt sie.
+            pq = {k: v for k, v in (d.get("parqet") or {}).items()
+                  if k not in ("access_token", "refresh_token", "expires_at", "needs_reconnect")}
+            pq.update({"access_token": tokens["access_token"],
+                       "refresh_token": tokens.get("refresh_token"),
+                       "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600),
+                       "connected": True})
+            pq.setdefault("portfolio_id", None)
+            pq.setdefault("last_sync", None)
+            d["parqet"] = pq
             break
     save_depots(depots); log.info(f"Parqet verbunden: {depot_id}")
     return redirect(f"{APP_URL}?parqet_connected={depot_id}")
@@ -5726,6 +5779,7 @@ def api_add_stock():
         buy_price = _parse_position_value(body.get("buy_price_eur"), 4)
     except ValueError as e:
         return jsonify({"error": f"Ungültige Positionsangabe: {e}"}), 400
+    if not existing_depot(did): return jsonify({"error": "Depot nicht gefunden"}), 404
     with depot_lock(did):
         stocks = load_stocks(did)
         if any(s["ticker"] == ticker for s in stocks):
@@ -5745,14 +5799,22 @@ def api_add_stock():
 @app.route("/api/stocks/<ticker>", methods=["DELETE"])
 def api_delete_stock(ticker):
     did = request.args.get("depot", "")
+    if not existing_depot(did): return jsonify({"error": "Depot nicht gefunden"}), 404
     with depot_lock(did):
         save_stocks(did, [s for s in load_stocks(did) if s["ticker"] != ticker.upper()])
     return jsonify({"ok": True})
 
 @app.route("/api/stocks/<ticker>/refresh", methods=["POST"])
 def api_refresh_stock(ticker):
-    did    = request.args.get("depot", ""); depots = load_depots()
-    depot  = next((d for d in depots if d["id"] == did), {"id": did, "name": did})
+    """Manueller Refresh einer einzelnen Bestands-Aktie (↻). Seit v2.8.62 mit derselben
+    Benachrichtigungslogik wie der automatische Refresh (_refresh_depot): nichts senden, wenn die
+    Benachrichtigungen des Depots aus sind (der Block bleibt dann wie im Auto-Refresh stehen), und
+    sonst mit Kaufbudget, 🛒/⚖️, Cross-Zeile und Depot-Zuordnung im Verlauf. Vorher gingen Discount-
+    Alarme auch bei ausgeschalteten Benachrichtigungen raus und landeten ohne Benutzer im Verlauf."""
+    did   = request.args.get("depot", "")
+    depot = existing_depot(did)
+    if not depot: return jsonify({"error": "Depot nicht gefunden"}), 404
+    label = f"Bestand: {depot['name']}"
     with depot_lock(did):
         stocks = load_stocks(did)
         idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
@@ -5760,16 +5822,16 @@ def api_refresh_stock(ticker):
         try:
             data    = fetch_stock_data(ticker); s = stocks[idx]
             old_ath = float(s.get("ath_eur") or 0)
-            new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-            u_urls, u_ment, u_conf = resolve_notification_settings(did)
-            new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                       f"Bestand: {depot['name']}", u_urls,
-                                       mention=u_ment, confirm=u_conf)
-            stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
-            if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
-                    and depot.get("notifications_enabled", True)):
-                send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
-                                 f"Bestand: {depot['name']}", u_urls, u_ment, depot_id=did)
+            stocks[idx] = _make_stock(data, s)
+            if depot.get("notifications_enabled", True):
+                urls, mention, confirm = resolve_notification_settings(did)
+                stocks[idx:idx + 1] = _send_notifications(
+                    [stocks[idx]], label, urls, depot.get("buy_budget") or None,
+                    calc_nachkauf_set(stocks, depot_nachkauf_threshold(depot)), calc_sector_gap_set(stocks),
+                    mention, confirm, depot_id=did, cross_prefs=get_cross_prefs(get_depot_user(did)))
+                new_ath = float(stocks[idx].get("ath_eur") or 0)
+                if stocks[idx].get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001:
+                    send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}], label, urls, mention, depot_id=did)
             save_stocks(did, stocks)
             add_log("manual_refresh", f"Refresh: {s['name']}", f"Kurs: {data['current_eur']} EUR", True, depot_id=did)
             return jsonify(stocks[idx])
@@ -5858,8 +5920,11 @@ def move_to_watchlist(ticker):
     """Verschiebt eine Aktie vom Bestand in eine (seit der Entkopplung eigenständige)
     Watchlist. Locking-Reihenfolge bewusst immer Depot→Watchlist, um mit
     wl_move_to_depot (die beide Locks ebenfalls in dieser Reihenfolge nimmt) keinen
-    Deadlock zu riskieren."""
-    body  = request.get_json() or {}; did = body.get("depot_id", ""); wl_id = body.get("wl_id", "")
+    Deadlock zu riskieren. Seit v2.8.62 werden Depot und Watchlist vorab geprüft — vorher landete
+    die Aktie bei einer unbekannten wl_id mit 200 OK in einer verwaisten Datei."""
+    body  = _body(); did = body.get("depot_id", ""); wl_id = body.get("wl_id", "")
+    if not existing_depot(did):      return jsonify({"error": "Depot nicht gefunden"}), 404
+    if not existing_watchlist(wl_id): return jsonify({"error": "Watchlist nicht gefunden"}), 404
     with depot_lock(did), watchlist_lock(wl_id):
         stocks = load_stocks(did); stock = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
         if not stock: return jsonify({"error": "Nicht gefunden"}), 404
@@ -5881,6 +5946,7 @@ def wl_add_stock(wl_id):
     ticker   = _valid_ticker(body.get("ticker")); name = _clean_text(body.get("name"), _MAX_NAME)
     exchange = _clean_text(body.get("exchange"), _MAX_EXCHANGE); isin = _clean_isin(body.get("isin"))
     if not ticker or not name: return jsonify({"error": "gültiger ticker und name erforderlich"}), 400
+    if not existing_watchlist(wl_id): return jsonify({"error": "Watchlist nicht gefunden"}), 404
     with watchlist_lock(wl_id):
         stocks = load_wl_stocks(wl_id)
         if any(s["ticker"] == ticker for s in stocks): return jsonify({"error": "Bereits in dieser Liste"}), 409
@@ -5925,13 +5991,21 @@ def wl_patch_stock(wl_id, ticker):
 
 @app.route("/api/watchlists/<wl_id>/stocks/<ticker>", methods=["DELETE"])
 def wl_delete_stock(wl_id, ticker):
+    if not existing_watchlist(wl_id): return jsonify({"error": "Watchlist nicht gefunden"}), 404
     with watchlist_lock(wl_id):
         save_wl_stocks(wl_id, [s for s in load_wl_stocks(wl_id) if s["ticker"] != ticker.upper()])
     return jsonify({"ok": True})
 
 @app.route("/api/watchlists/<wl_id>/stocks/<ticker>/refresh", methods=["POST"])
 def wl_refresh_stock(wl_id, ticker):
-    wl = get_watchlist(wl_id) or {"name": wl_id}
+    """Manueller Refresh einer Watchlist-Aktie (↻ und „Kurse aktualisieren“, das in Watchlists pro
+    Aktie hierher ruft). Seit v2.8.62 wie _refresh_watchlist: bei ausgeschalteten Benachrichtigungen
+    werden keine Discount-/Cross-/ATH-Alarme gesendet (vorher gingen Discount-Alarme trotzdem raus);
+    der Zielkurs-Zustand wird wie dort auch dann geführt, gesendet wird aber nichts."""
+    wl = existing_watchlist(wl_id)
+    if not wl: return jsonify({"error": "Watchlist nicht gefunden"}), 404
+    label  = f"Beobachtung: {wl['name']}"
+    notify = wl.get("notifications_enabled", True)
     with watchlist_lock(wl_id):
         stocks  = load_wl_stocks(wl_id)
         idx     = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
@@ -5939,19 +6013,17 @@ def wl_refresh_stock(wl_id, ticker):
         try:
             data    = fetch_stock_data(ticker); s = stocks[idx]
             old_ath = float(s.get("ath_eur") or 0)
-            new_ath = max(data["ath_eur"], s.get("ath_eur", 0))
-            u_urls, u_ment, u_conf = resolve_watchlist_notification_settings(wl_id)
-            new_blk = check_and_notify(s, data["current_eur"], new_ath,
-                                       f"Beobachtung: {wl['name']}", u_urls,
-                                       mention=u_ment, confirm=u_conf, watchlist_id=wl_id)
-            stocks[idx] = {**_make_stock(data, s), "last_notified_block": new_blk}
-            if (s.get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001
-                    and wl.get("notifications_enabled", True)):
-                send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}],
-                                 f"Beobachtung: {wl['name']}", u_urls, u_ment, watchlist_id=wl_id)
+            stocks[idx] = _make_stock(data, s)
+            urls, mention, confirm = resolve_watchlist_notification_settings(wl_id)
+            if notify:
+                stocks[idx:idx + 1] = _send_notifications(
+                    [stocks[idx]], label, urls, None, calc_nachkauf_set(stocks), None, mention, confirm,
+                    watchlist_id=wl_id, cross_prefs=get_cross_prefs(get_watchlist_user(wl_id)))
+                new_ath = float(stocks[idx].get("ath_eur") or 0)
+                if stocks[idx].get("ath_alert_enabled") and old_ath > 0 and new_ath > old_ath + 0.001:
+                    send_ath_alerts([{**stocks[idx], "_prev_ath": old_ath}], label, urls, mention, watchlist_id=wl_id)
             try:
-                check_target_notify(stocks[idx], f"Beobachtung: {wl['name']}", u_urls, u_ment,
-                                    notify=wl.get("notifications_enabled", True), watchlist_id=wl_id)
+                check_target_notify(stocks[idx], label, urls, mention, notify=notify, watchlist_id=wl_id)
             except Exception as e:
                 log.error(f"Zielkurs {stocks[idx].get('name','?')}: {e}")
             save_wl_stocks(wl_id, stocks); return jsonify(stocks[idx])
@@ -5962,8 +6034,12 @@ def wl_move_to_depot(wl_id, ticker):
     """Verschiebt eine Watchlist-Aktie in den Bestand eines Depots. Da Watchlists seit
     der Entkopplung keinem Depot mehr automatisch zugeordnet sind, ist das Ziel-Depot
     jetzt ein Pflichtfeld im Request-Body (Frontend zeigt dafür eine Depot-Auswahl)."""
-    body = request.get_json() or {}; depot_id = body.get("depot_id", "")
+    body = _body(); depot_id = body.get("depot_id", "")
     if not depot_id: return jsonify({"error": "depot_id erforderlich"}), 400
+    # Seit v2.8.62: unbekanntes Ziel-Depot (z. B. "null") bzw. unbekannte Watchlist → 404, statt die
+    # Aktie in eine verwaiste depot_<id>.json zu verschieben
+    if not existing_depot(depot_id):  return jsonify({"error": "Depot nicht gefunden"}), 404
+    if not existing_watchlist(wl_id): return jsonify({"error": "Watchlist nicht gefunden"}), 404
     with depot_lock(depot_id), watchlist_lock(wl_id):
         wl_stocks    = load_wl_stocks(wl_id)
         stock        = next((s for s in wl_stocks if s["ticker"] == ticker.upper()), None)
@@ -6206,7 +6282,13 @@ def update_settings():
         return jsonify({"error": str(e)}), 400
     s.update(new); s["trading"].update(new_trading)
     tz_changed = "timezone" in new and new["timezone"] != load_settings().get("timezone")
-    save_settings(s)
+    # Nur die geänderten Werte in das Roh-Dict übernehmen (seit v2.8.62, siehe update_settings_file)
+    def _apply(raw):
+        raw.update(new)
+        if new_trading:
+            t = raw.get("trading") if isinstance(raw.get("trading"), dict) else {}
+            t.update(new_trading); raw["trading"] = t
+    update_settings_file(_apply)
     # Wochenbericht/Tageszusammenfassung sind seit v2.7.21 userbezogen (siehe /api/users) —
     # nur bei geänderter Zeitzone müssen die pro-User-Jobs neu geplant werden, da die
     # Cron-Trigger daran hängen.
