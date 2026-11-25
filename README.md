@@ -4,8 +4,8 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
-![Version Backend](https://img.shields.io/badge/Backend-v2.8.62-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.96-blue)
+![Version Backend](https://img.shields.io/badge/Backend-v2.8.63-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.97-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -409,7 +409,7 @@ Gespeicherte URLs enthalten Zugangsdaten und werden im Benutzer-Formular nur **m
 ## Kursabfragen
 
 - **Quelle:** Yahoo Finance (kostenlos, kein API-Key nötig)
-- **Historische Daten:** 10 Jahre für ATH-Berechnung
+- **Historische Daten:** Beim Hinzufügen einer Aktie und in der ATH-Prüfung zählt die gesamte verfügbare Historie für das ATH; der laufende Kurs-Refresh betrachtet 10 Jahre und hebt das gespeicherte ATH nur an
 - **Währungen:** Automatische EUR-Umrechnung via [Frankfurter API](https://frankfurter.dev)
 - **GBp-Fix:** Londoner Aktien in Pence werden automatisch in GBP umgerechnet
 - **XETRA-Lookup:** [OpenFIGI API](https://www.openfigi.com) (Bloomberg) für dynamische XETRA-Ticker-Zuordnung; kostenlos, optionaler API-Key für höheres Rate-Limit

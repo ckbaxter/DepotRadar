@@ -1,7 +1,21 @@
 {
-  "frontend_version": "2.13.96",
-  "backend_version": "2.8.62",
+  "frontend_version": "2.13.97",
+  "backend_version": "2.8.63",
   "entries": [
+    {
+      "label": "November 2026",
+      "versions": "Frontend v2.13.97 · Backend v2.8.63",
+      "changes": [
+        "Neu hinzugefügte Aktien bekommen ihr echtes Allzeithoch, auch wenn es länger als 10 Jahre zurückliegt. Die ATH-Prüfung findet solche Fälle jetzt auch bei bestehenden Aktien.",
+        "Der Verlauf zeigt bei Tageszusammenfassung und Wochenbericht nur noch „Gesendet“, wenn der Versand wirklich geklappt hat.",
+        "E-Mails stellen Namen mit Sonderzeichen wie < oder & jetzt korrekt dar.",
+        "Benutzernamen müssen eindeutig sein; eine PIN besteht immer aus genau 4 Ziffern.",
+        "Datum und Uhrzeit in Verlauf, Berichten und „Treiber des Tages“ richten sich durchgehend nach der eingestellten Zeitzone.",
+        "Kurs-Refreshs mit vielen Fremdwährungs-Aktien laufen schneller, weil Wechselkurse zwischengespeichert werden.",
+        "Ein einzeln übernommener Parqet-Wert wird wie beim Sammel-Import als von Parqet stammend markiert; fehlende Angaben bleiben leer statt 0.",
+        "Mehrere Depots können gleichzeitig mit Parqet synchronisieren, ohne dass Erträge oder Dividenden verloren gehen."
+      ]
+    },
     {
       "label": "November 2026",
       "versions": "Backend v2.8.62",

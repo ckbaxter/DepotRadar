@@ -33,10 +33,20 @@ EUR_RATES_FILE  = os.path.join(DATA_DIR, "eur_rates.json")
 REALIZED_GAINS_FILE = os.path.join(DATA_DIR, "realized_gains.json")
 DIVIDENDS_FILE      = os.path.join(DATA_DIR, "dividends.json")
 ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (seit v2.8.47)
+XETRA_MAP_FILE      = os.path.join(DATA_DIR, "xetra_map.json")   # Nutzer-Cache, Seed siehe XETRA_SEED_FILE
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.62"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.63"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
+
+def _h(value):
+    """HTML-Escape für Werte in Mail-Vorlagen (Namen, Ticker, Zeitstempel). None → leer."""
+    return "" if value is None else _html_escape(str(value))
+
+def _app_link_html():
+    """„→ DepotRadar öffnen“-Link für HTML-Mails; leer ohne APP_URL."""
+    return (f'<p style="margin-top:20px"><a href="{_h(APP_URL)}" style="color:#6366f1">'
+            '→ DepotRadar öffnen</a></p>') if APP_URL else ""
 # Admin-Benutzer (kommaseparierte Namen, dauerhaft gesetzt — anders als die One-Shot-Variablen
 # RESET_PIN_USER/DELETE_USER). Admins sehen den kompletten Verlauf und dürfen Benutzer
 # anlegen/löschen. Fehlt die Variable, gibt es keine Admins.
@@ -108,7 +118,7 @@ def _track_source_call(source, latency_ms, error=None, auth_error=False):
     st = _health_stats["sources"].setdefault(
         source, {"calls": 0, "failed": 0, "avg_latency_ms": 0.0, "last_call": None, "last_error": None})
     st["calls"] += 1
-    st["last_call"] = datetime.now().isoformat(timespec="seconds")
+    st["last_call"] = _now_iso()
     st["avg_latency_ms"] = round(latency_ms, 0) if st["calls"] == 1 \
         else round(st["avg_latency_ms"] * 0.8 + latency_ms * 0.2, 0)
     if error:
@@ -117,7 +127,7 @@ def _track_source_call(source, latency_ms, error=None, auth_error=False):
             st["auth_failed"] = st.get("auth_failed", 0) + 1
         st["last_error"] = str(error)[:160]
         _health_stats["recent_errors"].append({
-            "time":   datetime.now().isoformat(timespec="seconds"),
+            "time":   _now_iso(),
             "source": source,
             "ticker": "",
             "reason": str(error)[:120],
@@ -425,11 +435,10 @@ def parqet_token_lock(depot_id):
     unterschiedlichen Browser-Tabs/Geräten, oder — wie am 10.08.2026 real beobachtet — zwei
     401-getriggerte Refreshs innerhalb derselben Sync-Anfrage bei paginierten Aktivitäten)
     denselben, bei Parqet vermutlich rotierenden refresh_token doppelt verwenden — das kann
-    serverseitig per Reuse-Detection zur Sperre der gesamten Token-Kette führen. (Hinweis:
-    der eigentliche Grund für häufige Reconnects erwies sich später als eine feste, ca. 2h
-    absolute Lebensdauer des Refresh Tokens ab Verbindungsaufbau bei Parqet — unabhängig von
-    Nutzung; der Lock bleibt trotzdem als Schutz vor der oben beschriebenen Race Condition
-    sinnvoll, siehe PROJECT_CONTEXT.)"""
+    serverseitig per Reuse-Detection zur Sperre der gesamten Token-Kette führen. Parqet-
+    Refresh-Tokens sind Single-Use und verfallen erst nach 60 Tagen Inaktivität (die früher
+    vermutete feste ~2h-Lebensdauer hat sich nicht bestätigt) — gerade wegen Single-Use ist
+    der Lock gegen doppelte Verwendung nötig."""
     return file_lock(f"parqet-token:{depot_id}")
 
 def _load_json(path, default):
@@ -688,12 +697,13 @@ def update_settings_file(fn):
         if not isinstance(raw, dict): raw = {}
         fn(raw)
         _save_json(SETTINGS_FILE, raw)
+    _app_tz_cache["tz"] = None
 
 def save_notifications(n): _save_json(NOTIF_FILE, n)
 
 def add_log(etype, title, body, success=True, depot_id=None, watchlist_id=None, user_id=None, user_name=None, kind=None,
             extra=None):
-    entry = {"time": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+    entry = {"time": _now().strftime("%d.%m.%Y %H:%M:%S"),
              "type": etype, "title": title, "body": body, "success": success}
     if kind:
         entry["kind"] = kind
@@ -747,13 +757,32 @@ def existing_depot(depot_id):
 def existing_watchlist(wl_id):
     return get_watchlist(wl_id) if isinstance(wl_id, str) and wl_id else None
 
+def _name_key(name):
+    """Vergleichsschlüssel für Benutzernamen (getrimmt, ohne Groß-/Kleinschreibung)."""
+    return str(name or "").strip().lower()
+
+def users_by_name(name, users=None):
+    """Alle Benutzer mit diesem Namen (Vergleich über _name_key). Seit v2.8.63 sind Namen beim
+    Anlegen/Umbenennen eindeutig; Altbestände mit doppelten Namen liefern hier mehrere Treffer."""
+    key = _name_key(name)
+    if not key: return []
+    return [u for u in (users if users is not None else load_users()) if _name_key(u.get("name")) == key]
+
+def _name_taken(name, users, except_id=None):
+    key = _name_key(name)
+    return bool(key) and any(_name_key(u.get("name")) == key and u.get("id") != except_id for u in users)
+
 def is_admin_user(user):
     """Admin-Status wird zur Laufzeit aus der ADMIN_USERS-Env-Variable berechnet (Match über
     den Benutzernamen, konsistent mit RESET_PIN_USER/DELETE_USER) — bewusst kein persistiertes
     Feld in users.json, damit keine Migration nötig ist und der Status sich rein deklarativ
     über docker-compose.yml steuern lässt. Kehrseite: wird ein Admin-User umbenannt, muss
-    die Env-Variable nachgezogen werden, sonst verliert er die Admin-Rechte."""
-    return bool(user) and user.get("name", "").strip().lower() in ADMIN_USER_NAMES
+    die Env-Variable nachgezogen werden, sonst verliert er die Admin-Rechte. Ist der Name nicht
+    eindeutig (Altbestand vor v2.8.63), gilt keiner der Namensvettern als Admin — sonst wären
+    beide Admin; warn_duplicate_user_names() meldet das beim Start."""
+    if not user: return False
+    key = _name_key(user.get("name"))
+    return key in ADMIN_USER_NAMES and len(users_by_name(key)) == 1
 
 def is_admin_id(user_id):
     """Wie is_admin_user, aber über die User-ID (für Request-Parameter)."""
@@ -768,15 +797,18 @@ def reset_pin_from_env():
     """Setzt den PIN eines Users zurück wenn RESET_PIN_USER gesetzt ist."""
     reset_name = os.environ.get("RESET_PIN_USER", "").strip()
     if not reset_name: return
-    users = load_users()
-    for u in users:
-        if u.get("name", "").lower() == reset_name.lower():
-            u["pin_hash"] = None
-            u["pin_salt"] = None
-            save_users(users)
-            log.info(f"PIN für User '{u['name']}' via RESET_PIN_USER zurückgesetzt")
-            return
-    log.warning(f"RESET_PIN_USER: User '{reset_name}' nicht gefunden")
+    users   = load_users()
+    matches = users_by_name(reset_name, users)
+    if not matches:
+        log.warning(f"RESET_PIN_USER: User '{reset_name}' nicht gefunden"); return
+    if len(matches) > 1:
+        log.error(f"RESET_PIN_USER: Name '{reset_name}' ist nicht eindeutig ({len(matches)} Benutzer) — "
+                  "nichts geändert. Bitte einen der Benutzer umbenennen."); return
+    u = matches[0]
+    u["pin_hash"] = None
+    u["pin_salt"] = None
+    save_users(users)
+    log.info(f"PIN für User '{u['name']}' via RESET_PIN_USER zurückgesetzt")
 
 def _delete_user(target, users):
     """Gemeinsame Löschlogik für den DELETE_USER-Env-Mechanismus und die Admin-Route
@@ -822,9 +854,13 @@ def delete_user_from_env():
     del_name = os.environ.get("DELETE_USER", "").strip()
     if not del_name: return
     users   = load_users()
-    target  = next((u for u in users if u.get("name","").lower() == del_name.lower()), None)
-    if not target:
+    matches = users_by_name(del_name, users)
+    if not matches:
         log.warning(f"DELETE_USER: User '{del_name}' nicht gefunden"); return
+    if len(matches) > 1:
+        log.error(f"DELETE_USER: Name '{del_name}' ist nicht eindeutig ({len(matches)} Benutzer) — "
+                  "nichts gelöscht. Bitte einen der Benutzer vorher umbenennen."); return
+    target = matches[0]
     if len(users) <= 1:
         # Prüfung bewusst VOR der Löschung — sonst wären die Depot-/Watchlist-Dateien
         # beim Abbruch bereits entfernt, obwohl der User bestehen bleibt.
@@ -832,6 +868,15 @@ def delete_user_from_env():
         return
     deleted_depots, deleted_wls = _delete_user(target, users)
     log.info(f"User '{target['name']}' via DELETE_USER gelöscht ({len(deleted_depots)} Depot(s), {len(deleted_wls)} Watchlist(s) entfernt)")
+
+def warn_duplicate_user_names():
+    """Meldet beim Start Benutzernamen, die mehrfach vorkommen (Altbestand vor v2.8.63) — für sie
+    greifen ADMIN_USERS, RESET_PIN_USER und DELETE_USER nicht, bis einer umbenannt ist."""
+    counts = Counter(_name_key(u.get("name")) for u in load_users() if _name_key(u.get("name")))
+    for key, n in counts.items():
+        if n > 1:
+            log.warning(f"Benutzername '{key}' ist {n}× vergeben — ADMIN_USERS/RESET_PIN_USER/DELETE_USER "
+                        "wirken für diesen Namen nicht. Bitte einen der Benutzer umbenennen.")
 
 def warn_if_admin_config_off():
     """Startup-Hinweis zur ADMIN_USERS-Konfiguration: ohne die Variable gibt es keine Admins —
@@ -938,7 +983,7 @@ def build_alert_html(stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
                  'color:#3730a3;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">'
                  '⚖️ Sektor unterrepräsentiert</span>') if is_sector_gap else ""
     cross_badge = ('<span style="display:inline-block;padding:2px 8px;background:#dbeafe;'
-                   f'color:#1e40af;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">{cross_line}</span>') if cross_line else ""
+                   f'color:#1e40af;border-radius:4px;font-size:11px;font-weight:600;margin-left:6px">{_h(cross_line)}</span>') if cross_line else ""
 
     buy_html = ""
     if buy_budget:
@@ -950,23 +995,22 @@ def build_alert_html(stock, label, new_cur, new_ath, d, cb, lp, buy_budget=None,
                         f'<td style="padding:4px 8px;font-weight:600;color:#22c55e">'
                         f'{qty} Stk. (~{cost:.2f} € / Budget {multiplier}×{buy_budget:.0f}={eff_budget:.0f} €)</td></tr>')
 
-    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
-                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+    link_html = _app_link_html()
 
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#ef4444;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
-      <h2 style="margin:0;font-size:18px">📉 Discount-Block-Alarm — {label}</h2>
+      <h2 style="margin:0;font-size:18px">📉 Discount-Block-Alarm — {_h(label)}</h2>
       <div style="opacity:.85;font-size:13px;margin-top:4px">-{cb}%-Block erreicht</div>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
-      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span>{nk_badge}{gap_badge}{cross_badge}</h3>
+      <h3 style="margin:0 0 4px">{_h(stock.get('name'))} <span style="color:#94a3b8;font-weight:400;font-size:13px">({_h(stock.get('ticker'))})</span>{nk_badge}{gap_badge}{cross_badge}</h3>
       <table style="width:100%;border-collapse:collapse;margin-top:12px">
         <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{new_cur:.2f} €</td></tr>
         <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">ATH</td><td style="padding:4px 8px;font-weight:600">{new_ath:.2f} €</td></tr>
         <tr><td style="padding:4px 8px;color:#64748b">Abstand</td><td style="padding:4px 8px;font-weight:600;color:#ef4444">-{d:.1f}%</td></tr>
         <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">-{cb}%-Level bei</td><td style="padding:4px 8px;font-weight:600">{lp:.2f} €</td></tr>
         {buy_html}
-        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{stock.get('market_time', '—')}</td></tr>
+        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{_h(stock.get('market_time') or '—')}</td></tr>
       </table>
       {link_html}
     </div>
@@ -1094,6 +1138,19 @@ COMPANY_INFO_TTL     = 24 * 3600  # 24h — Kurzbeschreibungen ändern sich prak
 _etf_history_cache = {}   # {ticker: (data_or_None, timestamp)} — data = [{"date":..,"close":..}, ...]
 ETF_HISTORY_TTL     = 24 * 3600
 
+# Obergrenze der On-Demand-Caches (ETF-/Kursverlauf, Firmeninfo) — seit v2.8.63; vorher wuchsen sie
+# mit jedem abgefragten Ticker bzw. Namen unbegrenzt. Beim Überlauf fallen die ältesten Einträge.
+_MEM_CACHE_MAX   = 300
+_mem_cache_lock  = threading.Lock()
+
+def _cache_store(cache, key, value, limit=_MEM_CACHE_MAX):
+    with _mem_cache_lock:
+        cache[key] = (value, time_mod.time())
+        excess = len(cache) - limit
+        if excess > 0:
+            for k, _ in sorted(cache.items(), key=lambda kv: kv[1][1])[:excess]:
+                cache.pop(k, None)
+
 def fetch_etf_history(ticker):
     """Tagesschlusskurse für einen ETF-Ticker (5 Jahre, wie fetch_performance) — reine
     Rohkurse in der jeweiligen Handelswährung, KEINE EUR-Umrechnung hier (die Vergleichslinien
@@ -1110,7 +1167,7 @@ def fetch_etf_history(ticker):
         res = r.json()["chart"]["result"][0]
         tss    = res.get("timestamp", [])
         closes = res["indicators"]["quote"][0].get("close", [])
-        tz     = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+        tz     = _app_tz()
         data = []
         for ts, c in zip(tss, closes):
             if c is None: continue
@@ -1118,7 +1175,7 @@ def fetch_etf_history(ticker):
             data.append({"date": d, "close": round(float(c), 4)})
     except Exception as e:
         log.warning(f"ETF-Historie '{ticker}': {e}")
-    _etf_history_cache[ticker] = (data, time_mod.time())
+    _cache_store(_etf_history_cache, ticker, data)
     return data
 
 # ── Kursverlauf einer einzelnen Aktie (Aktien-Detail-Modal, seit v2.8.44) ──
@@ -1144,7 +1201,7 @@ def fetch_stock_history(ticker):
         currency = "GBP" if chart_currency == "GBp" else chart_currency
         tss    = res.get("timestamp", [])
         closes = res["indicators"]["quote"][0].get("close", [])
-        tz     = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+        tz     = _app_tz()
         data = []
         for ts, c in zip(tss, closes):
             if c is None: continue
@@ -1154,7 +1211,7 @@ def fetch_stock_history(ticker):
             result = {"currency": currency, "data": data}
     except Exception as e:
         log.warning(f"Kursverlauf '{ticker}': {e}")
-    _stock_history_cache[ticker] = (result, time_mod.time())
+    _cache_store(_stock_history_cache, ticker, result)
     return result
 
 def fetch_company_info(name):
@@ -1188,32 +1245,73 @@ def fetch_company_info(name):
                 break
         except Exception as e:
             log.debug(f"Wikipedia-Info für '{name}' ({lang}) nicht abrufbar: {e}")
-    _company_info_cache[name] = (summary, time_mod.time())
+    _cache_store(_company_info_cache, name, summary)
     return summary
 
 
+# In-Memory-Cache der EUR-Kurse (seit v2.8.63): Frankfurter aktualisiert nur einmal täglich,
+# deshalb genügt ein Abruf pro Währung und Stunde statt einer Anfrage pro Aktie bzw. Aktivität.
+# Nach einem Fehlschlag wird die Quelle für _EUR_RATE_RETRY_S nicht erneut gefragt.
+_EUR_RATE_TTL_S     = 3600
+_EUR_RATE_RETRY_S   = 300
+_EUR_RATE_URL       = "https://api.frankfurter.dev/v1/latest?base={cur}&symbols=EUR"
+_eur_rate_mem       = {}   # currency -> (rate, monotonic_ts)
+_eur_rate_fail_ts   = {}   # currency -> monotonic_ts des letzten Fehlschlags
+_eur_rate_lock      = threading.Lock()
+
+def _eur_rate_fallback(currency):
+    """Kurs ohne API: zuerst eur_rates.json, dann statischer Fallback."""
+    cache = load_eur_rates()
+    if currency in cache:
+        return cache[currency]
+    fallback = _STATIC_EUR_FALLBACK.get(currency, 0.92)
+    log.warning(f"Frankfurter API nicht erreichbar, kein Cache — statischer Fallback für {currency}: {fallback}")
+    return fallback
+
 def get_eur_rate(currency):
     """Gibt EUR-Umrechnungskurs zurück. Normalisiert GBp → GBP automatisch.
-    Bei API-Ausfall: zuerst gecachter Kurs aus eur_rates.json, dann statischer Fallback."""
+    Kurse werden eine Stunde im Speicher gehalten; eur_rates.json wird nur bei
+    geändertem Kurs geschrieben. Bei API-Ausfall: zuerst gecachter Kurs aus
+    eur_rates.json, dann statischer Fallback."""
     if currency == "EUR": return 1.0
     if currency == "GBp": currency = "GBP"
+    currency = str(currency or "").upper()
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        return _STATIC_EUR_FALLBACK.get(currency, 0.92)
+    now = time_mod.monotonic()
+    with _eur_rate_lock:
+        hit = _eur_rate_mem.get(currency)
+        if hit and now - hit[1] < _EUR_RATE_TTL_S:
+            return hit[0]
+        failed_recently = now - _eur_rate_fail_ts.get(currency, -1e9) < _EUR_RATE_RETRY_S
+    if failed_recently:
+        return hit[0] if hit else _eur_rate_fallback(currency)
     _t0 = time_mod.monotonic()
     try:
-        r    = requests.get(f"https://api.frankfurter.app/latest?from={currency}&to=EUR", timeout=8)
+        r    = requests.get(_EUR_RATE_URL.format(cur=currency), timeout=8)
+        r.raise_for_status()
         rate = float(r.json()["rates"]["EUR"])
         _track_source_call("frankfurter", (time_mod.monotonic() - _t0) * 1000)
-        cache = load_eur_rates(); cache[currency] = rate
-        save_eur_rates(cache)
-        return rate
     except Exception as e:
         _track_source_call("frankfurter", (time_mod.monotonic() - _t0) * 1000, error=e)
+        with _eur_rate_lock:
+            _eur_rate_fail_ts[currency] = time_mod.monotonic()
+        if hit:
+            return hit[0]
         cache = load_eur_rates()
         if currency in cache:
             log.warning(f"Frankfurter API nicht erreichbar — gecachter Kurs für {currency}: {cache[currency]}")
             return cache[currency]
-        fallback = _STATIC_EUR_FALLBACK.get(currency, 0.92)
-        log.warning(f"Frankfurter API nicht erreichbar, kein Cache — statischer Fallback für {currency}: {fallback}")
-        return fallback
+        return _eur_rate_fallback(currency)
+    with _eur_rate_lock:
+        _eur_rate_mem[currency] = (rate, time_mod.monotonic())
+        _eur_rate_fail_ts.pop(currency, None)
+    with file_lock(EUR_RATES_FILE):
+        cache = load_eur_rates()
+        if cache.get(currency) != rate:
+            cache[currency] = rate
+            save_eur_rates(cache)
+    return rate
 
 SECTOR_MAP = {
     # Industrie (spezifisch) → hat Vorrang
@@ -1278,9 +1376,18 @@ def fetch_sector_from_yahoo(ticker):
             log.info(f"Sektor-Fetch {t}: {e}")
     return None
 
-def fetch_stock_data(ticker):
+def fetch_stock_data(ticker, full_history=False):
+    """Aktueller Kurs, ATH und Performance eines Tickers. full_history=True (seit v2.8.63) ermittelt
+    das ATH über die gesamte verfügbare Historie (range=max) statt über 10 Jahre — genutzt beim
+    Hinzufügen/Importieren, beim Tickerwechsel und in der ATH-Prüfung. Der laufende Refresh bleibt
+    bewusst bei 10 Jahren: das gespeicherte ATH wird dort nur nach oben angepasst (max mit dem
+    alten Wert), ein plötzlich älteres, höheres Hoch würde sonst für viele Bestandsaktien auf
+    einmal Discount-Alarme auslösen. Bestandsaktien lassen sich über die ATH-Prüfung korrigieren."""
     enc  = urlquote(ticker)
-    urls = [
+    full = ([f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&includePrePost=false",
+             f"https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range=max&interval=1mo&includePrePost=false"]
+            if full_history else [])
+    urls = full + [
         f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=10y&interval=1mo&includePrePost=false",
         f"https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range=10y&interval=1mo&includePrePost=false",
         f"https://query2.finance.yahoo.com/v8/finance/chart/{enc}?range=5y&interval=1mo",
@@ -1338,7 +1445,7 @@ def fetch_stock_data(ticker):
     mt      = meta.get("regularMarketTime")
     if mt:
         try:
-            tz     = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+            tz     = _app_tz()
             mt_str = datetime.fromtimestamp(int(mt), tz=tz).strftime("%d.%m.%Y %H:%M")
         except: pass
 
@@ -1550,9 +1657,29 @@ _JOB_VIEW_KEY = {"daily_ath_digest": "tages_digest", "weekly_digest": "wochen_di
 # würden sich sonst gegenseitig Fehlermeldungen unterschieben. Versände sind selten und kurz.
 _apprise_notify_lock = threading.Lock()
 
+_app_tz_cache = {"tz": None, "ts": 0.0}
+
 def _app_tz():
-    try: return pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
-    except Exception: return pytz.timezone("Europe/Berlin")
+    """Zeitzone aus den App-Einstellungen (kurz gecacht, wird beim Speichern der Einstellungen
+    verworfen). Seit v2.8.63 die einzige Zeitquelle für Datum und Uhrzeit — vorher nutzten
+    Verlauf, Snapshots und Berichte die Container-Zeitzone (TZ) und konnten so um Mitternacht
+    vom Bezugstag abweichen, wenn TZ und Einstellung auseinanderlagen."""
+    now = time_mod.monotonic()
+    tz  = _app_tz_cache["tz"]
+    if tz is not None and now - _app_tz_cache["ts"] < 30:
+        return tz
+    try: tz = pytz.timezone(load_settings().get("timezone", "Europe/Berlin"))
+    except Exception: tz = pytz.timezone("Europe/Berlin")
+    _app_tz_cache.update(tz=tz, ts=now)
+    return tz
+
+def _now():
+    """Aktuelle Ortszeit in der App-Zeitzone als naive datetime (für Datums-Strings und -Vergleiche)."""
+    return datetime.now(_app_tz()).replace(tzinfo=None)
+
+def _now_iso():
+    """Aktuelle Zeit als ISO-String mit Offset in der App-Zeitzone (eindeutig für Parser und Browser)."""
+    return datetime.now(_app_tz()).isoformat(timespec="seconds")
 
 def _ts_iso(ts, tz=None):
     """Epoch-Sekunden → ISO-Zeitstempel in der App-Zeitzone (oder None)."""
@@ -2301,7 +2428,7 @@ def _make_stock(data, old=None):
         "isin":          base.get("isin"),
         "buy_price_eur": base.get("buy_price_eur"),
         "shares":        base.get("shares"),
-        "updated":       datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "updated":       _now().strftime("%d.%m.%Y %H:%M"),
         "ath_date":      data.get("ath_date") if data.get("ath_eur",0) >= base.get("ath_eur",0) else (base.get("ath_date") or data.get("ath_date")),
     }
 
@@ -2350,11 +2477,11 @@ def _fetch_prices(stocks, price_cache=None, progress_key=None):
                 yh["failed"] += 1
                 yh["avg_latency_ms"] = round(latency_ms, 0) if yh["calls"] == 1 \
                     else round(yh["avg_latency_ms"] * 0.8 + latency_ms * 0.2, 0)
-                yh["last_call"]  = datetime.now().isoformat(timespec="seconds")
+                yh["last_call"]  = _now_iso()
                 yh["last_error"] = str(e)[:160]
                 _health_stats["last_refresh_had_errors"] = True
                 _health_stats["recent_errors"].append({
-                    "time":   datetime.now().isoformat(timespec="seconds"),
+                    "time":   _now_iso(),
                     "source": "yahoo",
                     "ticker": ticker,
                     "reason": str(e)[:120],
@@ -2368,7 +2495,7 @@ def _fetch_prices(stocks, price_cache=None, progress_key=None):
             latency_ms = (time_mod.monotonic() - _t0) * 1000
             yh["avg_latency_ms"] = round(latency_ms, 0) if yh["calls"] == 1 \
                 else round(yh["avg_latency_ms"] * 0.8 + latency_ms * 0.2, 0)
-            yh["last_call"] = datetime.now().isoformat(timespec="seconds")
+            yh["last_call"] = _now_iso()
             if price_cache is not None:
                 price_cache[ticker] = data
 
@@ -2401,18 +2528,17 @@ def _fetch_prices(stocks, price_cache=None, progress_key=None):
 def build_ath_reached_html(stock, prev_ath):
     """HTML-Version der Neues-ATH-Benachrichtigung, im Stil der anderen Alarm-Mails
     (analog build_alert_html), aber positiv/grün statt rot."""
-    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
-                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+    link_html = _app_link_html()
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#22c55e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
       <h2 style="margin:0;font-size:18px">🎉 Neues Allzeithoch</h2>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
-      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span></h3>
+      <h3 style="margin:0 0 4px">{_h(stock.get('name'))} <span style="color:#94a3b8;font-weight:400;font-size:13px">({_h(stock.get('ticker'))})</span></h3>
       <table style="width:100%;border-collapse:collapse;margin-top:12px">
         <tr><td style="padding:4px 8px;color:#64748b">Neues ATH</td><td style="padding:4px 8px;font-weight:600;color:#22c55e">{stock['ath_eur']:.2f} €</td></tr>
         <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">Bisheriges ATH</td><td style="padding:4px 8px;font-weight:600">{prev_ath:.2f} €</td></tr>
-        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{stock.get('market_time', '—')}</td></tr>
+        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{_h(stock.get('market_time') or '—')}</td></tr>
       </table>
       {link_html}
     </div>
@@ -2459,7 +2585,7 @@ def _cross_discount_line(stock, prefs):
         d = datetime.strptime(stock["sma_cross_date"], "%Y-%m-%d")
     except (TypeError, ValueError):
         return ""
-    if (datetime.now() - d).days > _CROSS_DISCOUNT_DAYS:
+    if (_now() - d).days > _CROSS_DISCOUNT_DAYS:
         return ""
     name = "Golden Cross" if stock["sma_cross_type"] == "golden" else "Death Cross"
     return f"🔀 {name} aktiv (seit {d.strftime('%d.%m.%Y')})"
@@ -2475,18 +2601,17 @@ def build_cross_html(stock, label, ctype, age):
     meaning = ("SMA50 hat den SMA200 von unten gekreuzt – ein Hinweis auf einen entstehenden Aufwärtstrend."
                if golden else
                "SMA50 hat den SMA200 von oben gekreuzt – ein Hinweis auf einen entstehenden Abwärtstrend.")
-    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
-                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+    link_html = _app_link_html()
     s50  = stock.get("sma50");  s200 = stock.get("sma200")
     sma_row = (f'<tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">SMA50 / SMA200</td>'
                f'<td style="padding:4px 8px;font-weight:600">{s50:.2f} € / {s200:.2f} €</td></tr>') if s50 and s200 else ""
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:{color};color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
-      <h2 style="margin:0;font-size:18px">🔀 {name} — {label}</h2>
+      <h2 style="margin:0;font-size:18px">🔀 {name} — {_h(label)}</h2>
       <div style="opacity:.85;font-size:13px;margin-top:4px">bestätigt seit {_cross_age_text(age)}</div>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
-      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span></h3>
+      <h3 style="margin:0 0 4px">{_h(stock.get('name'))} <span style="color:#94a3b8;font-weight:400;font-size:13px">({_h(stock.get('ticker'))})</span></h3>
       <p style="margin:8px 0">{meaning}</p>
       <table style="width:100%;border-collapse:collapse;margin-top:12px">
         <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{stock['current_eur']:.2f} €</td></tr>
@@ -2548,23 +2673,22 @@ def _clear_target_state(stock):
 
 def build_target_html(stock, label, cur, tp, under_pct, ath_dist):
     """HTML-Version der Zielkurs-Meldung für E-Mail-Versand."""
-    link_html = (f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">'
-                 f'→ DepotRadar öffnen</a></p>') if APP_URL else ""
+    link_html = _app_link_html()
     under = "genau auf dem Ziel" if cur == tp else f"{under_pct:.1f}% unter dem Ziel"
     ath_row = (f'<tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">Abstand zum ATH</td>'
                f'<td style="padding:4px 8px;font-weight:600">-{ath_dist:.1f}%</td></tr>') if ath_dist is not None else ""
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#22c55e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
-      <h2 style="margin:0;font-size:18px">🎯 Zielkurs erreicht — {label}</h2>
+      <h2 style="margin:0;font-size:18px">🎯 Zielkurs erreicht — {_h(label)}</h2>
       <div style="opacity:.85;font-size:13px;margin-top:4px">{under}</div>
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
-      <h3 style="margin:0 0 4px">{stock['name']} <span style="color:#94a3b8;font-weight:400;font-size:13px">({stock['ticker']})</span></h3>
+      <h3 style="margin:0 0 4px">{_h(stock.get('name'))} <span style="color:#94a3b8;font-weight:400;font-size:13px">({_h(stock.get('ticker'))})</span></h3>
       <table style="width:100%;border-collapse:collapse;margin-top:12px">
         <tr><td style="padding:4px 8px;color:#64748b">Aktueller Kurs</td><td style="padding:4px 8px;font-weight:600">{cur:.2f} €</td></tr>
         <tr style="background:#f9fafb"><td style="padding:4px 8px;color:#64748b">Zielkurs</td><td style="padding:4px 8px;font-weight:600">{tp:.2f} €</td></tr>
         {ath_row}
-        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{stock.get('market_time', '—')}</td></tr>
+        <tr><td style="padding:4px 8px;color:#64748b">Kursstand</td><td style="padding:4px 8px;color:#94a3b8;font-size:12px">{_h(stock.get('market_time') or '—')}</td></tr>
       </table>
       {link_html}
     </div>
@@ -2589,7 +2713,7 @@ def check_target_notify(stock, label, urls, mention="", notify=True, watchlist_i
         _clear_target_state(stock)
         return
     if not stock.get("target_hit_at"):
-        stock["target_hit_at"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+        stock["target_hit_at"] = _now().strftime("%d.%m.%Y %H:%M")
     if stock.get("target_notified") or not notify or not urls:
         return
     under_pct = (tp - cur) / tp * 100
@@ -2705,7 +2829,7 @@ def _refresh_watchlist(wl, price_cache=None):
 
 def take_snapshot():
     """Erstellt einen täglichen Portfolio-Snapshot (einmal pro Tag beim Auto-Refresh)."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = _now().strftime("%Y-%m-%d")
     snaps = load_snapshots()
     if any(s["date"] == today for s in snaps):
         return  # Heute bereits gespeichert
@@ -2730,7 +2854,7 @@ def take_snapshot():
     if has_data:
         snaps.append(entry)
         # Max. 5 Jahre aufbewahren
-        cutoff = (datetime.now() - timedelta(days=1825)).strftime("%Y-%m-%d")
+        cutoff = (_now() - timedelta(days=1825)).strftime("%Y-%m-%d")
         snaps  = [s for s in snaps if s["date"] >= cutoff]
         save_snapshots(snaps)
         log.info(f"Portfolio-Snapshot erstellt: {today}")
@@ -2765,7 +2889,7 @@ def refresh_all_depots(trigger="auto"):
     # ein manueller "Kurse aktualisieren"-Klick soll die Job-Zeile nicht verfälschen.
     if trigger == "auto":
         _job_stats["kurs_refresh"] = {
-            "last_run":    datetime.now().isoformat(timespec="seconds"),
+            "last_run":    _now_iso(),
             "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
             "success":     len(total_err) == 0,
             "detail":      f"{len(total_ok)} OK, {len(total_err)} Fehler",
@@ -3151,7 +3275,7 @@ def _portfolio_perf_vs_snapshot(depot_id, current_total, target_date):
 
 def _weekly_portfolio_perf(depot_id, current_total):
     """Wochenbericht: Vergleich mit dem Snapshot von vor mindestens 7 Tagen."""
-    target = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    target = (_now() - timedelta(days=7)).strftime("%Y-%m-%d")
     return _portfolio_perf_vs_snapshot(depot_id, current_total, target)
 
 def _daily_portfolio_perf(depot_id, current_total, day=None):
@@ -3160,13 +3284,13 @@ def _daily_portfolio_perf(depot_id, current_total, day=None):
     der Aufrufer zeigt deshalb das konkrete Datum (ref_date) statt „Vortag“ an.
     day (date/datetime, optional): Bezugstag statt heute — die Berichts-Ansicht nutzt am
     Wochenende den letzten Handelstag, die Basis ist dann der Snapshot vor diesem Tag."""
-    target = ((day or datetime.now()) - timedelta(days=1)).strftime("%Y-%m-%d")
+    target = ((day or _now()) - timedelta(days=1)).strftime("%Y-%m-%d")
     return _portfolio_perf_vs_snapshot(depot_id, current_total, target)
 
 def _last_trading_day(now=None):
     """Letzter Handelstag im Sinne der Digest-Scheduler (Mo–Fr): werktags der aktuelle Tag,
     am Wochenende der Freitag davor. Börsenfeiertage werden bewusst nicht berücksichtigt."""
-    d = (now or datetime.now()).date()
+    d = (now or _now()).date()
     while d.weekday() > 4:
         d -= timedelta(days=1)
     return d
@@ -3275,7 +3399,7 @@ def _build_digest_data(depot, stocks):
     Wird von build_digest_body und build_digest_html gemeinsam genutzt,
     damit Sektorzählung, Near-Level-Loop und Nachkauf-Kandidaten nicht
     doppelt berechnet werden."""
-    kw    = datetime.now().isocalendar()[1]
+    kw    = _now().isocalendar()[1]
     name  = depot.get("name", "Depot")
     total = len(stocks)
 
@@ -3285,7 +3409,7 @@ def _build_digest_data(depot, stocks):
         if s.get("current_eur") and s.get("shares"):
             current_total += s["current_eur"] * s["shares"]
     port_perf = _weekly_portfolio_perf(depot.get("id"), current_total)
-    drivers   = _week_drivers(stocks, datetime.now().date())   # Treiber der Woche (seit v2.8.61)
+    drivers   = _week_drivers(stocks, _now().date())   # Treiber der Woche (seit v2.8.61)
 
     # ATH-Verteilung
     buckets = {"<20": 0, "20-39": 0, "40-59": 0, ">60": 0}
@@ -3422,7 +3546,7 @@ def build_digest_html(depot, stocks):
             qty_str = ""
             if item["qty"]:
                 qty_str = f" &nbsp;→&nbsp; {item['qty']} Stk. · ~{item['qty'] * item['cur']:.0f} €"
-            rows.append(f"<tr><td style='padding:4px 8px'>{item['stock']['name']}</td>"
+            rows.append(f"<tr><td style='padding:4px 8px'>{_h(item['stock'].get('name'))}</td>"
                         f"<td style='padding:4px 8px;color:#f97316'>-{item['discount']:.1f}%</td>"
                         f"<td style='padding:4px 8px;color:#22c55e'>{qty_str}</td></tr>")
         if rows:
@@ -3435,8 +3559,8 @@ def build_digest_html(depot, stocks):
         best = d["perf_best"]; worst = d["perf_worst"]
         perf_html = f"""<h3 style="margin:20px 0 8px">🏆 Bester/Schlechtester Performer (Woche)</h3>
         <table style="width:100%;border-collapse:collapse">
-          <tr><td style="padding:4px 8px">📈 Beste</td><td style="padding:4px 8px;font-weight:600">{best[0]['name']}</td><td style="padding:4px 8px;color:#22c55e">{best[1]:+.1f}%</td></tr>
-          <tr style="background:#f9fafb"><td style="padding:4px 8px">📉 Schlechteste</td><td style="padding:4px 8px;font-weight:600">{worst[0]['name']}</td><td style="padding:4px 8px;color:#ef4444">{worst[1]:+.1f}%</td></tr>
+          <tr><td style="padding:4px 8px">📈 Beste</td><td style="padding:4px 8px;font-weight:600">{_h(best[0].get('name'))}</td><td style="padding:4px 8px;color:#22c55e">{best[1]:+.1f}%</td></tr>
+          <tr style="background:#f9fafb"><td style="padding:4px 8px">📉 Schlechteste</td><td style="padding:4px 8px;font-weight:600">{_h(worst[0].get('name'))}</td><td style="padding:4px 8px;color:#ef4444">{worst[1]:+.1f}%</td></tr>
         </table>"""
 
     port_html = ""
@@ -3450,7 +3574,7 @@ def build_digest_html(depot, stocks):
 
     near_html = ""
     if d["near_items"]:
-        rows = [f"<tr><td style='padding:4px 8px'>{it['name']}</td>"
+        rows = [f"<tr><td style='padding:4px 8px'>{_h(it.get('name'))}</td>"
                 f"<td style='padding:4px 8px;color:#f97316'>-{it['discount']:.1f}%</td>"
                 f"<td style='padding:4px 8px;color:#94a3b8'>→ -{it['lvl']}%-Block bei {it['next_price']:.2f} €</td></tr>"
                 for it in d["near_items"]]
@@ -3459,16 +3583,16 @@ def build_digest_html(depot, stocks):
 
     sector_html = ""
     if d["sector_counts"]:
-        chips = " ".join(f"<span style='display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:12px;margin:2px'>{k} {v}</span>"
+        chips = " ".join(f"<span style='display:inline-block;padding:3px 8px;background:#f1f5f9;border-radius:4px;font-size:12px;margin:2px'>{_h(k)} {v}</span>"
                          for k, v in sorted(d["sector_counts"].items(), key=lambda x: -x[1]))
         sector_html = f"""<h3 style="margin:20px 0 8px">📂 Sektoren</h3><div>{chips}</div>"""
 
-    link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
+    link_html = _app_link_html()
 
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
       <h2 style="margin:0;font-size:18px">📊 DepotRadar Wochenbericht — KW {d['kw']}</h2>
-      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {d['name']} · {d['total']} Aktien</div>
+      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {_h(d['name'])} · {d['total']} Aktien</div>
       {port_html}
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
@@ -3562,8 +3686,8 @@ def _cross_html_rows(rows):
     for r in rows:
         color = "#22c55e" if r["type"] == "golden" else "#ef4444"
         nm    = "Golden Cross" if r["type"] == "golden" else "Death Cross"
-        out += (f"<li style='padding:2px 0'><span style='color:{color};font-weight:600'>{nm}</span>: {r['line']}"
-                f"<div style='font-size:12px;color:#64748b'>{r['detail']}</div></li>")
+        out += (f"<li style='padding:2px 0'><span style='color:{color};font-weight:600'>{nm}</span>: {_h(r['line'])}"
+                f"<div style='font-size:12px;color:#64748b'>{_h(r['detail'])}</div></li>")
     return out
 
 _CROSS_DISCLAIMER = "Trendindikator, keine Anlageempfehlung."
@@ -3572,7 +3696,7 @@ def _build_daily_cross_data(depot_id, day=None):
     """Heute erfolgreich verbuchte Trendwechsel (kind="cross") eines Depots — separat von den
     Alarmen, da sie nicht in "Alarm(e)" mitgezählt werden. day (date/datetime, optional):
     Bezugstag statt heute (Berichts-Ansicht am Wochenende)."""
-    today = (day or datetime.now()).strftime("%d.%m.%Y")
+    today = (day or _now()).strftime("%d.%m.%Y")
     return [n for n in load_notifications()
             if n.get("depot_id") == depot_id and n.get("success", True)
             and n.get("kind") == "cross" and n.get("time", "").startswith(today)]
@@ -3582,7 +3706,7 @@ def _build_daily_ath_digest_data(depot_id, day=None):
     ATH-Alarme aus notifications.json (per kind-Feld, siehe send_apprise/add_log).
     Kein neues Datenfeld nötig — reine Auswertung des bestehenden Verlaufs.
     day (date/datetime, optional): Bezugstag statt heute (Berichts-Ansicht am Wochenende)."""
-    today   = (day or datetime.now()).strftime("%d.%m.%Y")
+    today   = (day or _now()).strftime("%d.%m.%Y")
     entries = [n for n in load_notifications()
                if n.get("depot_id") == depot_id and n.get("success", True)
                and n.get("kind") in ("discount", "ath")
@@ -3643,11 +3767,11 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None,
     else:
         sections = []
         if ath_hits:
-            rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(ath_hits))
+            rows = "".join(f"<li style='padding:2px 0'>{_h(ln)}</li>" for ln in _dedupe_digest_lines(ath_hits))
             sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {len(ath_hits)} neue(s) Allzeithoch</h3>"
                             f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         if discount_hits:
-            rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(discount_hits))
+            rows = "".join(f"<li style='padding:2px 0'>{_h(ln)}</li>" for ln in _dedupe_digest_lines(discount_hits))
             sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {len(discount_hits)} Discount-Alarm(e)</h3>"
                             f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         if cross_rows:
@@ -3658,11 +3782,11 @@ def build_daily_ath_digest_html(depot, ath_hits, discount_hits, cross_hits=None,
     drivers_html = _drivers_html_block(drivers)
     if drivers_html:
         body_html = f"<div style='margin-bottom:8px'>{drivers_html}</div>" + body_html
-    link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
+    link_html = _app_link_html()
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
       <h2 style="margin:0;font-size:18px">🌙 Tageszusammenfassung</h2>
-      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {name} · {total} Alarm(e) heute</div>
+      <div style="opacity:.8;font-size:13px;margin-top:4px">Depot: {_h(name)} · {total} Alarm(e) heute</div>
       {port_html}
     </div>
     <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:20px;border-radius:0 0 10px 10px">
@@ -3679,7 +3803,7 @@ def _build_daily_watchlist_digest_data(wl_ids, include_cross=False):
     haben (anders als Depots) keinen eigenen Digest-Schalter, sondern nehmen an einem
     einzigen, gebündelten User-weiten Digest teil (siehe daily_watchlist_digest).
     include_cross: zusätzlich Trendwechsel (kind="cross") unter dem Schlüssel "cross" sammeln."""
-    today     = datetime.now().strftime("%d.%m.%Y")
+    today     = _now().strftime("%d.%m.%Y")
     wl_lookup = {w["id"]: w["name"] for w in load_watchlists() if w["id"] in wl_ids}
     kinds     = ("discount", "ath", "cross") if include_cross else ("discount", "ath")
     entries   = [n for n in load_notifications()
@@ -3740,23 +3864,23 @@ def build_daily_watchlist_digest_html(grouped):
         sections = []
         for name in names:
             if grouped[name]["discount"]:
-                rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(grouped[name]["discount"]))
-                sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {name}</h3>"
+                rows = "".join(f"<li style='padding:2px 0'>{_h(ln)}</li>" for ln in _dedupe_digest_lines(grouped[name]["discount"]))
+                sections.append(f"<h3 style='color:#f97316;margin:16px 0 6px'>📉 {_h(name)}</h3>"
                                 f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         for name in names:
             if grouped[name]["ath"]:
-                rows = "".join(f"<li style='padding:2px 0'>{ln}</li>" for ln in _dedupe_digest_lines(grouped[name]["ath"]))
-                sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {name}</h3>"
+                rows = "".join(f"<li style='padding:2px 0'>{_h(ln)}</li>" for ln in _dedupe_digest_lines(grouped[name]["ath"]))
+                sections.append(f"<h3 style='color:#22c55e;margin:16px 0 6px'>🎉 {_h(name)}</h3>"
                                 f"<ul style='margin:0;padding-left:20px'>{rows}</ul>")
         if has_cross:
             for name in names:
                 rows = _cross_digest_rows(grouped[name].get("cross", []))
                 if rows:
-                    sections.append(f"<h3 style='color:#3b82f6;margin:16px 0 6px'>🔀 {name} — Trendwechsel SMA50/SMA200</h3>"
+                    sections.append(f"<h3 style='color:#3b82f6;margin:16px 0 6px'>🔀 {_h(name)} — Trendwechsel SMA50/SMA200</h3>"
                                     f"<ul style='margin:0;padding-left:20px'>{_cross_html_rows(rows)}</ul>")
             sections.append(f"<p style='font-size:12px;color:#94a3b8;margin:8px 0 0'>{_CROSS_DISCLAIMER}</p>")
         body_html = "".join(sections)
-    link_html = f'<p style="margin-top:20px"><a href="{APP_URL}" style="color:#6366f1">→ DepotRadar öffnen</a></p>' if APP_URL else ""
+    link_html = _app_link_html()
     return f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
     <div style="background:#6366f1;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
       <h2 style="margin:0;font-size:18px">🌙 Tageszusammenfassung</h2>
@@ -3795,14 +3919,14 @@ def build_weekly_report(depot, stocks):
                       "lvl": it["lvl"], "next_price": it["next_price"]} for it in d["near_items"]],
             "sectors": [{"name": k, "count": v}
                         for k, v in sorted(d["sector_counts"].items(), key=lambda x: -x[1])],
-            "updated": datetime.now().strftime("%H:%M")}
+            "updated": _now().strftime("%H:%M")}
 
 def build_daily_report(depot, stocks, user):
     """Tagesbericht als JSON-Dict. Bezugstag ist heute, am Wochenende der letzte Handelstag
     (Freitag). interim: heute und vor der Versandzeit der Tageszusammenfassung des Users —
     es können noch Alarme dazukommen. Trendwechsel nur, wenn der User sie in der
     Zusammenfassung sehen will (cross_digest), wie im versendeten Digest."""
-    now      = datetime.now()
+    now      = _now()
     day      = _last_trading_day(now)
     is_today = day == now.date()
     did      = depot["id"]
@@ -3825,6 +3949,10 @@ def build_daily_report(depot, stocks, user):
             "discount": _dedupe_digest_lines(discount_hits),
             "cross": cross_rows, "cross_disclaimer": _CROSS_DISCLAIMER,
             "updated": now.strftime("%H:%M")}
+
+def _digest_send_text(sent, urls):
+    """Verlaufstext eines Digest-Versands — spiegelt das tatsächliche Ergebnis von send_apprise."""
+    return f"Gesendet an {len(urls)} URL(s)." if sent else f"Versand an {len(urls)} URL(s) fehlgeschlagen."
 
 @_tracked_job("daily_ath_digest", per_user=True)
 def send_daily_ath_digests(user_id):
@@ -3851,14 +3979,16 @@ def send_daily_ath_digests(user_id):
         cross_hits  = _build_daily_cross_data(did) if get_cross_prefs(user)["cross_digest"] else []
         stocks      = load_stocks(did)
         port_perf   = _daily_portfolio_perf(did, _depot_total_value(stocks))
-        drivers     = _day_drivers(stocks, datetime.now().date())
+        drivers     = _day_drivers(stocks, _now().date())
         title, body = build_daily_ath_digest_body(dc, ath_hits, discount_hits, cross_hits, port_perf, drivers)
         html_body   = build_daily_ath_digest_html(dc, ath_hits, discount_hits, cross_hits, port_perf, drivers)
+        # Verlauf erst NACH dem Versand und mit dessen Ergebnis (seit v2.8.63) — vorher stand hier
+        # immer „Gesendet“ mit Erfolg, auch wenn der Versand danach scheiterte.
+        sent = send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc["id"])
         add_log("daily_ath_digest", f"🌙 Tageszusammenfassung [{dc['name']}]",
-                f"Gesendet an {len(urls)} URL(s). ({len(ath_hits) + len(discount_hits)} Alarm(e))",
-                success=True, depot_id=dc["id"])
-        if not send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc["id"]):
-            all_ok = False
+                f"{_digest_send_text(sent, urls)} ({len(ath_hits) + len(discount_hits)} Alarm(e))",
+                success=sent, depot_id=dc["id"])
+        if not sent: all_ok = False
 
     if user.get("daily_watchlist_digest", False):
         wl_ids = user.get("watchlists", [])
@@ -3869,16 +3999,16 @@ def send_daily_ath_digests(user_id):
             title, body = build_daily_watchlist_digest_body(grouped)
             html_body   = build_daily_watchlist_digest_html(grouped)
             total       = _watchlist_digest_total(grouped)
+            sent = send_apprise(title, body, urls, mention=mention, html_body=html_body)
             add_log("daily_watchlist_digest", "📋 Watchlist-Tageszusammenfassung",
-                    f"Gesendet an {len(urls)} URL(s). ({total} Alarm(e))",
-                    success=True, user_id=user["id"], user_name=user.get("name", ""))
-            if not send_apprise(title, body, urls, mention=mention, html_body=html_body):
-                all_ok = False
+                    f"{_digest_send_text(sent, urls)} ({total} Alarm(e))",
+                    success=sent, user_id=user["id"], user_name=user.get("name", ""))
+            if not sent: all_ok = False
 
     # Job-Statistik fürs System-Status-Dashboard. Läuft pro User (siehe Docstring), die
     # Job-Zeile zeigt daher den zuletzt ausgeführten User-Lauf, nicht "alle User gesammelt".
     _job_stats["tages_digest"] = {
-        "last_run":    datetime.now().isoformat(timespec="seconds"),
+        "last_run":    _now_iso(),
         "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
         "success":     all_ok,
         "detail":      f"User „{user.get('name','?')}\"",
@@ -3908,14 +4038,14 @@ def send_weekly_digests(user_id):
         title, body = build_digest_body(dc, stocks)
         if title:
             html_body = build_digest_html(dc, stocks)
+            sent = send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id'])
             add_log("digest", f"📊 Wochenbericht [{dc['name']}]",
-                    f"Gesendet an {len(urls)} URL(s).", success=True, depot_id=dc['id'])
-            if not send_apprise(title, body, urls, mention=mention, html_body=html_body, depot_id=dc['id']):
-                all_ok = False
+                    _digest_send_text(sent, urls), success=sent, depot_id=dc['id'])
+            if not sent: all_ok = False
 
     # Job-Statistik fürs System-Status-Dashboard — analog zu send_daily_ath_digests oben.
     _job_stats["wochen_digest"] = {
-        "last_run":    datetime.now().isoformat(timespec="seconds"),
+        "last_run":    _now_iso(),
         "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
         "success":     all_ok,
         "detail":      f"User „{user.get('name','?')}\"",
@@ -4019,7 +4149,7 @@ def auto_parqet_sync_check():
         detail = f"{synced} synchronisiert, {failed} Fehler" if (synced or failed) else "kein Depot fällig"
         if token_expired: detail += f", {token_expired} Token abgelaufen"
         _job_stats["parqet_sync"] = {
-            "last_run":    datetime.now(tz).isoformat(timespec="seconds"),
+            "last_run":    _now_iso(),
             "duration_ms": round((time_mod.monotonic() - _t0) * 1000),
             "success":     failed == 0,
             "detail":      detail,
@@ -4405,10 +4535,13 @@ def parqet_portfolios(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/select-portfolio", methods=["POST"])
 def parqet_select_portfolio(depot_id):
-    body = request.get_json() or {}
-    pid  = body.get("portfolio_id", "")
-    if not pid: return jsonify({"error": "portfolio_id erforderlich"}), 400
-    pname = (body.get("portfolio_name") or "").strip() or None
+    body = _body()
+    pid  = body.get("portfolio_id")
+    # Parqet-Portfolio-IDs sind kurze Kennungen ohne Leer- oder Sonderzeichen
+    if not isinstance(pid, str) or not re.fullmatch(r"[A-Za-z0-9_.:\-]{1,100}", pid):
+        return jsonify({"error": "portfolio_id erforderlich"}), 400
+    if not existing_depot(depot_id): return jsonify({"error": "Depot nicht gefunden"}), 404
+    pname = _clean_text(body.get("portfolio_name"), _MAX_NAME) or None
     depots = load_depots()
     for d in depots:
         if d["id"] == depot_id:
@@ -4573,68 +4706,73 @@ def _sync_earnings(depot_id, activities, stocks):
     isin_lookup = {s.get("isin"): (s.get("ticker", ""), s.get("name", ""))
                    for s in stocks if s.get("isin")}
 
-    realized  = load_realized_gains()
-    known_rg  = {e["activity_id"] for e in realized if e.get("activity_id")}
-    new_rg    = 0
-    for a in activities:
-        if a.get("type") != "sell": continue
-        aid = a.get("id")
-        if not aid or aid in known_rg: continue
-        isin          = a.get("asset", {}).get("isin")
-        curr          = a.get("currency", "EUR")
-        eur           = get_eur_rate(curr)
-        ticker, name  = isin_lookup.get(isin, ("", ""))
-        gains, gains_net = a.get("realizedGains"), a.get("realizedGainsNet")
-        realized.append({
-            "id": str(_uuid.uuid4())[:8], "activity_id": aid, "depot_id": depot_id,
-            "isin": isin, "ticker": ticker, "name": name or a.get("asset", {}).get("name", ""),
-            "sell_datetime": a.get("datetime"), "shares": a.get("shares"), "price": a.get("price"),
-            "currency": curr,
-            "realized_gains": gains, "realized_gains_net": gains_net,
-            "realized_gains_eur":     round((gains or 0) * eur, 2),
-            "realized_gains_net_eur": round((gains_net or 0) * eur, 2),
-            "avg_holding_period_days": a.get("avgHoldingPeriod"),
-        })
-        known_rg.add(aid); new_rg += 1
-    if _heal_unresolved_names(realized) or new_rg: save_realized_gains(realized)
+    # realized_gains.json und dividends.json sind depotübergreifend — eigener Datei-Lock statt
+    # nur depot_lock(depot_id), sonst überschreiben sich zwei gleichzeitige Syncs (seit v2.8.63).
+    # Lock-Reihenfolge: depot_lock → Datei-Lock; die Namens-PATCH-Routen nehmen nur den Datei-Lock.
+    with file_lock(REALIZED_GAINS_FILE):
+        realized  = load_realized_gains()
+        known_rg  = {e["activity_id"] for e in realized if e.get("activity_id")}
+        new_rg    = 0
+        for a in activities:
+            if a.get("type") != "sell": continue
+            aid = a.get("id")
+            if not aid or aid in known_rg: continue
+            isin          = a.get("asset", {}).get("isin")
+            curr          = a.get("currency", "EUR")
+            eur           = get_eur_rate(curr)
+            ticker, name  = isin_lookup.get(isin, ("", ""))
+            gains, gains_net = a.get("realizedGains"), a.get("realizedGainsNet")
+            realized.append({
+                "id": str(_uuid.uuid4())[:8], "activity_id": aid, "depot_id": depot_id,
+                "isin": isin, "ticker": ticker, "name": name or a.get("asset", {}).get("name", ""),
+                "sell_datetime": a.get("datetime"), "shares": a.get("shares"), "price": a.get("price"),
+                "currency": curr,
+                "realized_gains": gains, "realized_gains_net": gains_net,
+                "realized_gains_eur":     round((gains or 0) * eur, 2),
+                "realized_gains_net_eur": round((gains_net or 0) * eur, 2),
+                "avg_holding_period_days": a.get("avgHoldingPeriod"),
+            })
+            known_rg.add(aid); new_rg += 1
+        if _heal_unresolved_names(realized) or new_rg: save_realized_gains(realized)
 
-    dividends = load_dividends()
-    known_div = {e["activity_id"] for e in dividends if e.get("activity_id")}
-    new_div   = 0
-    for a in activities:
-        if a.get("type") != "dividend": continue
-        aid = a.get("id")
-        if not aid or aid in known_div: continue
-        isin          = a.get("asset", {}).get("isin")
-        curr          = a.get("currency", "EUR")
-        eur           = get_eur_rate(curr)
-        ticker, name  = isin_lookup.get(isin, ("", ""))
-        amount, amount_net = a.get("amount"), a.get("amountNet")
-        dividends.append({
-            "id": str(_uuid.uuid4())[:8], "activity_id": aid, "depot_id": depot_id,
-            "isin": isin, "ticker": ticker, "name": name or a.get("asset", {}).get("name", ""),
-            "pay_datetime": a.get("datetime"), "amount": amount, "amount_net": amount_net,
-            "tax": a.get("tax"), "fee": a.get("fee"), "currency": curr,
-            "amount_eur":     round((amount or 0) * eur, 2),
-            "amount_net_eur": round((amount_net if amount_net is not None else amount or 0) * eur, 2),
-        })
-        known_div.add(aid); new_div += 1
+    with file_lock(DIVIDENDS_FILE):
+        dividends = load_dividends()
+        known_div = {e["activity_id"] for e in dividends if e.get("activity_id")}
+        new_div   = 0
+        for a in activities:
+            if a.get("type") != "dividend": continue
+            aid = a.get("id")
+            if not aid or aid in known_div: continue
+            isin          = a.get("asset", {}).get("isin")
+            curr          = a.get("currency", "EUR")
+            eur           = get_eur_rate(curr)
+            ticker, name  = isin_lookup.get(isin, ("", ""))
+            amount, amount_net = a.get("amount"), a.get("amountNet")
+            dividends.append({
+                "id": str(_uuid.uuid4())[:8], "activity_id": aid, "depot_id": depot_id,
+                "isin": isin, "ticker": ticker, "name": name or a.get("asset", {}).get("name", ""),
+                "pay_datetime": a.get("datetime"), "amount": amount, "amount_net": amount_net,
+                "tax": a.get("tax"), "fee": a.get("fee"), "currency": curr,
+                "amount_eur":     round((amount or 0) * eur, 2),
+                "amount_net_eur": round((amount_net if amount_net is not None else amount or 0) * eur, 2),
+            })
+            known_div.add(aid); new_div += 1
 
-    # Nachtrag für Alt-Einträge ohne amount_net_eur (Stand vor v2.8.30) — die Rohaktivität
-    # ist in diesem Sync ohnehin schon geladen, kein zusätzlicher API-Call nötig.
-    activities_by_id = {a.get("id"): a for a in activities if a.get("id")}
-    backfilled = 0
-    for e in dividends:
-        if e.get("amount_net_eur") is not None: continue
-        raw = activities_by_id.get(e.get("activity_id"))
-        if not raw: continue
-        amount_net = raw.get("amountNet")
-        eur = get_eur_rate(e.get("currency", "EUR"))
-        e["amount_net"]     = amount_net
-        e["amount_net_eur"] = round((amount_net if amount_net is not None else e.get("amount") or 0) * eur, 2)
-        backfilled += 1
+        # Nachtrag für Alt-Einträge ohne amount_net_eur (Stand vor v2.8.30) — die Rohaktivität
+        # ist in diesem Sync ohnehin schon geladen, kein zusätzlicher API-Call nötig.
+        activities_by_id = {a.get("id"): a for a in activities if a.get("id")}
+        backfilled = 0
+        for e in dividends:
+            if e.get("amount_net_eur") is not None: continue
+            raw = activities_by_id.get(e.get("activity_id"))
+            if not raw: continue
+            amount_net = raw.get("amountNet")
+            eur = get_eur_rate(e.get("currency", "EUR"))
+            e["amount_net"]     = amount_net
+            e["amount_net_eur"] = round((amount_net if amount_net is not None else e.get("amount") or 0) * eur, 2)
+            backfilled += 1
 
-    if _heal_unresolved_names(dividends) or new_div or backfilled: save_dividends(dividends)
+        if _heal_unresolved_names(dividends) or new_div or backfilled: save_dividends(dividends)
 
     return new_div, new_rg
 
@@ -4794,7 +4932,7 @@ def _parqet_sync_core(depot_id, auto=False):
             shutil.copy2(src, bak)
         save_stocks(depot_id, stocks)
         # last_sync/needs_reconnect auf FRISCH geladenem Stand setzen, nicht auf dem ganz zu
-        # Beginn der Funktion geladenen `depots` (Zeile ~2234) — der ist veraltet, falls
+        # Beginn von _parqet_sync_core geladenen `depots` — der ist veraltet, falls
         # Schritt 1 oder 3 zwischenzeitlich per 401 einen Parqet-Token-Refresh ausgelöst und
         # bereits gespeichert hat. Parqet-Refresh-Tokens sind Single-Use: würden wir hier den
         # alten `depots`-Stand zurückspeichern, überschreiben wir den frisch rotierten Token
@@ -4805,7 +4943,7 @@ def _parqet_sync_core(depot_id, auto=False):
         depots_final = load_depots()
         for d in depots_final:
             if d["id"] == depot_id:
-                d["parqet"]["last_sync"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+                d["parqet"]["last_sync"] = _now().strftime("%d.%m.%Y %H:%M")
                 d["parqet"].pop("needs_reconnect", None)
                 # Neue Aktien bei Parqet (ISIN noch nicht im Depot) vormerken, damit sie auch nach
                 # einem automatischen Sync oder einem geschlossenen Import-Modal nicht verloren
@@ -5045,10 +5183,17 @@ def parqet_apply_removal(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/apply-mismatch", methods=["POST"])
 def parqet_apply_mismatch(depot_id):
-    body      = request.get_json() or {}
-    isin      = body.get("isin", "")
-    buy_price = float(body.get("buy_price_eur") or 0)
-    shares    = float(body.get("shares") or 0)
+    body = _body()
+    isin = _clean_isin(body.get("isin"))
+    if not isin: return jsonify({"error": "Ungültige ISIN"}), 400
+    try:
+        buy_price = float(body.get("buy_price_eur") or 0)
+        shares    = float(body.get("shares") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Ungültige Zahl"}), 400
+    if not (math.isfinite(buy_price) and math.isfinite(shares)) or buy_price < 0 or shares < 0:
+        return jsonify({"error": "Ungültige Zahl"}), 400
+    if not existing_depot(depot_id): return jsonify({"error": "Depot nicht gefunden"}), 404
     with depot_lock(depot_id):
         stocks    = load_stocks(depot_id)
         match     = next((s for s in stocks if s.get("isin") == isin), None)
@@ -5112,7 +5257,7 @@ def parqet_import_bulk(depot_id):
                     imp_shares = _parse_import_number(item.get("shares"), 6)
                 except ValueError as ve:
                     raise ValueError(f"Ungültige Positionsangabe: {ve}")
-                data  = fetch_stock_data(ticker)
+                data  = fetch_stock_data(ticker, full_history=True)
                 stock = _make_stock(data, {
                     "ticker": ticker, "name": _clean_text(item.get("name"), _MAX_NAME),
                     "exchange": _clean_text(item.get("exchange"), _MAX_EXCHANGE),
@@ -5140,21 +5285,26 @@ def parqet_import_stock(depot_id):
     exchange  = _clean_text(body.get("exchange"), _MAX_EXCHANGE)
     isin      = _clean_isin(body.get("isin"))
     try:
-        buy_price = _parse_import_number(body.get("buy_price_eur"), 4) or 0
-        shares    = _parse_import_number(body.get("shares"), 6) or 0
+        # Fehlende Werte bleiben None (wie beim Sammel-Import), nicht 0 — seit v2.8.63
+        buy_price = _parse_import_number(body.get("buy_price_eur"), 4)
+        shares    = _parse_import_number(body.get("shares"), 6)
     except ValueError as e:
         return jsonify({"error": f"Ungültige Positionsangabe: {e}"}), 400
     if not ticker or not name: return jsonify({"error": "gültiger ticker und name erforderlich"}), 400
     if not get_depot(depot_id): return jsonify({"error": "Depot nicht gefunden"}), 404
     with depot_lock(depot_id):
         stocks   = load_stocks(depot_id)
-        existing = next((s for s in stocks if s["ticker"] == ticker), None)
+        existing = next((s for s in stocks if str(s.get("ticker", "")).upper() == ticker), None)
         if existing:
-            existing.update({"isin": isin, "buy_price_eur": buy_price, "shares": shares})
+            # Nur übergebene Werte übernehmen — eine fehlende Angabe überschreibt nichts
+            if isin:                  existing["isin"]          = isin
+            if buy_price is not None: existing["buy_price_eur"] = buy_price
+            if shares is not None:    existing["shares"]        = shares
+            existing["parqet_synced"] = True   # Werte kommen von Parqet (wie import-bulk)
             save_stocks(depot_id, stocks)
             imported = ("updated", existing)
         else:
-            try: data = fetch_stock_data(ticker)
+            try: data = fetch_stock_data(ticker, full_history=True)
             except ValueError as e:
                 msg = str(e)
                 code = 404 if "nicht gefunden" in msg else 502
@@ -5162,7 +5312,8 @@ def parqet_import_stock(depot_id):
             except Exception as e: return jsonify({"error": str(e)}), 502
             stock = {**_make_stock(data), "name": name, "ticker": ticker, "exchange": exchange,
                      "isin": isin, "buy_price_eur": buy_price, "shares": shares,
-                     "last_notified_block": initial_block(data["current_eur"], data["ath_eur"])}
+                     "last_notified_block": initial_block(data["current_eur"], data["ath_eur"]),
+                     "parqet_synced": True}   # Werte kommen von Parqet (wie import-bulk)
             stocks.append(stock); save_stocks(depot_id, stocks)
             imported = ("added", stock)
     _clear_pending_new(depot_id, [isin])
@@ -5206,15 +5357,14 @@ def get_depot_report(depot_id):
         return jsonify(build_weekly_report(depot, stocks))
     return jsonify(build_daily_report(depot, stocks, get_depot_user(depot_id)))
 
-def _patch_earning_name(depot_id, entry_id, load_fn, save_fn):
+def _patch_earning_name(depot_id, entry_id, load_fn, save_fn, path):
     """Gemeinsame Logik für die beiden Namens-PATCH-Routen unten. Setzt name manuell und
     entfernt die Auflösungs-Bookkeeping-Felder (name_resolve_attempts, Altfeld name_unresolved)
     — die beschreiben nur den Zustand 'automatische Auflösung (noch) nicht erfolgreich',
     nach manueller Vergabe trifft das nicht mehr zu."""
-    body = request.get_json() or {}
-    name = (body.get("name") or "").strip()
+    name = _clean_text(_body().get("name"), _MAX_NAME)
     if not name: return jsonify({"error": "Name erforderlich"}), 400
-    with depot_lock(depot_id):
+    with file_lock(path):
         entries = load_fn()
         entry   = next((e for e in entries if e.get("id") == entry_id and e.get("depot_id") == depot_id), None)
         if not entry: return jsonify({"error": "Nicht gefunden"}), 404
@@ -5228,25 +5378,32 @@ def _patch_earning_name(depot_id, entry_id, load_fn, save_fn):
 def patch_realized_gain_name(depot_id, entry_id):
     """Manuelle Namensvergabe für einen realized_gains-Eintrag, dessen automatische Auflösung
     fehlgeschlagen ist (name_unresolved, siehe _heal_unresolved_names)."""
-    return _patch_earning_name(depot_id, entry_id, load_realized_gains, save_realized_gains)
+    return _patch_earning_name(depot_id, entry_id, load_realized_gains, save_realized_gains, REALIZED_GAINS_FILE)
 
 @app.route("/api/depots/<depot_id>/dividends/<entry_id>", methods=["PATCH"])
 def patch_dividend_name(depot_id, entry_id):
     """Manuelle Namensvergabe für einen dividends-Eintrag, dessen automatische Auflösung
     fehlgeschlagen ist (name_unresolved, siehe _heal_unresolved_names)."""
-    return _patch_earning_name(depot_id, entry_id, load_dividends, save_dividends)
+    return _patch_earning_name(depot_id, entry_id, load_dividends, save_dividends, DIVIDENDS_FILE)
 
 
 # ── ATH-Prüfung ──────────────────────────────────────────────────
 @app.route("/api/depots/<depot_id>/ath-check", methods=["GET"])
 def ath_check(depot_id):
     """Vergleicht gespeicherte ATH-Werte mit aktuellen Yahoo-Daten."""
+    if not existing_depot(depot_id): return jsonify({"error": "Depot nicht gefunden"}), 404
+    try:
+        threshold = float(request.args.get("threshold", 5))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Ungültige Schwelle"}), 400
+    if not math.isfinite(threshold) or not 0 <= threshold <= 100:
+        return jsonify({"error": "Ungültige Schwelle"}), 400
+    threshold /= 100
     stocks    = load_stocks(depot_id)
-    threshold = float(request.args.get("threshold", 5)) / 100
     results   = []
     for s in stocks:
         try:
-            data      = fetch_stock_data(s["ticker"])
+            data      = fetch_stock_data(s["ticker"], full_history=True)
             yahoo_ath = data["ath_eur"]
             stored    = s.get("ath_eur", 0)
             if stored <= 0:
@@ -5314,10 +5471,10 @@ def ath_log_watchlist(wl_id):
 @app.route("/api/ath-check-single", methods=["GET"])
 def ath_check_single():
     """Gibt den aktuellen Yahoo-ATH für einen einzelnen Ticker zurück."""
-    ticker = request.args.get("ticker", "").strip()
-    if not ticker: return jsonify({"error": "ticker fehlt"}), 400
+    ticker = _valid_ticker(request.args.get("ticker"))
+    if not ticker: return jsonify({"error": "ticker fehlt oder ungültig"}), 400
     try:
-        data = fetch_stock_data(ticker)
+        data = fetch_stock_data(ticker, full_history=True)
         return jsonify({"ticker": ticker, "yahoo_ath": data["ath_eur"]})
     except Exception as e:
         return jsonify({"ticker": ticker, "error": str(e)}), 502
@@ -5784,7 +5941,7 @@ def api_add_stock():
         stocks = load_stocks(did)
         if any(s["ticker"] == ticker for s in stocks):
             return jsonify({"error": f"{name} bereits im Depot"}), 409
-        try: data = fetch_stock_data(ticker)
+        try: data = fetch_stock_data(ticker, full_history=True)
         except ValueError as e:
             msg = str(e)
             code = 404 if "nicht gefunden" in msg else 502
@@ -5875,7 +6032,7 @@ def change_ticker(ticker):
         idx    = next((i for i, s in enumerate(stocks) if s["ticker"] == ticker.upper()), None)
         if idx is None: return jsonify({"error": "Nicht gefunden"}), 404
         old = stocks[idx]
-        try: data = fetch_stock_data(new_tick)
+        try: data = fetch_stock_data(new_tick, full_history=True)
         except Exception as e: return jsonify({"error": str(e)}), 502
         stocks[idx] = {**_make_stock(data, old), "name": new_name or old["name"], "ticker": new_tick,
                        "exchange": new_exch or old.get("exchange", ""), "last_notified_block": old.get("last_notified_block", 0)}
@@ -5891,7 +6048,7 @@ def patch_stock(depot_id, ticker):
     body   = _body()
     with depot_lock(depot_id):
         stocks = load_stocks(depot_id)
-        stock  = next((s for s in stocks if s["ticker"] == ticker), None)
+        stock  = next((s for s in stocks if s["ticker"] == ticker.upper()), None)
         if not stock: return jsonify({"error": "Aktie nicht gefunden"}), 404
         # Erlaubte Felder die per PATCH gesetzt werden dürfen
         ALLOWED = {"bought_levels", "notes", "sector", "ath_alert_enabled"}
@@ -5950,7 +6107,7 @@ def wl_add_stock(wl_id):
     with watchlist_lock(wl_id):
         stocks = load_wl_stocks(wl_id)
         if any(s["ticker"] == ticker for s in stocks): return jsonify({"error": "Bereits in dieser Liste"}), 409
-        try: data = fetch_stock_data(ticker)
+        try: data = fetch_stock_data(ticker, full_history=True)
         except ValueError as e:
             msg = str(e)
             code = 404 if "nicht gefunden" in msg else 502
@@ -6054,8 +6211,6 @@ def wl_move_to_depot(wl_id, ticker):
         save_wl_stocks(wl_id, [s for s in wl_stocks if s["ticker"] != ticker.upper()])
         return jsonify({"ok": True, "stock": s})
 
-XETRA_MAP_FILE = os.path.join(DATA_DIR, "xetra_map.json")
-
 def _xetra_lookup(name, ticker):
     """Sucht XETRA/.DE-Ticker via OpenFIGI für Aktien die nicht in xetra_map.json sind.
     Bereinigt den Yahoo-Longnamen für bessere Trefferquote und schreibt Ergebnis in den Cache,
@@ -6103,7 +6258,8 @@ def api_stock_info(ticker):
     """Kurze Unternehmensbeschreibung fürs Aktien-Detail-Modal (Wikipedia, siehe fetch_company_info),
     on-demand, kein Datei-Schreibzugriff, daher kein depot_lock nötig. Erwartet den Firmennamen als
     Query-Parameter (?name=...), da Wikipedia namensbasiert gesucht wird, nicht über den Ticker."""
-    name = request.args.get("name", "").strip() or ticker
+    name = _clean_text(request.args.get("name"), _MAX_NAME) or _clean_text(ticker, 40)
+    if not name: return jsonify({"summary": None})
     try:
         return jsonify({"summary": fetch_company_info(name)})
     except Exception as e:
@@ -6115,8 +6271,8 @@ def api_stock_history(ticker):
     """Kursverlauf (Tagesschlusskurse, 5 Jahre, Originalwährung) fürs Aktien-Detail-Modal, on-demand,
     reiner Read ohne Datei-Schreibzugriff (kein depot_lock nötig), In-Memory gecacht (siehe
     fetch_stock_history). Antwort: {ticker, currency, data:[{date, close}, ...]}."""
-    ticker = ticker.strip()
-    if not ticker: return jsonify({"error": "ticker fehlt"}), 400
+    ticker = _valid_ticker(ticker)
+    if not ticker: return jsonify({"error": "ticker fehlt oder ungültig"}), 400
     res = fetch_stock_history(ticker)
     if res is None:
         return jsonify({"ticker": ticker, "data": None, "error": "nicht abrufbar"}), 502
@@ -6353,13 +6509,23 @@ def api_create_user():
         return jsonify({"error": "Nur Admins können Benutzer anlegen (ADMIN_USERS in docker-compose.yml)"}), 403
     apprise_urls, err = resolve_apprise_url_list([], body.get("apprise_urls", []))
     if err: return jsonify({"error": err}), 400
+    name = _clean_text(body.get("name"), _MAX_USER_NAME)
+    if not name: return jsonify({"error": "Name erforderlich"}), 400
+    if _name_taken(name, users):
+        return jsonify({"error": f"Ein Benutzer namens „{name}“ existiert bereits"}), 409
+    try:
+        pin     = _validate_pin(body.get("pin"))
+        depots  = _validate_id_list(body.get("depots", []), {d["id"] for d in load_depots()}, "Depots")
+        wls     = _validate_id_list(body.get("watchlists", []), {w["id"] for w in load_watchlists()}, "Watchlists")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     new_user = {
         "id":                    str(_uuid.uuid4())[:8],
-        "name":                  _clean_text(body.get("name"), 60),
+        "name":                  name,
         "pin_hash":              None,
         "pin_salt":              None,
-        "depots":                body.get("depots", []),
-        "watchlists":            body.get("watchlists", []),
+        "depots":                depots,
+        "watchlists":            wls,
         "apprise_urls":          apprise_urls,
         "notification_mention":  _clean_text(body.get("notification_mention"), _MAX_MENTION),
         "notification_confirm":  bool(body.get("notification_confirm", False)),
@@ -6379,10 +6545,32 @@ def api_create_user():
         if "daily_digest_time" in body: new_user["daily_digest_time"] = _validate_hhmm(body["daily_digest_time"])
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    set_user_pin(new_user, body.get("pin"))
+    set_user_pin(new_user, pin)
     users.append(new_user); save_users(users)
     schedule_user_digest_jobs(new_user)
     return jsonify(_public_user(new_user)), 201
+
+_MAX_USER_NAME = 60
+_PIN_RE        = re.compile(r"^\d{4}$")
+
+def _validate_pin(v):
+    """PIN: leer/None = keine PIN, sonst genau 4 Ziffern (wie das PIN-Feld der Oberfläche).
+    ValueError bei ungültigem Wert."""
+    if v is None or v == "": return None
+    pin = str(v).strip()
+    if not _PIN_RE.match(pin): raise ValueError("Die PIN muss aus genau 4 Ziffern bestehen")
+    return pin
+
+def _validate_id_list(v, existing_ids, label):
+    """Liste von Depot- bzw. Watchlist-IDs: nur Strings, Duplikate und unbekannte IDs fallen weg.
+    ValueError, wenn v keine Liste ist."""
+    if not isinstance(v, list) or len(v) > 500:
+        raise ValueError(f"{label}: Liste erwartet")
+    out = []
+    for x in v:
+        if isinstance(x, str) and x in existing_ids and x not in out:
+            out.append(x)
+    return out
 
 def _validate_digest_day(v):
     """Wochentag 0 (Montag) bis 6 (Sonntag); ValueError bei ungültigem Wert."""
@@ -6416,13 +6604,21 @@ def api_update_user(user_id):
         new_dt   = _validate_hhmm(body["digest_time"]) if "digest_time" in body else None
         new_ddt  = _validate_hhmm(body["daily_digest_time"]) if "daily_digest_time" in body else None
         new_ccd  = _validate_cross_confirm_days(body["cross_confirm_days"]) if "cross_confirm_days" in body else None
+        new_pin  = _validate_pin(body["pin"]) if "pin" in body else None
+        new_deps = (_validate_id_list(body["depots"], {d["id"] for d in load_depots()}, "Depots")
+                    if "depots" in body else None)
+        new_wls  = (_validate_id_list(body["watchlists"], {w["id"] for w in load_watchlists()}, "Watchlists")
+                    if "watchlists" in body else None)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     # Leerer Name bleibt erlaubt (Altbestand: der frühere Standard-User hatte keinen Namen)
-    if "name"                 in body: user["name"]                = _clean_text(body["name"], 60)
-    if "pin"                in body: set_user_pin(user, body["pin"])
-    if "depots"               in body: user["depots"]              = body["depots"]
-    if "watchlists"           in body: user["watchlists"]           = body["watchlists"]
+    new_name = _clean_text(body["name"], _MAX_USER_NAME) if "name" in body else None
+    if new_name and _name_taken(new_name, users, except_id=user_id):
+        return jsonify({"error": f"Ein Benutzer namens „{new_name}“ existiert bereits"}), 409
+    if new_name is not None:           user["name"]                = new_name
+    if "pin"                in body: set_user_pin(user, new_pin)
+    if new_deps is not None:           user["depots"]              = new_deps
+    if new_wls is not None:            user["watchlists"]          = new_wls
     if new_urls is not None:          user["apprise_urls"]         = new_urls
     if "notification_mention" in body: user["notification_mention"]= _clean_text(body["notification_mention"], _MAX_MENTION)
     if "notification_confirm" in body: user["notification_confirm"]= bool(body["notification_confirm"])
@@ -6485,8 +6681,8 @@ def api_snapshots():
 def api_etf_history():
     """Tagesschlusskurse für eine Vergleichs-ETF-Linie im Portfolio-Verlauf-Chart.
     ?ticker=EUNL.DE — Rohkurse, In-Memory gecacht (siehe fetch_etf_history)."""
-    ticker = request.args.get("ticker", "").strip()
-    if not ticker: return jsonify({"error": "ticker fehlt"}), 400
+    ticker = _valid_ticker(request.args.get("ticker"))
+    if not ticker: return jsonify({"error": "ticker fehlt oder ungültig"}), 400
     data = fetch_etf_history(ticker)
     if data is None:
         return jsonify({"ticker": ticker, "data": None, "error": "nicht abrufbar"}), 502
@@ -6545,7 +6741,7 @@ def health():
     return jsonify({
         "status":               "ok",
         "version":              VERSION,
-        "time":                 datetime.now().isoformat(),
+        "time":                 _now_iso(),
         "next_refresh":         get_next_run_info(),
         "uptime_seconds":       uptime,
         "scheduler_running":    scheduler.running,
@@ -6600,5 +6796,5 @@ def health_clear_errors():
     return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
-    reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); warn_if_admin_config_off(); start_scheduler()
+    reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); warn_duplicate_user_names(); warn_if_admin_config_off(); start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False)
