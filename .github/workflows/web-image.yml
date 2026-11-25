@@ -45,6 +45,22 @@ jobs:
           V=$(python -c "import json; print(json.load(open('frontend/changelog.json', encoding='utf-8'))['frontend_version'])")
           echo "v=$V" >> "$GITHUB_OUTPUT"
 
+      # `latest` nur für die neueste Version (seit Frontend v2.13.98): ein manueller Lauf auf einem
+      # älteren Tag würde sonst `latest` zurücksetzen, und `docker compose pull` holte die alte Version.
+      # Verglichen wird mit allen frontend-v-Tags auf GitHub (sort -V); die gebaute Version zählt mit.
+      - name: Prüfen, ob dies die neueste Version ist
+        id: latest
+        env:
+          V: ${{ steps.ver.outputs.v }}
+        run: |
+          NEWEST=$( { git ls-remote --tags --refs origin 'refs/tags/frontend-v*' | sed -E 's#.*refs/tags/frontend-v##'; echo "$V"; } | sort -V | tail -n1 )
+          if [ "$NEWEST" = "$V" ]; then
+            echo "tag=ghcr.io/ckbaxter/depotradar-web:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::frontend-v$V ist nicht die neueste Version (neueste: frontend-v$NEWEST) — latest bleibt unverändert."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: docker/setup-qemu-action@v4
 
       - uses: docker/setup-buildx-action@v4
@@ -77,7 +93,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/ckbaxter/depotradar-web:${{ steps.ver.outputs.v }}
-            ghcr.io/ckbaxter/depotradar-web:latest
+            ${{ steps.latest.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.ver.outputs.v }}

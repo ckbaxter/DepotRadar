@@ -42,6 +42,10 @@ jobs:
         id: ver
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            case "$GITHUB_REF_NAME" in
+              backend-v*) ;;
+              *) echo "::error::Dieses Image wird nur durch Tags backend-v* gebaut (gewählt: $GITHUB_REF_NAME)"; exit 1;;
+            esac
             python scripts/sync-version.py --check --tag "$GITHUB_REF_NAME"
           else
             [ "$GITHUB_REF_NAME" = "main" ] || { echo "::error::Manueller Start nur auf main oder einem Tag backend-v* (gewählt: $GITHUB_REF_NAME)"; exit 1; }
@@ -49,6 +53,22 @@ jobs:
           fi
           V=$(python -c "import json; print(json.load(open('frontend/changelog.json', encoding='utf-8'))['backend_version'])")
           echo "v=$V" >> "$GITHUB_OUTPUT"
+
+      # `latest` nur für die neueste Version (seit Frontend v2.13.98): ein manueller Lauf auf einem
+      # älteren Tag würde sonst `latest` zurücksetzen, und `docker compose pull` holte die alte Version.
+      # Verglichen wird mit allen backend-v-Tags auf GitHub (sort -V); die gebaute Version zählt mit.
+      - name: Prüfen, ob dies die neueste Version ist
+        id: latest
+        env:
+          V: ${{ steps.ver.outputs.v }}
+        run: |
+          NEWEST=$( { git ls-remote --tags --refs origin 'refs/tags/backend-v*' | sed -E 's#.*refs/tags/backend-v##'; echo "$V"; } | sort -V | tail -n1 )
+          if [ "$NEWEST" = "$V" ]; then
+            echo "tag=ghcr.io/ckbaxter/depotradar-backend:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::backend-v$V ist nicht die neueste Version (neueste: backend-v$NEWEST) — latest bleibt unverändert."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Syntax prüfen
         run: |
@@ -73,7 +93,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/ckbaxter/depotradar-backend:${{ steps.ver.outputs.v }}
-            ghcr.io/ckbaxter/depotradar-backend:latest
+            ${{ steps.latest.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.ver.outputs.v }}
