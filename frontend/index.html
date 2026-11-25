@@ -8391,7 +8391,7 @@ async function loadParqetPortfolios(){
       actions.innerHTML += '<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="doParqetReconnect()">Neu verbinden</button>';
       return;
     }
-    sel.innerHTML = list.map(p => `<option value="${p.id}">${esc(p.name || p.title || p.id)}</option>`).join("");
+    sel.innerHTML = list.map(p => `<option value="${esc(p.id)}">${esc(p.name || p.title || p.id)}</option>`).join("");
     picker.style.display = "block";
     toast("Parqet verbunden — bitte Portfolio auswählen ↓");
     setTimeout(() => picker.scrollIntoView({behavior: "smooth", block: "center"}), 100);
