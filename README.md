@@ -5,7 +5,7 @@ Ein selbst gehostetes Web-Tool zur Portfolio-Überwachung und ATH-Tracking von A
 Entwickelt für private Investoren die wissen wollen: Wie weit ist mein Portfolio gerade vom Allzeithoch entfernt — und welche Positionen lohnen sich zum Nachkauf?
 
 ![Version Backend](https://img.shields.io/badge/Backend-v2.8.63-blue)
-![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.97-blue)
+![Version Frontend](https://img.shields.io/badge/Frontend-v2.13.98-blue)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 ![Entwickelt mit Claude](https://img.shields.io/badge/Entwickelt%20mit-Claude%20(Anthropic)-blueviolet)
@@ -173,6 +173,10 @@ Alle Einstellungen stehen in der Datei `.env` neben der `docker-compose.yml` (Vo
 | `RESET_PIN_USER`, `DELETE_USER` | leer | One-Shot-Variablen, siehe Administration |
 
 `APP_URL` muss auf die tatsächlich erreichbare Adresse zeigen.
+
+### Hinter einem Reverse Proxy (HTTPS)
+
+Für HTTPS setzt du einen Reverse Proxy wie Nginx Proxy Manager davor, der auf `WEB_PORT` weiterleitet; `APP_URL` ist dann die `https://`-Adresse. Damit die Schutzgrenzen gegen zu viele Anfragen und PIN-Versuche pro Gerät gelten, muss der Proxy die echte Client-IP im Header `X-Real-IP` mitschicken — Nginx Proxy Manager tut das von sich aus. DepotRadar übernimmt diesen Header nur von Adressen aus privaten Netzen (`10.x`, `172.16–31.x`, `192.168.x`, `127.0.0.1`).
 
 ### XETRA-Ticker-Suche (OpenFIGI)
 

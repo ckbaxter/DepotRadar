@@ -1,7 +1,8 @@
 name: Build-Check
 
-# Prüft, dass sich beide Images bauen lassen (ohne Veröffentlichung) und dass die Compose-Dateien
-# gültig sind. Die nginx-Konfiguration ist im Web-Image eingebacken und wird deshalb hier mit
+# Prüft Syntax und Versionen (`make check`: ast + pyflakes, node --check, Versions-Check; seit
+# Frontend v2.13.98), dass sich beide Images bauen lassen (ohne Veröffentlichung) und dass die
+# Compose-Dateien gültig sind. Die nginx-Konfiguration ist im Web-Image eingebacken und wird deshalb hier mit
 # `nginx -t` geprüft — ein Fehler fiele sonst erst nach dem Release auf.
 # Läuft schon beim Push auf einen Branch `feature/**` (also noch vor dem Pull Request), bei jedem
 # Pull Request (auch für andere Branches, z. B. von Dependabot) und manuell.
@@ -20,6 +21,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Schnell und unabhängig vom Image-Build: ein JS-Syntaxfehler fiele sonst erst im Browser auf.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "lts/*"
+
+      - name: make check
+        run: |
+          python -m pip install pyflakes
+          make check PYTHON=python
+
   build:
     runs-on: ubuntu-latest
     steps:
