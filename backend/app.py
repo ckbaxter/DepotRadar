@@ -36,7 +36,7 @@ ISSUES_FILE         = os.path.join(DATA_DIR, "issues.json")   # Hinweis-Center (
 XETRA_MAP_FILE      = os.path.join(DATA_DIR, "xetra_map.json")   # Nutzer-Cache, Seed siehe XETRA_SEED_FILE
 os.makedirs(DATA_DIR, exist_ok=True)
 
-VERSION           = "2.8.63"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
+VERSION           = "2.8.64"   # automatisch aus frontend/changelog.json (scripts/sync-version.py) — nicht von Hand ändern
 APP_URL           = os.environ.get("APP_URL", "").rstrip("/")
 
 def _h(value):
@@ -470,7 +470,43 @@ def save_stocks(d, s):    _save_json(depot_file(d), s)
 def load_wl_stocks(w):    return _load_json(watchlist_file(w), [])
 def save_wl_stocks(w,s):  _save_json(watchlist_file(w), s)
 def load_depots():        return _load_json(DEPOTS_FILE, [])
-def save_depots(d):       _save_json(DEPOTS_FILE, d)
+def save_depots(d):       _save_json(DEPOTS_FILE, d)   # nur noch über update_depots() aufrufen
+
+# Rückgabewert für update_depots: fn hat nichts geändert, Datei nicht schreiben
+DEPOTS_UNCHANGED = object()
+_depots_tls = threading.local()
+
+def update_depots(fn):
+    """load-modify-save von depots.json unter Lock (seit v2.8.64). fn(depots) bekommt die FRISCH
+    geladene Liste und ändert sie direkt (Einträge ändern, depots[:] = … zum Filtern, append).
+    Rückgabe von fn wird durchgereicht; gibt fn DEPOTS_UNCHANGED zurück, wird nicht gespeichert.
+    Wirft fn eine Ausnahme, wird ebenfalls nicht gespeichert.
+
+    Vorher luden 16 Stellen die Liste, änderten ein Depot und schrieben alles zurück — zwei
+    gleichzeitige Schreiber (z. B. Token-Refresh im Auto-Sync und Speichern der Depot-
+    Einstellungen) überschrieben sich gegenseitig, im schlimmsten Fall mit einem bereits
+    verbrauchten Parqet-Refresh-Token. Regeln für fn: kurz halten, keine Netzwerkaufrufe,
+    keine Benachrichtigungen und kein verschachteltes update_depots (der Lock ist nicht
+    reentrant — ein verschachtelter Aufruf bricht deshalb mit RuntimeError ab statt zu hängen).
+    Lock-Reihenfolge: parqet_token_lock bzw. depot_lock → depots.json-Lock, nie umgekehrt."""
+    if getattr(_depots_tls, "active", False):
+        raise RuntimeError("update_depots darf nicht verschachtelt aufgerufen werden")
+    with file_lock(DEPOTS_FILE):
+        _depots_tls.active = True
+        try:
+            depots = load_depots()
+            if not isinstance(depots, list): depots = []
+            result = fn(depots)
+            if result is not DEPOTS_UNCHANGED:
+                save_depots(depots)
+                return result
+            return None
+        finally:
+            _depots_tls.active = False
+
+def _depot_in(depots, depot_id):
+    """Depot mit dieser ID aus einer (in update_depots geladenen) Liste, sonst None."""
+    return next((d for d in depots if d.get("id") == depot_id), None)
 def load_watchlists():    return _load_json(WATCHLISTS_FILE, [])
 def save_watchlists(w):   _save_json(WATCHLISTS_FILE, w)
 def load_notifications(): return _load_json(NOTIF_FILE, [])
@@ -827,14 +863,17 @@ def _delete_user(target, users):
     exclusive_watchlists = target_watchlists - shared_watchlists
     # Exklusive Depots löschen
     deleted_depot_names = []
-    depots = load_depots()
+    def _drop_exclusive(depots):
+        for did in exclusive_depots:
+            depot = _depot_in(depots, did)
+            if not depot: continue
+            deleted_depot_names.append(depot.get("name", did))
+        depots[:] = [d for d in depots if d["id"] not in exclusive_depots]
+    update_depots(_drop_exclusive)
     for did in exclusive_depots:
-        depot = next((d for d in depots if d["id"] == did), None)
-        if not depot: continue
         if os.path.exists(depot_file(did)): os.remove(depot_file(did))
-        deleted_depot_names.append(depot.get("name", did))
-        log.info(f"Depot '{depot.get('name', did)}' gelöscht (war exklusiv für '{target['name']}')")
-    save_depots([d for d in depots if d["id"] not in exclusive_depots])
+    for nm in deleted_depot_names:
+        log.info(f"Depot '{nm}' gelöscht (war exklusiv für '{target['name']}')")
     # Exklusive Watchlists löschen (analog zu Depots eigenständig)
     deleted_wl_names = []
     watchlists = load_watchlists()
@@ -939,29 +978,30 @@ def migrate_if_needed():
         # wl_<id>.json) mit direkter User-Zuordnung analog zu Depots. Diese Migration
         # läuft einmalig: bestehende Watchlists werden übernommen, ihre Stock-Dateien
         # umbenannt, und sie erben die Nutzer-Zuordnung ihres bisherigen Eltern-Depots.
-        depots     = load_depots()
         watchlists = load_watchlists()
         users      = load_users()
-        any_migrated = False
-        for depot in depots:
-            old_wls = depot.pop("watchlists", None)
-            if not old_wls:
-                continue
-            owning_user = get_depot_user(depot["id"])
-            for wl in old_wls:
-                wl_id    = wl["id"]
-                old_file = os.path.join(DATA_DIR, f"wl_{_safe(depot['id'])}_{_safe(wl_id)}.json")
-                new_file = watchlist_file(wl_id)
-                if os.path.exists(old_file) and not os.path.exists(new_file):
-                    os.rename(old_file, new_file)
-                watchlists.append({"id": wl_id, "name": wl["name"]})
-                if owning_user:
-                    for u in users:
-                        if u["id"] == owning_user["id"]:
-                            u.setdefault("watchlists", []).append(wl_id)
-                any_migrated = True
+        def _migrate(depots):
+            any_migrated = False
+            for depot in depots:
+                old_wls = depot.pop("watchlists", None)
+                if not old_wls:
+                    continue
+                owning_user = get_depot_user(depot["id"])
+                for wl in old_wls:
+                    wl_id    = wl["id"]
+                    old_file = os.path.join(DATA_DIR, f"wl_{_safe(depot['id'])}_{_safe(wl_id)}.json")
+                    new_file = watchlist_file(wl_id)
+                    if os.path.exists(old_file) and not os.path.exists(new_file):
+                        os.rename(old_file, new_file)
+                    watchlists.append({"id": wl_id, "name": wl["name"]})
+                    if owning_user:
+                        for u in users:
+                            if u["id"] == owning_user["id"]:
+                                u.setdefault("watchlists", []).append(wl_id)
+                    any_migrated = True
+            return True if any_migrated else DEPOTS_UNCHANGED
+        any_migrated = bool(update_depots(_migrate))
         if any_migrated:
-            save_depots(depots)
             save_watchlists(watchlists)
             save_users(users)
             log.info("Migration: bestehende Watchlists von depots.json in eigenständige watchlists.json überführt")
@@ -4286,14 +4326,20 @@ def _try_refresh_token(depot_id, pq):
                               data={"grant_type":"refresh_token","refresh_token":rt,"client_id":client_id},
                               timeout=15)
             r.raise_for_status(); tokens = r.json()
-            new_pq = {**current_pq, "access_token": tokens["access_token"],
-                      "refresh_token": tokens.get("refresh_token", rt),
-                      "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600),
-                      "needs_reconnect": False}
-            depots = load_depots()
-            for d in depots:
-                if d["id"] == depot_id: d["parqet"] = new_pq; break
-            save_depots(depots); log.info(f"Parqet Token erneuert: {depot_id}"); return new_pq, None
+            token_fields = {"access_token": tokens["access_token"],
+                            "refresh_token": tokens.get("refresh_token", rt),
+                            "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600),
+                            "needs_reconnect": False}
+            # Nur die Token-Felder in den frisch geladenen Stand übernehmen (seit v2.8.64) — andere
+            # Parqet-Felder (pending_*, auto_sync_*, portfolio_*) können sich seit dem Laden oben
+            # geändert haben und dürfen nicht mit dem älteren Stand überschrieben werden.
+            def _store_tokens(depots):
+                d = _depot_in(depots, depot_id)
+                if not d: return {**current_pq, **token_fields}
+                d["parqet"] = {**(d.get("parqet") or {}), **token_fields}
+                return d["parqet"]
+            new_pq = update_depots(_store_tokens)
+            log.info(f"Parqet Token erneuert: {depot_id}"); return new_pq, None
         except Exception as e:
             log.error(f"Token Refresh fehlgeschlagen: {e}"); return None, str(e)
 
@@ -4434,25 +4480,26 @@ def parqet_callback():
     except Exception as e:
         log.error(f"Token Exchange: {e}")
         return redirect(f"{APP_URL}?parqet_error=token_exchange_failed")
-    depots = load_depots()
-    for d in depots:
-        if d["id"] == depot_id:
-            # Bestehende Parqet-Einstellungen übernehmen und nur die Token-Felder ersetzen (seit v2.8.62).
-            # Vorher wurde das ganze Objekt neu gebaut — nach „Neu verbinden“ waren damit die Auto-Sync-
-            # Einstellungen weg, die parqet_reconnect() eigens aufbewahrt, und der automatische Sync
-            # lief unbemerkt nicht mehr. Nach parqet_reconnect() fehlt portfolio_id ohnehin (die App
-            # bietet danach die Portfolio-Auswahl an); bei einem direkten Neu-Verbinden bleibt sie.
-            pq = {k: v for k, v in (d.get("parqet") or {}).items()
-                  if k not in ("access_token", "refresh_token", "expires_at", "needs_reconnect")}
-            pq.update({"access_token": tokens["access_token"],
-                       "refresh_token": tokens.get("refresh_token"),
-                       "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600),
-                       "connected": True})
-            pq.setdefault("portfolio_id", None)
-            pq.setdefault("last_sync", None)
-            d["parqet"] = pq
-            break
-    save_depots(depots); log.info(f"Parqet verbunden: {depot_id}")
+    def _store_connection(depots):
+        for d in depots:
+          if d["id"] == depot_id:
+              # Bestehende Parqet-Einstellungen übernehmen und nur die Token-Felder ersetzen (seit v2.8.62).
+              # Vorher wurde das ganze Objekt neu gebaut — nach „Neu verbinden“ waren damit die Auto-Sync-
+              # Einstellungen weg, die parqet_reconnect() eigens aufbewahrt, und der automatische Sync
+              # lief unbemerkt nicht mehr. Nach parqet_reconnect() fehlt portfolio_id ohnehin (die App
+              # bietet danach die Portfolio-Auswahl an); bei einem direkten Neu-Verbinden bleibt sie.
+              pq = {k: v for k, v in (d.get("parqet") or {}).items()
+                    if k not in ("access_token", "refresh_token", "expires_at", "needs_reconnect")}
+              pq.update({"access_token": tokens["access_token"],
+                         "refresh_token": tokens.get("refresh_token"),
+                         "expires_at": int(time_mod.time()) + tokens.get("expires_in", 3600),
+                         "connected": True})
+              pq.setdefault("portfolio_id", None)
+              pq.setdefault("last_sync", None)
+              d["parqet"] = pq
+              return None
+        return DEPOTS_UNCHANGED
+    update_depots(_store_connection); log.info(f"Parqet verbunden: {depot_id}")
     return redirect(f"{APP_URL}?parqet_connected={depot_id}")
 
 @app.route("/api/depots/<depot_id>/parqet/undo-sync", methods=["POST"])
@@ -4471,27 +4518,29 @@ def parqet_undo_sync(depot_id):
 
 @app.route("/api/depots/<depot_id>/parqet/disconnect", methods=["POST"])
 def parqet_disconnect(depot_id):
-    depots = load_depots()
-    for d in depots:
-        if d["id"] == depot_id: d.pop("parqet", None); break
-    save_depots(depots); return jsonify({"ok": True})
+    def _drop_parqet(depots):
+        d = _depot_in(depots, depot_id)
+        if not d or "parqet" not in d: return DEPOTS_UNCHANGED
+        d.pop("parqet", None)
+    update_depots(_drop_parqet); return jsonify({"ok": True})
 
 @app.route("/api/depots/<depot_id>/parqet/reconnect", methods=["POST"])
 def parqet_reconnect(depot_id):
-    depots = load_depots()
-    for d in depots:
-        if d["id"] == depot_id and "parqet" in d:
-            old = d["parqet"]
-            # Auto-Sync-Konfiguration bewusst über den Reconnect hinweg erhalten — sonst würde
-            # ein Token-Reconnect (unabhängiges Problem) den erst hier eingeführten Toggle
-            # stillschweigend wieder deaktivieren.
-            d["parqet"] = {"connected": False,
-                           "auto_sync_enabled": old.get("auto_sync_enabled", False),
-                           "auto_sync_interval_hours": old.get("auto_sync_interval_hours", 4),
-                           "auto_sync_start_hour": old.get("auto_sync_start_hour", 6),
-                           "auto_sync_end_hour": old.get("auto_sync_end_hour", 22)}
-            break
-    save_depots(depots); return jsonify({"ok": True})
+    def _reset_connection(depots):
+        for d in depots:
+          if d["id"] == depot_id and "parqet" in d:
+              old = d["parqet"]
+              # Auto-Sync-Konfiguration bewusst über den Reconnect hinweg erhalten — sonst würde
+              # ein Token-Reconnect (unabhängiges Problem) den erst hier eingeführten Toggle
+              # stillschweigend wieder deaktivieren.
+              d["parqet"] = {"connected": False,
+                             "auto_sync_enabled": old.get("auto_sync_enabled", False),
+                             "auto_sync_interval_hours": old.get("auto_sync_interval_hours", 4),
+                             "auto_sync_start_hour": old.get("auto_sync_start_hour", 6),
+                             "auto_sync_end_hour": old.get("auto_sync_end_hour", 22)}
+              return None
+        return DEPOTS_UNCHANGED
+    update_depots(_reset_connection); return jsonify({"ok": True})
 
 @app.route("/api/depots/<depot_id>/parqet/status", methods=["GET"])
 def parqet_status(depot_id):
@@ -4542,14 +4591,13 @@ def parqet_select_portfolio(depot_id):
         return jsonify({"error": "portfolio_id erforderlich"}), 400
     if not existing_depot(depot_id): return jsonify({"error": "Depot nicht gefunden"}), 404
     pname = _clean_text(body.get("portfolio_name"), _MAX_NAME) or None
-    depots = load_depots()
-    for d in depots:
-        if d["id"] == depot_id:
-            pq = d.setdefault("parqet", {})
-            pq["portfolio_id"]   = pid
-            pq["portfolio_name"] = pname  # nur fürs Anzeigen im Status — kein Feld der Parqet-API selbst
-            break
-    save_depots(depots); return jsonify({"ok": True})
+    def _select(depots):
+        d = _depot_in(depots, depot_id)
+        if not d: return DEPOTS_UNCHANGED
+        pq = d.setdefault("parqet", {})
+        pq["portfolio_id"]   = pid
+        pq["portfolio_name"] = pname  # nur fürs Anzeigen im Status — kein Feld der Parqet-API selbst
+    update_depots(_select); return jsonify({"ok": True})
 
 class ParqetIncompleteError(ValueError):
     """Parqet-Aktivitäten möglicherweise unvollständig geladen (Paginierung nicht erkannt)."""
@@ -4796,15 +4844,14 @@ def _parqet_sync_core(depot_id, auto=False):
     if not pid: return {"error": "Kein Portfolio ausgewählt"}, 400
 
     def handle_401(e):
-        d2 = load_depots()
-        was_already_flagged = True
-        for d in d2:
-            if d["id"] == depot_id and "parqet" in d:
-                was_already_flagged = d["parqet"].get("needs_reconnect", False)
-                d["parqet"]["needs_reconnect"] = True
-                depot_name = d.get("name", depot_id)
-                break
-        save_depots(d2)
+        def _flag(d2):
+            d = _depot_in(d2, depot_id)
+            if not d or "parqet" not in d: return DEPOTS_UNCHANGED
+            was = d["parqet"].get("needs_reconnect", False)
+            d["parqet"]["needs_reconnect"] = True
+            return (was, d.get("name", depot_id))
+        flagged = update_depots(_flag)
+        was_already_flagged, depot_name = flagged if flagged else (True, depot_id)
         # Obligatorische Meldung nur beim Übergang False→True (nicht bei jedem erneuten
         # 401, sonst Spam bei stündlichen Auto-Sync-Versuchen, solange ungelöst) und nur
         # beim automatischen Sync — der manuelle zeigt den Modal-Status ohnehin sofort in
@@ -4940,30 +4987,31 @@ def _parqet_sync_core(depot_id, auto=False):
         # 400 invalid_grant, obwohl der Refresh Sekunden zuvor noch erfolgreich war (genau so
         # am 10.08.2026 real beobachtet: Sync 21:37 erfolgreich inkl. Refresh, Sync 21:58
         # scheitert — 21 Minuten später, weit unter jeder plausiblen Ablauffrist).
-        depots_final = load_depots()
-        for d in depots_final:
-            if d["id"] == depot_id:
-                d["parqet"]["last_sync"] = _now().strftime("%d.%m.%Y %H:%M")
-                d["parqet"].pop("needs_reconnect", None)
-                # Neue Aktien bei Parqet (ISIN noch nicht im Depot) vormerken, damit sie auch nach
-                # einem automatischen Sync oder einem geschlossenen Import-Modal nicht verloren
-                # gehen. Bewusst ERSETZT statt gemerged: die Liste wird bei jedem Sync aus dem
-                # tatsächlichen Stand neu abgeleitet und bereinigt sich damit selbst (importierte
-                # oder inzwischen entfernte Aktien fallen automatisch heraus).
-                d["parqet"]["pending_new"] = new_stocks
-                if auto:
-                    # Nur beim automatischen Sync: removed/mismatches zusätzlich nach ISIN
-                    # gemerged persistieren (nicht überschreiben — mehrere Auto-Läufe können
-                    # zwischen zwei App-Besuchen liegen, bereits gemeldete Fälle bleiben also
-                    # bestehen, werden aber nicht dupliziert).
-                    pend_rem = {r["isin"]: r for r in d["parqet"].get("pending_removed", [])}
-                    for r in removed: pend_rem[r["isin"]] = r
-                    d["parqet"]["pending_removed"] = list(pend_rem.values())
-                    pend_mis = {m["isin"]: m for m in d["parqet"].get("pending_mismatches", [])}
-                    for m in mismatches: pend_mis[m["isin"]] = m
-                    d["parqet"]["pending_mismatches"] = list(pend_mis.values())
-                break
-        save_depots(depots_final)
+        def _store_sync_result(depots_final):
+            for d in depots_final:
+              if d["id"] == depot_id and "parqet" in d:
+                  d["parqet"]["last_sync"] = _now().strftime("%d.%m.%Y %H:%M")
+                  d["parqet"].pop("needs_reconnect", None)
+                  # Neue Aktien bei Parqet (ISIN noch nicht im Depot) vormerken, damit sie auch nach
+                  # einem automatischen Sync oder einem geschlossenen Import-Modal nicht verloren
+                  # gehen. Bewusst ERSETZT statt gemerged: die Liste wird bei jedem Sync aus dem
+                  # tatsächlichen Stand neu abgeleitet und bereinigt sich damit selbst (importierte
+                  # oder inzwischen entfernte Aktien fallen automatisch heraus).
+                  d["parqet"]["pending_new"] = new_stocks
+                  if auto:
+                      # Nur beim automatischen Sync: removed/mismatches zusätzlich nach ISIN
+                      # gemerged persistieren (nicht überschreiben — mehrere Auto-Läufe können
+                      # zwischen zwei App-Besuchen liegen, bereits gemeldete Fälle bleiben also
+                      # bestehen, werden aber nicht dupliziert).
+                      pend_rem = {r["isin"]: r for r in d["parqet"].get("pending_removed", [])}
+                      for r in removed: pend_rem[r["isin"]] = r
+                      d["parqet"]["pending_removed"] = list(pend_rem.values())
+                      pend_mis = {m["isin"]: m for m in d["parqet"].get("pending_mismatches", [])}
+                      for m in mismatches: pend_mis[m["isin"]] = m
+                      d["parqet"]["pending_mismatches"] = list(pend_mis.values())
+                  return None
+            return DEPOTS_UNCHANGED
+        update_depots(_store_sync_result)
 
         # Erträge (realisierte G/V + Dividenden) — rein additiv, siehe _sync_earnings.
         # Nutzt dieselbe bereits geladene all_activities-Liste, kein zusätzlicher API-Call.
@@ -5151,12 +5199,11 @@ def _clear_pending_new(depot_id, isins):
     NACH dem depot_lock-Block des Imports aufgerufen."""
     isins = {i for i in isins if i}
     if not isins: return
-    depots = load_depots()
-    for d in depots:
-        if d["id"] == depot_id and d.get("parqet", {}).get("pending_new"):
-            d["parqet"]["pending_new"] = [n for n in d["parqet"]["pending_new"] if n.get("isin") not in isins]
-            save_depots(depots)
-            break
+    def _clear(depots):
+        d = _depot_in(depots, depot_id)
+        if not d or not d.get("parqet", {}).get("pending_new"): return DEPOTS_UNCHANGED
+        d["parqet"]["pending_new"] = [n for n in d["parqet"]["pending_new"] if n.get("isin") not in isins]
+    update_depots(_clear)
 
 @app.route("/api/depots/<depot_id>/parqet/apply-removal", methods=["POST"])
 def parqet_apply_removal(depot_id):
@@ -5171,12 +5218,11 @@ def parqet_apply_removal(depot_id):
         stocks.remove(match); save_stocks(depot_id, stocks)
     # Aus der Pending-Liste des automatischen Syncs entfernen, falls dort vorgemerkt —
     # sonst würde der Badge/das Auto-Open-Modal beim nächsten Besuch erneut auftauchen.
-    depots = load_depots()
-    for d in depots:
-        if d["id"] == depot_id and "parqet" in d:
-            d["parqet"]["pending_removed"] = [r for r in d["parqet"].get("pending_removed", []) if r.get("isin") != isin]
-            break
-    save_depots(depots)
+    def _clear_removed(depots):
+        d = _depot_in(depots, depot_id)
+        if not d or "parqet" not in d: return DEPOTS_UNCHANGED
+        d["parqet"]["pending_removed"] = [r for r in d["parqet"].get("pending_removed", []) if r.get("isin") != isin]
+    update_depots(_clear_removed)
     add_log("manual_refresh", "Parqet: Position entfernt", f"{match['name']} (verkauft, per Sync bestätigt)",
             True, depot_id=depot_id)
     return jsonify({"ok": True})
@@ -5202,12 +5248,11 @@ def parqet_apply_mismatch(depot_id):
         match["parqet_synced"] = True  # Werte kommen von Parqet (siehe v2.8.15)
         save_stocks(depot_id, stocks)
     # Analog zu apply-removal: aus der Pending-Liste des automatischen Syncs entfernen.
-    depots = load_depots()
-    for d in depots:
-        if d["id"] == depot_id and "parqet" in d:
-            d["parqet"]["pending_mismatches"] = [m for m in d["parqet"].get("pending_mismatches", []) if m.get("isin") != isin]
-            break
-    save_depots(depots)
+    def _clear_mismatch(depots):
+        d = _depot_in(depots, depot_id)
+        if not d or "parqet" not in d: return DEPOTS_UNCHANGED
+        d["parqet"]["pending_mismatches"] = [m for m in d["parqet"].get("pending_mismatches", []) if m.get("isin") != isin]
+    update_depots(_clear_mismatch)
     return jsonify({"ok": True})
 
 @app.route("/api/depots/<depot_id>/parqet/import-bulk", methods=["POST"])
@@ -5697,12 +5742,19 @@ def get_depots():
 def create_depot():
     body = _body(); name = _clean_text(body.get("name"), 60)
     if not name: return jsonify({"error": "Name erforderlich"}), 400
-    depots = load_depots()
-    if any(d["name"].lower() == name.lower() for d in depots):
+    def _create(depots):
+        if any(d["name"].lower() == name.lower() for d in depots):
+            return DEPOTS_UNCHANGED
+        did = gen_id(name)
+        while _depot_in(depots, did): did = f"{did}x"   # gen_id hat Sekunden-Auflösung
+        depot = {"id": did, "name": name}
+        depots.append(depot)
+        return depot
+    depot = update_depots(_create)
+    if not depot:
         return jsonify({"error": "Name existiert bereits"}), 409
-    did = gen_id(name); save_stocks(did, [])
-    depot = {"id": did, "name": name}
-    depots.append(depot); save_depots(depots)
+    did = depot["id"]
+    if not os.path.exists(depot_file(did)): save_stocks(did, [])
     # Depot dem aktuellen User zuordnen
     user_id = body.get("user_id")
     if user_id:
@@ -5743,7 +5795,7 @@ def clear_pending_flags_watchlist(wl_id):
 
 @app.route("/api/depots/<depot_id>", methods=["PUT"])
 def update_depot(depot_id):
-    body = _body(); depots = load_depots()
+    body = _body()
     # Parqet-Client-ID: nur Zeichen, die in einer OAuth-Client-ID vorkommen (Muster wie UUIDs/Slugs).
     # Vor jeder Änderung prüfen, damit bei einem Fehler nichts halb angewendet wird.
     new_client_id = None
@@ -5751,67 +5803,88 @@ def update_depot(depot_id):
         new_client_id = _clean_text(body["parqet_client_id"], 100)
         if new_client_id and not _CLIENT_ID_RE.match(new_client_id):
             return jsonify({"error": "Ungültige Parqet Client ID (erlaubt: Buchstaben, Ziffern, . _ -)"}), 400
-    for d in depots:
-        if d["id"] == depot_id:
-            new_name = _clean_text(body.get("name"), 60) if "name" in body else ""
-            if new_name: d["name"] = new_name
-            if new_client_id is not None: d["parqet_client_id"] = new_client_id
-            if "buy_budget" in body:
-                raw = body["buy_budget"]
-                try:
-                    budget = float(raw) if raw else None
-                except (TypeError, ValueError):
-                    return jsonify({"error": "Ungültiges Kaufbudget"}), 400
-                if budget is not None and (not math.isfinite(budget) or budget < 0):
-                    return jsonify({"error": "Ungültiges Kaufbudget"}), 400
-                d["buy_budget"] = budget
-            if "nachkauf_threshold" in body:
-                raw = body["nachkauf_threshold"]
-                d["nachkauf_threshold"] = (max(_NACHKAUF_THRESHOLD_MIN, min(_NACHKAUF_THRESHOLD_MAX, int(raw)))
-                                           if raw is not None else _NACHKAUF_THRESHOLD_DEFAULT)
-            if "weekly_digest" in body:
-                d["weekly_digest"] = bool(body["weekly_digest"])
-            if "daily_ath_digest" in body:
-                d["daily_ath_digest"] = bool(body["daily_ath_digest"])
-            # Automatischer Parqet-Sync — liegt unter d["parqet"], da rein Parqet-spezifisch;
-            # setdefault statt vorausgesetztem "parqet"-Key, da die Einstellungen theoretisch
-            # schon vor dem ersten Connect gespeichert werden könnten (bleiben dann bis zum
-            # Connect wirkungslos, da auto_parqet_sync_check() zusätzlich "connected" prüft).
-            if any(k in body for k in ("auto_sync_enabled", "auto_sync_interval_hours",
-                                        "auto_sync_start_hour", "auto_sync_end_hour")):
-                pq = d.setdefault("parqet", {})
-                if "auto_sync_enabled" in body:
-                    pq["auto_sync_enabled"] = bool(body["auto_sync_enabled"])
-                if "auto_sync_interval_hours" in body:
-                    pq["auto_sync_interval_hours"] = max(1, min(23, int(body["auto_sync_interval_hours"] or 4)))
-                if "auto_sync_start_hour" in body:
-                    pq["auto_sync_start_hour"] = max(0, min(23, int(body["auto_sync_start_hour"])))
-                if "auto_sync_end_hour" in body:
-                    pq["auto_sync_end_hour"] = max(0, min(23, int(body["auto_sync_end_hour"])))
-            notif_toggled = False
-            if "notifications_enabled" in body:
-                old_enabled = d.get("notifications_enabled", True)
-                new_enabled = bool(body["notifications_enabled"])
-                if old_enabled != new_enabled:
-                    notif_toggled = True
-                d["notifications_enabled"] = new_enabled
-            save_depots(depots)
-            if notif_toggled:
-                # Tatsächlicher Wechsel (an↔aus) — alte Pending-Flags verwerfen,
-                # damit keine veraltete "Bestätigung" beim nächsten Refresh entsteht
-                clear_pending_flags(depot_id)
-                log.info(f"notifications_enabled für Depot {depot_id} geändert auf {d['notifications_enabled']} — Pending-Flags zurückgesetzt")
-            return jsonify(d)
-    return jsonify({"error": "Nicht gefunden"}), 404
+
+    class _Invalid(Exception): pass
+
+    def _apply(depots):
+        d = _depot_in(depots, depot_id)
+        if not d: return DEPOTS_UNCHANGED
+        new_name = _clean_text(body.get("name"), 60) if "name" in body else ""
+        if new_name: d["name"] = new_name
+        if new_client_id is not None: d["parqet_client_id"] = new_client_id
+        if "buy_budget" in body:
+            raw = body["buy_budget"]
+            try:
+                budget = float(raw) if raw else None
+            except (TypeError, ValueError):
+                raise _Invalid("Ungültiges Kaufbudget")
+            if budget is not None and (not math.isfinite(budget) or budget < 0):
+                raise _Invalid("Ungültiges Kaufbudget")
+            d["buy_budget"] = budget
+        if "nachkauf_threshold" in body:
+            raw = body["nachkauf_threshold"]
+            d["nachkauf_threshold"] = (max(_NACHKAUF_THRESHOLD_MIN, min(_NACHKAUF_THRESHOLD_MAX, int(raw)))
+                                       if raw is not None else _NACHKAUF_THRESHOLD_DEFAULT)
+        if "weekly_digest" in body:
+            d["weekly_digest"] = bool(body["weekly_digest"])
+        if "daily_ath_digest" in body:
+            d["daily_ath_digest"] = bool(body["daily_ath_digest"])
+        # Automatischer Parqet-Sync — liegt unter d["parqet"], da rein Parqet-spezifisch;
+        # setdefault statt vorausgesetztem "parqet"-Key, da die Einstellungen theoretisch
+        # schon vor dem ersten Connect gespeichert werden könnten (bleiben dann bis zum
+        # Connect wirkungslos, da auto_parqet_sync_check() zusätzlich "connected" prüft).
+        if any(k in body for k in ("auto_sync_enabled", "auto_sync_interval_hours",
+                                    "auto_sync_start_hour", "auto_sync_end_hour")):
+            pq = d.setdefault("parqet", {})
+            if "auto_sync_enabled" in body:
+                pq["auto_sync_enabled"] = bool(body["auto_sync_enabled"])
+            if "auto_sync_interval_hours" in body:
+                pq["auto_sync_interval_hours"] = max(1, min(23, int(body["auto_sync_interval_hours"] or 4)))
+            if "auto_sync_start_hour" in body:
+                pq["auto_sync_start_hour"] = max(0, min(23, int(body["auto_sync_start_hour"])))
+            if "auto_sync_end_hour" in body:
+                pq["auto_sync_end_hour"] = max(0, min(23, int(body["auto_sync_end_hour"])))
+        notif_toggled = False
+        if "notifications_enabled" in body:
+            old_enabled = d.get("notifications_enabled", True)
+            new_enabled = bool(body["notifications_enabled"])
+            if old_enabled != new_enabled:
+                notif_toggled = True
+            d["notifications_enabled"] = new_enabled
+        out = json.loads(json.dumps(d))
+        if isinstance(out.get("parqet"), dict):   # Tokens nie in API-Antworten (wie GET /api/depots)
+            out["parqet"].pop("access_token", None); out["parqet"].pop("refresh_token", None)
+        return (out, notif_toggled)
+
+    try:
+        res = update_depots(_apply)
+    except _Invalid as e:
+        return jsonify({"error": str(e)}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "Ungültiger Wert"}), 400
+    if not res: return jsonify({"error": "Nicht gefunden"}), 404
+    d, notif_toggled = res
+    if notif_toggled:
+        # Tatsächlicher Wechsel (an↔aus) — alte Pending-Flags verwerfen,
+        # damit keine veraltete "Bestätigung" beim nächsten Refresh entsteht
+        clear_pending_flags(depot_id)
+        log.info(f"notifications_enabled für Depot {depot_id} geändert auf {d['notifications_enabled']} — Pending-Flags zurückgesetzt")
+    return jsonify(d)
 
 @app.route("/api/depots/<depot_id>", methods=["DELETE"])
 def delete_depot(depot_id):
-    depots = load_depots()
-    if len(depots) <= 1: return jsonify({"error": "Letztes Depot kann nicht gelöscht werden"}), 400
-    depot = next((d for d in depots if d["id"] == depot_id), None)
-    if not depot: return jsonify({"error": "Nicht gefunden"}), 404
+    outcome = {}
+    def _delete(depots):
+        if len(depots) <= 1:
+            outcome["error"] = ("Letztes Depot kann nicht gelöscht werden", 400); return DEPOTS_UNCHANGED
+        if not _depot_in(depots, depot_id):
+            outcome["error"] = ("Nicht gefunden", 404); return DEPOTS_UNCHANGED
+        depots[:] = [d for d in depots if d["id"] != depot_id]
+    update_depots(_delete)
+    if "error" in outcome:
+        msg, code = outcome["error"]
+        return jsonify({"error": msg}), code
     if os.path.exists(depot_file(depot_id)): os.remove(depot_file(depot_id))
-    save_depots([d for d in depots if d["id"] != depot_id])
     # Aus users.json entfernen
     users = load_users()
     changed = False
@@ -6786,6 +6859,14 @@ def health():
         },
     })
 
+@app.route("/api/ping", methods=["GET"])
+def ping():
+    """Schlanker Lebenszeichen-Check für den Docker-HEALTHCHECK (seit v2.8.64): liest keine
+    Dateien (anders als /api/health, das alle Depot- und Watchlist-Dateien zählt). 503, wenn
+    der Scheduler nicht läuft — dann arbeitet die App zwar, aktualisiert aber nichts mehr."""
+    running = bool(scheduler.running)
+    return jsonify({"ok": running, "version": VERSION, "scheduler": running}), (200 if running else 503)
+
 @app.route("/api/health/clear-errors", methods=["POST"])
 def health_clear_errors():
     """Löscht den Yahoo-Fehler-Ring-Buffer und setzt last_refresh_had_errors zurück.
@@ -6797,4 +6878,10 @@ def health_clear_errors():
 
 if __name__ == "__main__":
     reset_pin_from_env(); delete_user_from_env(); migrate_if_needed(); warn_duplicate_user_names(); warn_if_admin_config_off(); start_scheduler()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    # Produktions-Webserver waitress statt des Flask-Entwicklungsservers (seit v2.8.64).
+    # Bewusst EIN Prozess mit mehreren Threads: Scheduler und In-Memory-Zustand (OAuth-States,
+    # Ausfall-Erkennung, Fortschritt, Versand-Wiederholungen, Caches) dürfen nur einmal existieren —
+    # kein gunicorn mit mehreren Workern. 16 Threads reichen für lange Aufrufe (Sync, Refresh-all)
+    # neben dem Polling mehrerer Browser; der Werkzeug-Server lief vorher mit unbegrenzten Threads.
+    from waitress import serve
+    serve(app, host="0.0.0.0", port=5000, threads=16, ident=None)

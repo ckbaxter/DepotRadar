@@ -3,3 +3,4 @@ requests==2.34.2
 apprise==2.2.0
 apscheduler==3.11.3
 pytz==2026.6
+waitress==3.0.2

@@ -1,7 +1,16 @@
 {
-  "frontend_version": "2.13.98",
-  "backend_version": "2.8.63",
+  "frontend_version": "2.13.99",
+  "backend_version": "2.8.64",
   "entries": [
+    {
+      "label": "November 2026",
+      "versions": "Frontend v2.13.99 · Backend v2.8.64",
+      "changes": [
+        "Gleichzeitige Änderungen an Depots überschreiben sich nicht mehr gegenseitig – etwa wenn der automatische Parqet-Sync läuft, während du Depot-Einstellungen speicherst. Die Parqet-Verbindung bleibt dadurch zuverlässiger bestehen.",
+        "Ein Tab im Hintergrund fragt keine Daten mehr ab; kehrst du zurück, ist die Anzeige sofort wieder aktuell.",
+        "Das Backend läuft auf einem stabileren Webserver und meldet seinen Zustand an Docker (sichtbar als „healthy“ in docker ps)."
+      ]
+    },
     {
       "label": "November 2026",
       "versions": "Frontend v2.13.98",
