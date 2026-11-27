@@ -9495,10 +9495,28 @@ if(localStorage.getItem("overviewGroupCollapsed") === "1"){
   const hi=document.getElementById("overviewHint"); if(hi) hi.style.display="inline";
 }
 loadSchedulerStatus();
-setInterval(loadCurrentStocks,60000);
-setInterval(loadSchedulerStatus,30000);
-setInterval(updateHealthStatusDot,60000);
-setInterval(refreshIssues,60000);
+// Regelmäßige Abfragen ans eigene Backend (Anzeige auffrischen, kein Kursabruf bei Yahoo).
+// Seit v2.13.99 nur, solange der Tab sichtbar ist: im Hintergrund pausieren sie, beim Zurückkehren
+// wird nach mindestens 15 s Abwesenheit einmal sofort alles geladen, damit keine alten Zahlen stehen.
+const POLL_TASKS = [
+  [loadCurrentStocks,     60000],
+  [loadSchedulerStatus,   30000],
+  [updateHealthStatusDot, 60000],
+  [refreshIssues,         60000],
+];
+const POLL_RESUME_MIN_AWAY = 15000;
+let _pollTimers = [], _hiddenSince = null;
+function stopPolling(){ _pollTimers.forEach(clearInterval); _pollTimers = []; }
+function startPolling(){ stopPolling(); _pollTimers = POLL_TASKS.map(([fn, ms]) => setInterval(fn, ms)); }
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden){ _hiddenSince = Date.now(); stopPolling(); return; }
+  const away = _hiddenSince ? Date.now() - _hiddenSince : 0;
+  _hiddenSince = null;
+  if(away >= POLL_RESUME_MIN_AWAY)
+    POLL_TASKS.forEach(([fn]) => { Promise.resolve().then(fn).catch(() => {}); });
+  startPolling();
+});
+if(document.hidden) _hiddenSince = Date.now(); else startPolling();
 </script>
 <div class="app-version">
   <span>Frontend v<span id="frontendVersion">…</span><span class="upd-chip" id="updChipFrontend" onclick="openIssuesModal()"></span> &nbsp;·&nbsp; Backend v<span id="backendVersion">…</span><span class="upd-chip" id="updChipBackend" onclick="openIssuesModal()"></span></span>

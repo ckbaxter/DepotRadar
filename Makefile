@@ -152,5 +152,5 @@ cleanup: ## Nach dem Merge: main aktualisieren, Branch löschen (make cleanup BR
 	@[ -n "$(BRANCH)" ] || { echo "✗ BRANCH fehlt, z. B.: make cleanup BRANCH=feature/makefile"; exit 1; }
 	@[ "$(BRANCH)" != "main" ] || { echo "✗ main wird nicht gelöscht"; exit 1; }
 	git checkout main
-	git pull
+	git pull --ff-only
 	git branch -d "$(BRANCH)"
